@@ -25,4 +25,4 @@
 
 note: audio inputs and outputs are BOTH inverted, which matters for DC
 
-![Panel]()
+![Panel](media/nemesis-panel.png)
