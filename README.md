@@ -1,6 +1,6 @@
 # Nemesis
 
-##multichannel dsp platform for eurorack 
+## multichannel dsp platform for eurorack 
 
 ![Panel](media/nemesis-picture.jpeg)
 
