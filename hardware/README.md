@@ -1,7 +1,7 @@
-# Nemesis Hardware
-**\frontpanel** Illustrator files for the frontpanel
+# Nemesis hardware
+**\frontpanel** illustrator files for the frontpanel
 
-**\pcb** Diptrace schematic and board layout
+**\pcb** diptrace schematic and board layout
 
 **\gerber** gerber files for production
 

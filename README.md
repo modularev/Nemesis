@@ -1,28 +1,25 @@
-# [WIP] Nemesis
-8i/8o multichannel eurorack dsp platform based on teensy 4.1
+# Nemesis
+
+##multichannel dsp platform for eurorack 
+
+![Panel](media/nemesis-picture.jpeg)
 
 **\hardware** panel, pcb and gerber files
 
-**\software** testproject
+**\software** project template
 
 **\doc** datasheets and additional information
 
 **\media** 
 
-### Specifications
+### specifications
 
-- Cirrus CS42448 24 bit Audio Codec (6i/8o) with additional 2ch ADC PCM1808
-- Teensy 4.1 (ARM Cortex-M7 at 600 MHz) with 512kb usable DMAMEM (can be extended with 2x ESP-PSRAM64 for additional 16mb EXTMEM)
+- cirrus cs42448 24 bit audio codec (6 in / 8 out) with additional cs5343 (2 in) 
+- teensy 4.1 (arm cortex-m7 at 600 mhz) with 512kb usable `DMAMEM` (can be extended with 2x ESP-PSRAM64 for additional 16mb `EXTMEM`)
 
-- CV Inputs X Y Z with attenuverter
-- inputs A-F configurable as CV <u>or</u> AC coupled audio inputs (passive, ch. 3-8)
-- 2 ch audio in AC or DC coupled with up to 6db gain (full scale at 0dB 10vpp)
-- 2 ch audio out AC or DC coupled (+-5v) 
-- **input module:** 6 AC or DC coupled audio inputs with attenuators
-- **output module:** 6 AC or DC coupled active audio outputs
-
-
-
-note: audio inputs and outputs are BOTH inverted, which matters for DC
-
-![Panel](media/nemesis-panel.png)
+- cv Inputs X Y Z with attenuverter
+- inputs A-F configurable as cv (0-10V) <u>or</u> ac coupled audio inputs (passive, audio ch. 3-8)
+- 2 ch audio in ac or dc coupled with up to 18db gain (full scale at noon 10vpp)
+- 2 ch audio out ac or dc coupled (+-5v) 
+- **input module:** 6 ac or dc coupled audio-rate inputs with attenuators
+- **output module:** 6 ac or dc coupled active audio-rate outputs

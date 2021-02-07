@@ -1,0 +1,2 @@
+This directory is used for the compiled library created from the .dsp faust file as defined inside faust_build.py.
+FAUST needs to be installed, so that platformio can build it from the source
