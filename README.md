@@ -4,13 +4,19 @@
 
 ![Panel](media/nemesis-picture.jpeg)
 
-**\hardware** panel, pcb and gerber files
+**\hardware** bom, gerber, panel, pcb and schematic files
 
 **\software** project template
 
 **\doc** datasheets and additional information
 
 **\media** 
+
+### license
+
+Hardware: [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+
+Software: [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 ### specifications
 
