@@ -28,8 +28,8 @@ const char *param[] = {
     "smear",   // POT X
     "decay",   // POT Y
     "drag",    // POT Z
-    "High Cut",// POT A
-    "Low Cut", // POT B
+    "Filter",// POT A
+    "Filter", // POT B
     "colour",  // POT C
     "lag",     // POT D
     "push",    // POT E

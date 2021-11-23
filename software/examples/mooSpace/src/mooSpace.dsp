@@ -2,14 +2,14 @@ declare name "mooSpace";
 declare description "variable space reverberation audio effect";
 declare author "Arev Imer (arev.imer@students.fhnw.ch)";
 declare copyright "Arev";
-declare version "0.1";
+declare version "0.2";
 
 import("stdfaust.lib");
 
 MAX_DIFF 	= 9.5;
 MAX_LATE 	= 5;
 MAX_MOD		= 150;
-MAX_LAG		= 2^16-2;
+MAX_LAG		= 2^15-2;
 
 diff_mult 	= hslider("smear", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_DIFF;
 late_diff 	= hslider("drag", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_LATE ;
@@ -26,10 +26,11 @@ predelay 	= hslider("lag", 0, 0, 1, 0.001) : si.smoo: _ * (MAX_LAG - 1);
 damp 		= hslider("colour", 0.1, 0, 1, 0.01) : si.smoo;
 //dtime 		= hslider("reverse", 200, 0, 1000, 0.1) : si.smoo : _ * 88.2 ;
 ducktime 	= 0.2 * (dtime / 2);
-
-dist_amt 	= hslider("push", 0, 0, 1, 0.01) : si.smoo;
 highcut 	= hslider("High Cut", 1, 0, 1, 0.01) <: * : si.smoo : _ * 14980 : _ + 20 ;
-lowcut 		= hslider("Low Cut", 0, 0, 1, 0.01) <: * : si.smoo: _ * 4980 : _ + 20 ;
+dist_amt 	= hslider("push", 0, 0, 1, 0.01) : si.smoo;
+filt_ctrl   = hslider("Filter", 0.5, 0, 1, 0.01) : si.smoo ;
+lp_freq 	= filt_ctrl : clip(0.0, 0.48) * 2.083 <: *       : _ * 15900 : _ + 100 ;
+hp_freq		= filt_ctrl : (clip(0.52, 1) - 0.52) * 2.083  <: *: _ * 4980 : _ + 20 ;
 rev_mix 	= hslider("mix", 0.5, 0, 1, 0.01) : si.smoo;
  
 
@@ -75,7 +76,8 @@ rev_dt_4 = 3163;
 
 swap = _,_ <: !,_,_,!;	
 
-clip(lower, upper, x) = min(upper,max(x,lower));
+//clip(lower, upper, x) = min(upper,max(x,lower));
+clip(lo, hi) = min(hi) : max(lo);
 
 balance(mix, dry_l, wet_l, dry_r, wet_r) = sel(mix, dry_l, wet_l), sel(mix, dry_r, wet_r)
 	with { 
@@ -89,6 +91,9 @@ allpass(dmax, dt, coeff) =
 
 bandwidth(x) = _ * x : + ~ (mem * (1 - x));
 damping(x) = _ * (1 - x) : + ~ (mem * x);
+
+filter_q = filt_ctrl : clip(0.4, 0.6) - 0.4 : _ * 10 - 1 : abs : _ * (3-3*decay) : max(0.1,_) ;
+tank_filter = fi.resonlp(lp_freq, filter_q, 1) : fi.resonhp(hp_freq, filter_q, 1);
 
 
 input_diff =
@@ -127,7 +132,7 @@ multi_tap_allpass_r(dt, coeff) =
 
 left_side = 
 	
-	_ * (decay), _ : + : co.compressor_mono(5, -6, 0.5, 1) :
+	_ * (decay), _ : + : tank_filter : co.compressor_mono(5, -6, 0.5, 1) :
 	allpass(MAX_LATE * dt_late_l1 + MAX_MOD, late_diff * dt_late_l1 + mod, -d_diff_1)
 
 	<: de.fdelay(rev_dt_1, rev_dt_1),
@@ -153,7 +158,7 @@ left_side =
 
 right_side = 
 
-	_ * (decay), _ : + : co.compressor_mono(5, -6, 0.5, 1) :
+	_ * (decay), _ : + : tank_filter : co.compressor_mono(5, -6, 0.5, 1) :
 	allpass(MAX_LATE * dt_late_r1 + MAX_MOD, late_diff * dt_late_r1 + mod, -d_diff_1)
 
 	<: de.fdelay(rev_dt_3, rev_dt_3),
@@ -178,10 +183,8 @@ right_side =
 
 
 
-input_proc = + : _ * 0.5 :
-	de.fdelay(MAX_LAG, predelay) : 
-	fi.lowpass(3, highcut) :
-	fi.highpass(3, lowcut) : input_diff <: _,_;
+input_proc = par(i,2,
+	de.fdelay(MAX_LAG, predelay) : input_diff);
 
 limiter = co.compressor_stereo(4,-6,0.0008,0.5);
 
