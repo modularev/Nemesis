@@ -9891,7 +9891,7 @@ class mydsp : public dsp {
 			float fTemp98 = (((fTemp96 - fTemp97) / fTemp95) + 1.0f);
 			float fTemp99 = (1.0f - (1.0f / mydsp_faustpower2_f(fTemp95)));
 			float fTemp100 = (((fTemp96 + fTemp97) / fTemp95) + 1.0f);
-			fRec16[0] = ((fRec18 + (((fRec7[0] * fTemp70) * fTemp94) + fRec17[1])) - (((fRec16[2] * fTemp98) + (2.0f * (fRec16[1] * fTemp99))) / fTemp100));
+			fRec16[0] = ((fRec17[1] + (fRec18 + ((fRec7[0] * fTemp70) * fTemp94))) - (((fRec16[2] * fTemp98) + (2.0f * (fRec16[1] * fTemp99))) / fTemp100));
 			float fTemp101 = ((fRec16[2] + (fRec16[0] + (2.0f * fRec16[1]))) / fTemp100);
 			float fTemp102 = std::tan((fConst17 * ((21607.668f * mydsp_faustpower2_f((std::max<float>(0.519999981f, std::min<float>(1.0f, fRec54[0])) + -0.519999981f))) + 20.0f)));
 			float fTemp103 = (1.0f / fTemp102);
@@ -10001,12 +10001,12 @@ class mydsp : public dsp {
 			float fTemp159 = std::floor(fTemp157);
 			float fRec4 = (0.600000024f * (((0.258992791f * fVec17[((IOTA - 2677) & 4095)]) + (((0.32520324f * fVec15[((IOTA - 3621) & 8191)]) + (((fVec15[((IOTA - std::min<int>(4454, std::max<int>(0, iTemp158))) & 8191)] * (fTemp159 + (1.0f - fTemp157))) + ((fTemp157 - fTemp159) * fVec15[((IOTA - std::min<int>(4454, std::max<int>(0, (iTemp158 + 1)))) & 8191)])) + (0.67479676f * fVec15[((IOTA - 3620) & 8191)]))) + (0.741007209f * fVec17[((IOTA - 2676) & 4095)]))) - fRec11));
 			float fTemp160 = (1330.28394f * fRec59[0]);
-			int iTemp161 = int(fTemp160);
-			float fTemp162 = std::floor(fTemp160);
+			float fTemp161 = std::floor(fTemp160);
+			int iTemp162 = int(fTemp160);
 			float fTemp163 = (605.011475f * fRec59[0]);
 			float fTemp164 = std::floor(fTemp163);
 			int iTemp165 = int(fTemp163);
-			float fRec5 = (0.600000024f * (((0.718309879f * fVec24[((IOTA - 2970) & 8191)]) + (((fVec24[((IOTA - std::min<int>(4218, std::max<int>(0, iTemp161))) & 8191)] * (fTemp162 + (1.0f - fTemp160))) + ((fTemp160 - fTemp162) * fVec24[((IOTA - std::min<int>(4218, std::max<int>(0, (iTemp161 + 1)))) & 8191)])) + (0.28169015f * fVec24[((IOTA - 2969) & 8191)]))) - (((fTemp163 - fTemp164) * fVec26[((IOTA - std::min<int>(3164, std::max<int>(0, (iTemp165 + 1)))) & 4095)]) + (fRec63 + (fVec26[((IOTA - std::min<int>(3164, std::max<int>(0, iTemp165))) & 4095)] * (fTemp164 + (1.0f - fTemp163)))))));
+			float fRec5 = (0.600000024f * (((0.28169015f * fVec24[((IOTA - 2969) & 8191)]) + (((fTemp160 - fTemp161) * fVec24[((IOTA - std::min<int>(4218, std::max<int>(0, (iTemp162 + 1)))) & 8191)]) + ((fVec24[((IOTA - std::min<int>(4218, std::max<int>(0, iTemp162))) & 8191)] * (fTemp161 + (1.0f - fTemp160))) + (0.718309879f * fVec24[((IOTA - 2970) & 8191)])))) - (((fTemp163 - fTemp164) * fVec26[((IOTA - std::min<int>(3164, std::max<int>(0, (iTemp165 + 1)))) & 4095)]) + (fRec63 + (fVec26[((IOTA - std::min<int>(3164, std::max<int>(0, iTemp165))) & 4095)] * (fTemp164 + (1.0f - fTemp163)))))));
 			float fRec6 = (0.600000024f * (((0.101265825f * fVec26[((IOTA - 2001) & 4095)]) + (0.898734152f * fVec26[((IOTA - 2002) & 4095)])) - (fRec62 + (0.5f * (fVec24[((IOTA - 2108) & 8191)] + fVec24[((IOTA - 2109) & 8191)])))));
 			float fTemp166 = (1.0f - fRec0[0]);
 			float fTemp167 = ((fRec0[0] * (fRec3 + fRec5)) + ((fTemp166 * fTemp128) * fTemp129));
