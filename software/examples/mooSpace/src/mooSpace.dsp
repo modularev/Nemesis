@@ -24,7 +24,6 @@ decay  		= hslider("decay", 0.3, 0, 1., 0.001) : sqrt : si.smoo;
 
 predelay 	= hslider("lag", 0, 0, 1, 0.001) : si.smoo: _ * (MAX_LAG - 1);
 damp 		= hslider("colour", 0.1, 0, 1, 0.01) : si.smoo;
-//dtime 		= hslider("reverse", 200, 0, 1000, 0.1) : si.smoo : _ * 88.2 ;
 ducktime 	= 0.2 * (dtime / 2);
 highcut 	= hslider("High Cut", 1, 0, 1, 0.01) <: * : si.smoo : _ * 14980 : _ + 20 ;
 dist_amt 	= hslider("push", 0, 0, 1, 0.01) : si.smoo;
@@ -33,9 +32,6 @@ lp_freq 	= filt_ctrl : clip(0.0, 0.48) * 2.083 <: *       : _ * 15900 : _ + 100 
 hp_freq		= filt_ctrl : (clip(0.52, 1) - 0.52) * 2.083  <: *: _ * 4980 : _ + 20 ;
 rev_mix 	= hslider("mix", 0.5, 0, 1, 0.01) : si.smoo;
  
-
-reverse 	= checkbox("reverse");
-
 
 // Parameters
 

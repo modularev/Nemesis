@@ -38,11 +38,12 @@ const char *param[] = {
 //
 // Variables
 //
+
 uint16_t adc_new[9];
 uint16_t adc_old[9];
 float fValue[9];
 
-constexpr float smoothing = 0.5f;
+constexpr float smoothing = 0.2f;
 
 elapsedMicros hysteresis[9];
 
@@ -67,6 +68,14 @@ void print_audio_usage()
 void send_params(int i)
 { // !!!RANGE IS INVERTED!!!
    fValue[i] = -(float)(adc_new[i] - nemesis::getADC_min(i)) / (float)(nemesis::getADC_min(i) - nemesis::getADC_max(i));
+   if (fValue[i] > 0.994) 
+      {
+         fValue[i] = 1.0;
+      }
+   else if (fValue[i] < 0.006) 
+      {
+         fValue[i] = 0.0;
+      }
    faustObj.setParamValue(param[i], clamp(fValue[i]));
 }
 
@@ -89,7 +98,14 @@ void setup()
    }
    else Serial.println("No calibration found!");
 
-   AudioMemory(40); //832 max
+   // for (int i = 0; i < 9; i++)
+   // {
+   //    pinMode(analog_pin[i], INPUT_DISABLE);
+   // }
+   
+   //analogReadResolution(12);
+   analogReadAveraging(8);
+   AudioMemory(100); //832 max
    delay(10);
    codec.enable();
    delay(10);
@@ -99,7 +115,7 @@ void setup()
    //delay(200); // wait for dc offset to stabilize
    //codec.filterFreeze();
 
-   //myTimer.begin(print_audio_usage, 500000);
+   myTimer.begin(print_audio_usage, 500000);
 }
 
 void update()
@@ -107,14 +123,15 @@ void update()
    for (int i = 0; i < 9; i++)   
    {
       adc_new[i] = adc_new[i] + smoothing * (analogRead(analog_pin[i]) - adc_new[i]);
-      if (abs(adc_new[i] - adc_old[i]) > 5 || hysteresis[i] < 1000)
+      if (abs(adc_new[i] - adc_old[i]) > 3 || hysteresis[i] < 100)
       {
-         send_params(i);
          adc_old[i] = adc_new[i];
+         adc_new[i] = adc_new[i];
+         send_params(i);
          hysteresis[i] = 0;
-         Serial.print(i);
-         Serial.print("\t");
-         Serial.println(fValue[i], 3);
+         //Serial.print(i);
+         //Serial.print("\t");
+         //Serial.println(fValue[i], 3);
       }
    }
 }
