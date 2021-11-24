@@ -29,7 +29,7 @@ const char *param[] = {
     "decay",   // POT Y
     "drag",    // POT Z
     "Filter",// POT A
-    "Filter", // POT B
+    "input diffusion", // POT B
     "colour",  // POT C
     "lag",     // POT D
     "push",    // POT E

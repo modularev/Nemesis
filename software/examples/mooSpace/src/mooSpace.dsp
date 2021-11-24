@@ -25,9 +25,9 @@ decay  		= hslider("decay", 0.3, 0, 1., 0.001) : sqrt : si.smoo;
 predelay 	= hslider("lag", 0, 0, 1, 0.001) : si.smoo: _ * (MAX_LAG - 1);
 damp 		= hslider("colour", 0.1, 0, 1, 0.01) : si.smoo;
 ducktime 	= 0.2 * (dtime / 2);
-highcut 	= hslider("High Cut", 1, 0, 1, 0.01) <: * : si.smoo : _ * 14980 : _ + 20 ;
 dist_amt 	= hslider("push", 0, 0, 1, 0.01) : si.smoo;
 filt_ctrl   = hslider("Filter", 0.5, 0, 1, 0.01) : si.smoo ;
+diff_ctrl   = hslider("input diffusion", 0.5, 0, 1, 0.01) : si.smoo : _ * 1.3  ;
 lp_freq 	= filt_ctrl : clip(0.0, 0.48) * 2.083 <: *       : _ * 15900 : _ + 100 ;
 hp_freq		= filt_ctrl : (clip(0.52, 1) - 0.52) * 2.083  <: *: _ * 4980 : _ + 20 ;
 rev_mix 	= hslider("mix", 0.5, 0, 1, 0.01) : si.smoo;
@@ -88,15 +88,15 @@ allpass(dmax, dt, coeff) =
 bandwidth(x) = _ * x : + ~ (mem * (1 - x));
 damping(x) = _ * (1 - x) : + ~ (mem * x);
 
-filter_q = filt_ctrl : clip(0.4, 0.6) - 0.4 : _ * 10 - 1 : abs : _ * (3-3*decay) : max(0.1,_) ;
+filter_q = filt_ctrl : clip(0.4, 0.6) - 0.4 : _ * 10 - 1 : abs : _ * (3-2*decay) : max(0.1,_) ;
 tank_filter = fi.resonlp(lp_freq, filter_q, 1) : fi.resonhp(hp_freq, filter_q, 1);
 
 
 input_diff =
-	allpass(MAX_DIFF * dt_idl_1, diff_mult * dt_idl_1+mod, i_diff_1) :
-	allpass(MAX_DIFF * dt_idl_2, diff_mult * dt_idl_2+mod, i_diff_1) :
-	allpass(MAX_DIFF * dt_idl_3, diff_mult * dt_idl_3+mod, i_diff_2) :
-	allpass(MAX_DIFF * dt_idl_4, diff_mult * dt_idl_4+mod, i_diff_2) :
+	allpass(MAX_DIFF * dt_idl_1, diff_mult * dt_idl_1+mod, i_diff_1 * diff_ctrl) :
+	allpass(MAX_DIFF * dt_idl_2, diff_mult * dt_idl_2+mod, i_diff_1 * diff_ctrl) :
+	allpass(MAX_DIFF * dt_idl_3, diff_mult * dt_idl_3+mod, i_diff_2 * diff_ctrl) :
+	allpass(MAX_DIFF * dt_idl_4, diff_mult * dt_idl_4+mod, i_diff_2 * diff_ctrl) :
 	_;
 
 feedback_diff_l =
@@ -128,7 +128,7 @@ multi_tap_allpass_r(dt, coeff) =
 
 left_side = 
 	
-	_ * (decay), _ : + : tank_filter : co.compressor_mono(5, -6, 0.5, 1) :
+	_ * (2*decay), _ : + : tank_filter : co.compressor_mono(8, -3, 0.5, 1) :
 	allpass(MAX_LATE * dt_late_l1 + MAX_MOD, late_diff * dt_late_l1 + mod, -d_diff_1)
 
 	<: de.fdelay(rev_dt_1, rev_dt_1),
@@ -138,7 +138,7 @@ left_side =
 
 	damping(damp), _, _+_ :
 	
-	decay * _, _, _ :
+	decay * 1.5 * _, _, _ :
 
 
 	(multi_tap_allpass_l(dt_late_l2, d_diff_2), _, _) <: // node31_33[187] -> L-, node31_33[1228] -> R-
@@ -146,7 +146,7 @@ left_side =
 	de.fdelay(rev_dt_2, (rev_dt_2/1.39)), !, !, !, !, // node33_39[2673] -> R+
 	de.fdelay(rev_dt_2, (rev_dt_2/3.49)), !, !, !, ! : // node33_39[1066] -> L-
 	
-	_ * decay , _/*Lmult-*/,/*Rmult-*/ swap/*Lprev-*/, _/*Rsum+*/, _/*R+*/, _/*L-*/ :
+	_ * decay  * 1.5, _/*Lmult-*/,/*Rmult-*/ swap/*Lprev-*/, _/*Rsum+*/, _/*R+*/, _/*L-*/ :
 	_, _, _, 0.6*((-1* _) + _ + _), _ :
 	_, _, _, swap :
 	_, 0.6*((-1* _) - _ - _), _; // 2nd GOING TO LEFT OUT / 3rd GOING TO RIGHT OUT
@@ -154,7 +154,7 @@ left_side =
 
 right_side = 
 
-	_ * (decay), _ : + : tank_filter : co.compressor_mono(5, -6, 0.5, 1) :
+	_ * (2*decay), _ : + : tank_filter : co.compressor_mono(8, -3, 0.1, 1) :
 	allpass(MAX_LATE * dt_late_r1 + MAX_MOD, late_diff * dt_late_r1 + mod, -d_diff_1)
 
 	<: de.fdelay(rev_dt_3, rev_dt_3),
@@ -164,14 +164,14 @@ right_side =
 
 	damping(damp), _, _ + _ :
 	
-	decay * _, _, _ :
+	decay * 1.5 * _, _, _ :
 
 	(multi_tap_allpass_r(dt_late_r2, d_diff_2), _, _) <: // node55_59[335] -> R-, node55_59[1913] -> L-
 	de.fdelay(rev_dt_4, rev_dt_4), _, _, _, _,
 	de.fdelay(rev_dt_4, late_diff * (rev_dt_4/26.14)), !, !, !, !, // node59_63[121] -> L-
 	de.fdelay(rev_dt_4, (rev_dt_4 / 1.58)), !, !, !, !: // node59_63[1996] -> R+
 	
-	_ * decay , _/*Rmult-*/,/*Lmult-*/swap/*Rprev-*/, _/*Lsum*/, _/*L-*/, _/*R+*/ :
+	_ * decay * 1.5, _/*Rmult-*/,/*Lmult-*/swap/*Rprev-*/, _/*Lsum*/, _/*L-*/, _/*R+*/ :
 	_, _, _, 0.6*((-1* _) + _ - _), _ :
 	_, _, _, swap :
 	_, 0.6*((-1* _) - _ + _), _ : // 2nd GOING TO RIGHT OUT / 3rd GOING TO LEFT OUT
@@ -182,7 +182,7 @@ right_side =
 input_proc = par(i,2,
 	de.fdelay(MAX_LAG, predelay) : input_diff);
 
-limiter = co.compressor_stereo(4,-6,0.0008,0.5);
+limiter = co.compressor_stereo(20,-1,0.0008,0.1);
 
 distortion_stereo(distortion) = par(i,2,cubic_distort(distortion, 0))
 	with {
@@ -215,7 +215,7 @@ process = _ ,_ : distortion_stereo(dist_amt)
 
 		(left_side, right_side): 
 
-		_, _, swap, _, _ : _, swap, _, _, _) ~ (swap : feedback_diff_l, feedback_diff_r  : co.compressor_stereo(5, -6, 0.5, 1))),
+		_, _, swap, _, _ : _, swap, _, _, _) ~ (swap : feedback_diff_l, feedback_diff_r  : co.compressor_stereo(6, -6, 0.1, 0.5))),
 
 	_ : // right ch dry
 
