@@ -89,7 +89,7 @@ bandwidth(x) = _ * x : + ~ (mem * (1 - x));
 damping(x) = _ * (1 - x) : + ~ (mem * x);
 
 filter_q = filt_ctrl : clip(0.4, 0.6) - 0.4 : _ * 10 - 1 : abs : _ * (3-2*decay) : max(0.1,_) ;
-tank_filter = fi.resonlp(lp_freq, filter_q, 1) : fi.resonhp(hp_freq, filter_q, 1);
+tank_filter = fi.resonlp(lp_freq, filter_q * 0.5, 1) : fi.resonhp(hp_freq, filter_q * 0.5, 1);
 
 
 input_diff =
@@ -182,7 +182,7 @@ right_side =
 input_proc = par(i,2,
 	de.fdelay(MAX_LAG, predelay) : input_diff);
 
-limiter = co.compressor_stereo(20,-1,0.0008,0.1);
+limiter = co.compressor_stereo(40,-1.5,0.0008,0.1);
 
 distortion_stereo(distortion) = par(i,2,cubic_distort(distortion, 0))
 	with {
@@ -221,4 +221,4 @@ process = _ ,_ : distortion_stereo(dist_amt)
 
 	_, !, !, _, swap, _, _ :
 
-	_, (_ ,_ :> _), (_, _ :> _), _ : _, _, swap  : balance(rev_mix) : limiter; 
+	_, (_ ,_ :> _), (_, _ :> _), _ : _, _, swap  : balance(rev_mix) :fi.dcblocker, fi.dcblocker :  limiter; 

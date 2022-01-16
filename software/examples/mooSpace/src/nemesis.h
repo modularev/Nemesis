@@ -11,6 +11,7 @@
 #define nemesis_h
 
 #include <Arduino.h>
+#include <Audio.h>
 #include <EEPROM.h>
 #include <array>
 
@@ -30,11 +31,11 @@ class nemesis
 {
 
 public:
-
    static bool init(void);
    static void setSampleRate(int freq);
    static void calibration(void);
    static void loadCalibration(void);
+   static AudioControlCS42448 codec;
    static uint16_t getADC_min(int idx);
    static uint16_t getADC_max(int idx);
 

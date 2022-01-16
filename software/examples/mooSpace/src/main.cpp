@@ -1,4 +1,3 @@
-#include <Audio.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
@@ -13,11 +12,22 @@
 AudioInputTDM audio_in;
 AudioOutputTDM audio_out;
 mooSpace faustObj;
-AudioConnection IN_L(audio_in, 0, faustObj, 0);
-AudioConnection IN_R(audio_in, 2, faustObj, 1);
-AudioConnection OUT_L(faustObj, 0, audio_out, 0);
-AudioConnection OUT_R(faustObj, 1, audio_out, 2);
-AudioControlCS42448 codec;
+
+#ifdef HIGHRES
+AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
+AudioConnection Lin_LSB(audio_in, 1, faustObj, 1);
+AudioConnection Rin_MSB(audio_in, 2, faustObj, 2);
+AudioConnection Rin_LSB(audio_in, 3, faustObj, 3);
+AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
+AudioConnection Lout_LSB(faustObj, 1, audio_out, 1);
+AudioConnection Rout_MSB(faustObj, 2, audio_out, 2);
+AudioConnection Rout_LSB(faustObj, 3, audio_out, 3);
+#else
+AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
+AudioConnection Rin_MSB(audio_in, 2, faustObj, 1);
+AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
+AudioConnection Rout_MSB(faustObj, 1, audio_out, 2);
+#endif
 
 IntervalTimer myTimer;
 
@@ -87,8 +97,8 @@ void setup()
 //     ; // wait for serial port to connect. Needed for native USB
 //   }
 
+   //nemesis::setSampleRate((int)AUDIO_SAMPLE_RATE_EXACT);
    nemesis::init();
-   // nemesis::setSampleRate(96000000);
    nemesis::calibration(); // calibration routine
 
    if (EEPROM.read(0) == 0xFF) // check for calbration flag
@@ -104,18 +114,14 @@ void setup()
    // }
    
    //analogReadResolution(12);
-   analogReadAveraging(8);
-   AudioMemory(100); //832 max
-   delay(10);
-   codec.enable();
-   delay(10);
-   codec.volume(0.8);
+   analogReadAveraging(4);
    //codec.invertDAC(0x3F);
    //codec.invertADC(0x3F);
    //delay(200); // wait for dc offset to stabilize
    //codec.filterFreeze();
-
    myTimer.begin(print_audio_usage, 500000);
+   nemesis::codec.volume(1.0);
+
 }
 
 void update()

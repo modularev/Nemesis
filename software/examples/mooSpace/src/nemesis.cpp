@@ -10,6 +10,8 @@
 #include "nemesis.h"
 #include <utility/imxrt_hw.h>
 
+AudioControlCS42448 nemesis::codec;
+
 uint16_t nemesis::adc_min[9];
 uint16_t nemesis::adc_max[9];
 
@@ -36,6 +38,8 @@ uint16_t readIntFromEEPROM(uint8_t address)
 
 bool nemesis::init(void)
 {
+   AudioMemory(100); //832 max
+   nemesis::codec.enable();
    // set pin modes
    for (int i = 0; i < 3; i++)
    {
@@ -159,6 +163,7 @@ void nemesis::setSampleRate(int freq)
    int c2 = 10000;
    int c1 = C * c2 - (c0 * c2);
    set_audioClock(c0, c1, c2, true);
+   //n1 = n1 / 2; //ai: Double Speed for TDM
    CCM_CS1CDR = (CCM_CS1CDR & ~(CCM_CS1CDR_SAI1_CLK_PRED_MASK | CCM_CS1CDR_SAI1_CLK_PODF_MASK)) | CCM_CS1CDR_SAI1_CLK_PRED(n1 - 1) // &0x07
                 | CCM_CS1CDR_SAI1_CLK_PODF(n2 - 1);                                                                                // &0x3f
 }
