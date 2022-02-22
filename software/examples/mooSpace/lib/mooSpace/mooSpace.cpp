@@ -9156,6 +9156,34 @@ struct dsp_poly_factory : public dsp_factory {
 #define FAUST_ADDVERTICALBARGRAPH(l,f,a,b)
 #define FAUST_ADDHORIZONTALBARGRAPH(l,f,a,b)
 
+/* Simple heap based memory manager.
+ * Uses overloaded new/delete operators on Teensy.
+ */
+
+//constexpr size_t bufSize = sizeof(mydsp);
+// EXTMEM uint8_t myHeap[1024*1024];
+// DMAMEM uint8_t dmaHeap[256*1024];
+
+// struct TeensyMemoryManager : public dsp_memory_manager {
+    
+//     void* allocate(size_t size)
+//     {
+         
+//         if (size > 10) {
+//             void* res = new(myHeap) uint8_t[size];
+//             return res;
+//         }
+//         else {
+//             void* res = new(dmaHeap) uint8_t[size];
+//             return res;
+//         } 
+//     }
+    
+//     virtual void destroy(void* ptr)
+//     {   
+//         delete (uint8_t*)ptr;
+//     }
+// };
 /******************************************************************************
  *******************************************************************************
  
@@ -9383,7 +9411,7 @@ class mydsp : public dsp {
 		m->declare("filters.lib/iir:author", "Julius O. Smith III");
 		m->declare("filters.lib/iir:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("filters.lib/iir:license", "MIT-style STK-4.3 license");
-		m->declare("filters.lib/lowpass0_highpass1", "MIT-style STK-4.3 license");
+		m->declare("filters.lib/lowpass0_highpass1", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("filters.lib/lowpass0_highpass1:author", "Julius O. Smith III");
 		m->declare("filters.lib/lowpass:author", "Julius O. Smith III");
 		m->declare("filters.lib/lowpass:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
@@ -10174,16 +10202,16 @@ class mydsp : public dsp {
 			int fVec15_ridx_tmp2 = (fVec15_widx - 1996);
 			int fVec17_ridx_tmp2 = (fVec17_widx - 1065);
 			float fRec5 = (0.600000024f * (0.0f - ((0.902578771f * fVec17[((fVec17_ridx_tmp1 < 0) ? (fVec17_ridx_tmp1 + 3721) : fVec17_ridx_tmp1)]) + (((0.860986531f * fVec15[((fVec15_ridx_tmp1 < 0) ? (fVec15_ridx_tmp1 + 4455) : fVec15_ridx_tmp1)]) + (fRec12 + (0.139013454f * fVec15[((fVec15_ridx_tmp2 < 0) ? (fVec15_ridx_tmp2 + 4455) : fVec15_ridx_tmp2)]))) + (0.0974212065f * fVec17[((fVec17_ridx_tmp2 < 0) ? (fVec17_ridx_tmp2 + 3721) : fVec17_ridx_tmp2)])))));
-			int fVec17_ridx_tmp3 = (fVec17_widx - 2676);
+			int fVec17_ridx_tmp3 = (fVec17_widx - 2677);
 			int fVec15_ridx_tmp3 = (fVec15_widx - 3621);
-			int fVec15_ridx_tmp4 = (fVec15_widx - 3620);
 			float fTemp159 = (1765.66223f * fRec61[0]);
-			float fTemp160 = std::floor(fTemp159);
-			int iTemp161 = int(fTemp159);
-			int fVec15_ridx_tmp5 = (fVec15_widx - std::min<int>(4454, std::max<int>(0, (iTemp161 + 1))));
-			int fVec15_ridx_tmp6 = (fVec15_widx - std::min<int>(4454, std::max<int>(0, iTemp161)));
-			int fVec17_ridx_tmp4 = (fVec17_widx - 2677);
-			float fRec6 = (0.600000024f * (((0.741007209f * fVec17[((fVec17_ridx_tmp3 < 0) ? (fVec17_ridx_tmp3 + 3721) : fVec17_ridx_tmp3)]) + ((0.32520324f * fVec15[((fVec15_ridx_tmp3 < 0) ? (fVec15_ridx_tmp3 + 4455) : fVec15_ridx_tmp3)]) + ((0.67479676f * fVec15[((fVec15_ridx_tmp4 < 0) ? (fVec15_ridx_tmp4 + 4455) : fVec15_ridx_tmp4)]) + (((fTemp159 - fTemp160) * fVec15[((fVec15_ridx_tmp5 < 0) ? (fVec15_ridx_tmp5 + 4455) : fVec15_ridx_tmp5)]) + ((fVec15[((fVec15_ridx_tmp6 < 0) ? (fVec15_ridx_tmp6 + 4455) : fVec15_ridx_tmp6)] * (fTemp160 + (1.0f - fTemp159))) + (0.258992791f * fVec17[((fVec17_ridx_tmp4 < 0) ? (fVec17_ridx_tmp4 + 3721) : fVec17_ridx_tmp4)])))))) - fRec13));
+			int iTemp160 = int(fTemp159);
+			int fVec15_ridx_tmp4 = (fVec15_widx - std::min<int>(4454, std::max<int>(0, iTemp160)));
+			float fTemp161 = std::floor(fTemp159);
+			int fVec15_ridx_tmp5 = (fVec15_widx - std::min<int>(4454, std::max<int>(0, (iTemp160 + 1))));
+			int fVec15_ridx_tmp6 = (fVec15_widx - 3620);
+			int fVec17_ridx_tmp4 = (fVec17_widx - 2676);
+			float fRec6 = (0.600000024f * (((0.258992791f * fVec17[((fVec17_ridx_tmp3 < 0) ? (fVec17_ridx_tmp3 + 3721) : fVec17_ridx_tmp3)]) + (((0.32520324f * fVec15[((fVec15_ridx_tmp3 < 0) ? (fVec15_ridx_tmp3 + 4455) : fVec15_ridx_tmp3)]) + (((fVec15[((fVec15_ridx_tmp4 < 0) ? (fVec15_ridx_tmp4 + 4455) : fVec15_ridx_tmp4)] * (fTemp161 + (1.0f - fTemp159))) + ((fTemp159 - fTemp161) * fVec15[((fVec15_ridx_tmp5 < 0) ? (fVec15_ridx_tmp5 + 4455) : fVec15_ridx_tmp5)])) + (0.67479676f * fVec15[((fVec15_ridx_tmp6 < 0) ? (fVec15_ridx_tmp6 + 4455) : fVec15_ridx_tmp6)]))) + (0.741007209f * fVec17[((fVec17_ridx_tmp4 < 0) ? (fVec17_ridx_tmp4 + 3721) : fVec17_ridx_tmp4)]))) - fRec13));
 			int fVec24_ridx_tmp1 = (fVec24_widx - 2970);
 			float fTemp162 = (1330.28394f * fRec61[0]);
 			int iTemp163 = int(fTemp162);
@@ -10408,8 +10436,8 @@ class mydsp : public dsp {
 
 /*******************BEGIN ARCHITECTURE SECTION (part 2/2)***************/
 
-#define MULT_16 2147483647
-#define DIV_16 4.6566129e-10
+#define MULT_16 2147483648u
+#define DIV_16 4.656612873077392578125e-10
 
 unsigned __exidx_start;
 unsigned __exidx_end;
@@ -10435,13 +10463,14 @@ mooSpace::mooSpace() : AudioStream(FAUST_INPUTS, new audio_block_t*[FAUST_INPUTS
     mydsp_poly* dsp_poly = new mydsp_poly(new mydsp(), nvoices, true, true);
     fDSP = dsp_poly;
 #else
-    #ifdef USEPSRAM
-        fDSP = new(myHeap) mydsp();
-    #else
-        fDSP = new mydsp();
-    #endif
+#ifdef USEPSRAM
+    fDSP = new(myHeap) mydsp();
+#else
+    fDSP = new mydsp();
 #endif
-    
+#endif
+    // TeensyMemoryManager mem;
+    // mydsp::fManager = &mem;
     fDSP->init(AUDIO_SAMPLE_RATE_EXACT);
     
     fUI = new MapUI();
@@ -10513,8 +10542,8 @@ void mooSpace::updateImp(void)
             inBlock[channel + 1] = receiveReadOnly(channel + 1);
             if (inBlock[channel]) {
                 for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                    int32_t val = inBlock[channel]->data[i] << 16;
-                    val += inBlock[channel + 1]->data[i];
+                    int32_t val = ((inBlock[channel]->data[i] << 16) & 0xFFFF0000) | (inBlock[channel + 1]->data[i] & 0xFFFF);
+                    //val += inBlock[channel + 1]->data[i];
                     fInChannel[channel / 2][i] = val*DIV_16;
                 }
                 release(inBlock[channel]);
@@ -10534,7 +10563,7 @@ void mooSpace::updateImp(void)
         if (outBlock[channel]) {
             for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
                 int32_t val = fOutChannel[channel / 2][i]*MULT_16;
-                outBlock[channel]->data[i] = val >> 16;
+                outBlock[channel]->data[i] = (val >> 16) & 0xFFFF;
                 outBlock[channel + 1]->data[i] = val & 0xFFFF;
             }
             transmit(outBlock[channel], channel);
@@ -10552,7 +10581,7 @@ void mooSpace::updateImp(void)
             inBlock[channel] = receiveReadOnly(channel);
             if (inBlock[channel]) {
                 for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                    int32_t val = inBlock[channel]->data[i] << 16;
+                    uint32_t val = inBlock[channel]->data[i] << 16;
                     fInChannel[channel][i] = val*DIV_16;
                 }
                 release(inBlock[channel]);
@@ -10569,7 +10598,7 @@ void mooSpace::updateImp(void)
         outBlock[channel] = allocate();
         if (outBlock[channel]) {
             for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                int32_t val = fOutChannel[channel][i]*MULT_16;
+                uint32_t val = fOutChannel[channel][i]*MULT_16;
                 outBlock[channel]->data[i] = val >> 16;
             }
             transmit(outBlock[channel], channel);
