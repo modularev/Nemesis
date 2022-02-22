@@ -32,6 +32,7 @@
 #include "Arduino.h"
 #include "AudioStream.h"
 #include "Audio.h"
+#include "static_malloc.h"
 
 class dsp;
 class MapUI;
