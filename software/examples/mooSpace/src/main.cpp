@@ -83,13 +83,12 @@ void send_params(int i)
 void setup()
 {
    Serial.begin(9600);
-//    while (!Serial) {
-//     ; // wait for serial port to connect. Needed for native USB
-//   }
+
 
    nemesis::init();
    // nemesis::setSampleRate(96000000);
    nemesis::calibration(); // calibration routine
+
 
    if (EEPROM.read(0) == 0xFF) // check for calbration flag
    {
@@ -98,11 +97,13 @@ void setup()
    }
    else Serial.println("No calibration found!");
 
+
    // for (int i = 0; i < 9; i++)
    // {
    //    pinMode(analog_pin[i], INPUT_DISABLE);
    // }
    
+<<<<<<< Updated upstream
    //analogReadResolution(12);
    analogReadAveraging(8);
    AudioMemory(100); //832 max
@@ -110,10 +111,19 @@ void setup()
    codec.enable();
    delay(10);
    codec.volume(0.8);
+=======
+   //analogReadResolution(10);
+   analogReadAveraging(32);
+>>>>>>> Stashed changes
    //codec.invertDAC(0x3F);
    //codec.invertADC(0x3F);
    //delay(200); // wait for dc offset to stabilize
    //codec.filterFreeze();
+<<<<<<< Updated upstream
+=======
+   myTimer.begin(print_audio_usage, 500000);
+   nemesis::codec.volume(0.8);
+>>>>>>> Stashed changes
 
    myTimer.begin(print_audio_usage, 500000);
 }
@@ -122,17 +132,26 @@ void update()
 {
    for (int i = 0; i < 9; i++)   
    {
-      adc_new[i] = adc_new[i] + smoothing * (analogRead(analog_pin[i]) - adc_new[i]);
-      if (abs(adc_new[i] - adc_old[i]) > 3 || hysteresis[i] < 100)
-      {
-         adc_old[i] = adc_new[i];
-         adc_new[i] = adc_new[i];
-         send_params(i);
-         hysteresis[i] = 0;
-         //Serial.print(i);
-         //Serial.print("\t");
-         //Serial.println(fValue[i], 3);
-      }
+      nemesis::smoo[i].add(analogRead(analog_pin[i]));
+
+      adc_new[i] = nemesis::smoo[i].getMedian();
+      send_params(i);
+      // if (abs(adc_new[i] - adc_old[i]) > 3){
+      //    adc_old[i] = adc_new[i];
+      //    send_params(i);
+      // }
+      
+      // adc_new[i] = adc_new[i] + smoothing * ( - adc_new[i]);
+      // if (abs(adc_new[i] - adc_old[i]) > 4 || hysteresis[i] > 100)
+      // {
+      //    adc_old[i] = adc_new[i];
+      //    adc_new[i] = adc_new[i];
+      //    send_params(i);
+      //    hysteresis[i] = 0;
+      //    //Serial.print(i);
+      //    //Serial.print("\t");
+      //    //Serial.println(fValue[i], 3);
+      // }
    }
 }
 

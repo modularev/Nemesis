@@ -11,25 +11,34 @@ MAX_LATE 	= 5;
 MAX_MOD		= 150;
 MAX_LAG		= 2^16-2;
 
-diff_mult 	= hslider("smear", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_DIFF;
-late_diff 	= hslider("drag", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_LATE ;
+diff_mult 	= hslider("smear", 0.5, 0, 1, 0.001) : si.smooth(0.999): _ * MAX_DIFF;
+late_diff 	= hslider("drag", 0.5, 0, 1, 0.001) : si.smooth(0.999): _ * MAX_LATE ;
 
-mod			= hslider("modulate", 0.02, 0, 1, 0.001) : si.smoo * MAX_MOD * rand
+mod			= hslider("modulate", 0.02, 0, 1, 0.001) : si.smooth(0.999) * MAX_MOD * rand
 	with {
 		rand = (0.5 * (1 + no.lfnoiseN(3,5)));
 		sine = (2*os.lf_sawpos(2))  * ma.PI : (sin + 1)*0.5;
 	};
 
-decay  		= hslider("decay", 0.3, 0, 1., 0.001) : sqrt : si.smoo;
+decay  		= hslider("decay", 0.3, 0, 1., 0.001) : sqrt : si.smooth(0.999);
 
-predelay 	= hslider("lag", 0, 0, 1, 0.001) : si.smoo: _ * (MAX_LAG - 1);
-damp 		= hslider("colour", 0.1, 0, 1, 0.01) : si.smoo;
+predelay 	= hslider("lag", 0, 0, 1, 0.001) : si.smooth(0.999): _ * (MAX_LAG - 1);
+damp 		= hslider("colour", 0.1, 0, 1, 0.01) : si.smooth(0.999);
 ducktime 	= 0.2 * (dtime / 2);
+<<<<<<< Updated upstream
 
 dist_amt 	= hslider("push", 0, 0, 1, 0.01) : si.smoo;
 highcut 	= hslider("High Cut", 1, 0, 1, 0.01) <: * : si.smoo : _ * 14980 : _ + 20 ;
 lowcut 		= hslider("Low Cut", 0, 0, 1, 0.01) <: * : si.smoo: _ * 4980 : _ + 20 ;
 rev_mix 	= hslider("mix", 0.5, 0, 1, 0.01) : si.smoo;
+=======
+dist_amt 	= hslider("push", 0, 0, 1, 0.01) : si.smooth(0.999);
+filt_ctrl   = hslider("Filter", 0.5, 0, 1, 0.01) : si.smooth(0.999) ;
+diff_ctrl   = hslider("input diffusion", 0.5, 0, 1, 0.01) : si.smooth(0.999) : _ * 1.3  ;
+lp_freq 	= filt_ctrl : clip(0.0, 0.48) * 2.083 <: *       : _ * 15900 : _ + 100 ;
+hp_freq		= filt_ctrl : (clip(0.52, 1) - 0.52) * 2.083  <: *: _ * 4980 : _ + 20 ;
+rev_mix 	= hslider("mix", 0.5, 0, 1, 0.01) : si.smooth(0.999);
+>>>>>>> Stashed changes
  
 
 // Parameters
@@ -179,7 +188,11 @@ input_proc = + : _ * 0.5 :
 	fi.lowpass(3, highcut) :
 	fi.highpass(3, lowcut) : input_diff <: _,_;
 
+<<<<<<< Updated upstream
 limiter = co.compressor_stereo(4,-6,0.0008,0.5);
+=======
+limiter = co.compressor_stereo(100,-1.5,0.001,0.1);
+>>>>>>> Stashed changes
 
 distortion_stereo(distortion) = par(i,2,cubic_distort(distortion, 0))
 	with {
@@ -212,7 +225,11 @@ process = _ ,_ : distortion_stereo(dist_amt)
 
 		(left_side, right_side): 
 
+<<<<<<< Updated upstream
 		_, _, swap, _, _ : _, swap, _, _, _) ~ (swap : feedback_diff_l, feedback_diff_r  : co.compressor_stereo(5, -6, 0.5, 1))),
+=======
+		_, _, swap, _, _ : _, swap, _, _, _) ~ (swap : feedback_diff_l, feedback_diff_r :fi.dcblocker, fi.dcblocker  : co.compressor_stereo(6, -6, 0.1, 0.5))),
+>>>>>>> Stashed changes
 
 	_ : // right ch dry
 
