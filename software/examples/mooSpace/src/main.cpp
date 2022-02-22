@@ -1,4 +1,3 @@
-#include <Audio.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <SD.h>
@@ -13,11 +12,22 @@
 AudioInputTDM audio_in;
 AudioOutputTDM audio_out;
 mooSpace faustObj;
-AudioConnection IN_L(audio_in, 0, faustObj, 0);
-AudioConnection IN_R(audio_in, 2, faustObj, 1);
-AudioConnection OUT_L(faustObj, 0, audio_out, 0);
-AudioConnection OUT_R(faustObj, 1, audio_out, 2);
-AudioControlCS42448 codec;
+
+#ifdef HIGHRES
+AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
+AudioConnection Lin_LSB(audio_in, 1, faustObj, 1);
+AudioConnection Rin_MSB(audio_in, 2, faustObj, 2);
+AudioConnection Rin_LSB(audio_in, 3, faustObj, 3);
+AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
+AudioConnection Lout_LSB(faustObj, 1, audio_out, 1);
+AudioConnection Rout_MSB(faustObj, 2, audio_out, 2);
+AudioConnection Rout_LSB(faustObj, 3, audio_out, 3);
+#else
+AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
+AudioConnection Rin_MSB(audio_in, 2, faustObj, 1);
+AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
+AudioConnection Rout_MSB(faustObj, 1, audio_out, 2);
+#endif
 
 IntervalTimer myTimer;
 
@@ -28,8 +38,8 @@ const char *param[] = {
     "smear",   // POT X
     "decay",   // POT Y
     "drag",    // POT Z
-    "High Cut",// POT A
-    "Low Cut", // POT B
+    "Filter",// POT A
+    "input diffusion", // POT B
     "colour",  // POT C
     "lag",     // POT D
     "push",    // POT E
@@ -83,12 +93,13 @@ void send_params(int i)
 void setup()
 {
    Serial.begin(9600);
+//    while (!Serial) {
+//     ; // wait for serial port to connect. Needed for native USB
+//   }
 
-
+   //nemesis::setSampleRate((int)AUDIO_SAMPLE_RATE_EXACT);
    nemesis::init();
-   // nemesis::setSampleRate(96000000);
    nemesis::calibration(); // calibration routine
-
 
    if (EEPROM.read(0) == 0xFF) // check for calbration flag
    {
@@ -97,61 +108,37 @@ void setup()
    }
    else Serial.println("No calibration found!");
 
-
    // for (int i = 0; i < 9; i++)
    // {
    //    pinMode(analog_pin[i], INPUT_DISABLE);
    // }
    
-<<<<<<< Updated upstream
    //analogReadResolution(12);
-   analogReadAveraging(8);
-   AudioMemory(100); //832 max
-   delay(10);
-   codec.enable();
-   delay(10);
-   codec.volume(0.8);
-=======
-   //analogReadResolution(10);
-   analogReadAveraging(32);
->>>>>>> Stashed changes
+   analogReadAveraging(4);
    //codec.invertDAC(0x3F);
    //codec.invertADC(0x3F);
    //delay(200); // wait for dc offset to stabilize
    //codec.filterFreeze();
-<<<<<<< Updated upstream
-=======
    myTimer.begin(print_audio_usage, 500000);
-   nemesis::codec.volume(0.8);
->>>>>>> Stashed changes
+   nemesis::codec.volume(1.0);
 
-   myTimer.begin(print_audio_usage, 500000);
 }
 
 void update()
 {
    for (int i = 0; i < 9; i++)   
    {
-      nemesis::smoo[i].add(analogRead(analog_pin[i]));
-
-      adc_new[i] = nemesis::smoo[i].getMedian();
-      send_params(i);
-      // if (abs(adc_new[i] - adc_old[i]) > 3){
-      //    adc_old[i] = adc_new[i];
-      //    send_params(i);
-      // }
-      
-      // adc_new[i] = adc_new[i] + smoothing * ( - adc_new[i]);
-      // if (abs(adc_new[i] - adc_old[i]) > 4 || hysteresis[i] > 100)
-      // {
-      //    adc_old[i] = adc_new[i];
-      //    adc_new[i] = adc_new[i];
-      //    send_params(i);
-      //    hysteresis[i] = 0;
-      //    //Serial.print(i);
-      //    //Serial.print("\t");
-      //    //Serial.println(fValue[i], 3);
-      // }
+      adc_new[i] = adc_new[i] + smoothing * (analogRead(analog_pin[i]) - adc_new[i]);
+      if (abs(adc_new[i] - adc_old[i]) > 3 || hysteresis[i] < 100)
+      {
+         adc_old[i] = adc_new[i];
+         adc_new[i] = adc_new[i];
+         send_params(i);
+         hysteresis[i] = 0;
+         //Serial.print(i);
+         //Serial.print("\t");
+         //Serial.println(fValue[i], 3);
+      }
    }
 }
 

@@ -7,3 +7,5 @@
 # force-add it if you just created it
 !/.gitignore
 software/examples/mooSpace/lib/mooSpace/mooSpace.cpp
+.ai
+.dxvk-cache

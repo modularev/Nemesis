@@ -11,7 +11,9 @@
 #define nemesis_h
 
 #include <Arduino.h>
+#include <Audio.h>
 #include <EEPROM.h>
+#include <RunningMedian.h>
 #include <array>
 
 constexpr int analog_pin[9] = {
@@ -30,13 +32,14 @@ class nemesis
 {
 
 public:
-
    static bool init(void);
    static void setSampleRate(int freq);
    static void calibration(void);
    static void loadCalibration(void);
+   static AudioControlCS42448 codec;
    static uint16_t getADC_min(int idx);
    static uint16_t getADC_max(int idx);
+   static RunningMedian smoo[9];
 
 private:
    // static uint16_t *adc_max;

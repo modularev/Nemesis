@@ -10,22 +10,8 @@
 #include "nemesis.h"
 #include <utility/imxrt_hw.h>
 
-<<<<<<< Updated upstream
-=======
 AudioControlCS42448 nemesis::codec;
-RunningMedian nemesis::smoo[9] = {
-   RunningMedian(5),
-   RunningMedian(5),
-   RunningMedian(5),
-   RunningMedian(5),
-   RunningMedian(5),
-   RunningMedian(5),
-   RunningMedian(5),
-   RunningMedian(5),
-   RunningMedian(5)
-   };
 
->>>>>>> Stashed changes
 uint16_t nemesis::adc_min[9];
 uint16_t nemesis::adc_max[9];
 
@@ -52,31 +38,21 @@ uint16_t readIntFromEEPROM(uint8_t address)
 
 bool nemesis::init(void)
 {
-<<<<<<< Updated upstream
-   // set pin modes
-=======
->>>>>>> Stashed changes
-   for (int i = 0; i < 3; i++)
-   {
-      pinMode(led_pin[i], OUTPUT);
-      pinMode(switch_pin[i], INPUT_PULLUP);
-   }
-
-   // for (int i = 0; i < 9; i++)
-   // {
-   //    nemesis::smoo[i].begin(SMOOTHED_EXPONENTIAL, 1);
-   // }
    AudioMemory(100); //832 max
    nemesis::codec.enable();
    // set pin modes
-
+   for (int i = 0; i < 3; i++)
+   {
+      pinMode(led_pin[i], OUTPUT);
+      pinMode(switch_pin[i], INPUT);
+   }
 
 
    // initialize 
    for (int i = 0; i < 9; i++)
    {
-      adc_min[i] = 1013;
-      adc_max[i] = 6;
+      adc_min[i] = 1021;
+      adc_max[i] = 5;
    }   
 
    setPSRAMspeed();
@@ -97,13 +73,8 @@ void nemesis::calibration(void)
    if (digitalRead(switch_pin[2]) == LOW)
    {
       digitalWrite(led_pin[1], HIGH); // light led to show calibration started
-      
-      while (!Serial) {
-         ; // wait for serial port to connect. Needed for native USB
-      }      
 
       Serial.println("Turn all potentiometers to minimum position, then press t1");
-      Serial.println(digitalRead(switch_pin[2]));
       while (digitalRead(switch_pin[0]) == HIGH)
       {
       }
@@ -113,8 +84,6 @@ void nemesis::calibration(void)
       {
          EEPROM.write(i, 0);
       }
-      
-      analogReadResolution(10);
 
       // store minimal value !!!RANGE IS INVERTED!!!
       for (int i = 0; i < 9; i++)
@@ -194,6 +163,7 @@ void nemesis::setSampleRate(int freq)
    int c2 = 10000;
    int c1 = C * c2 - (c0 * c2);
    set_audioClock(c0, c1, c2, true);
+   //n1 = n1 / 2; //ai: Double Speed for TDM
    CCM_CS1CDR = (CCM_CS1CDR & ~(CCM_CS1CDR_SAI1_CLK_PRED_MASK | CCM_CS1CDR_SAI1_CLK_PODF_MASK)) | CCM_CS1CDR_SAI1_CLK_PRED(n1 - 1) // &0x07
                 | CCM_CS1CDR_SAI1_CLK_PODF(n2 - 1);                                                                                // &0x3f
 }

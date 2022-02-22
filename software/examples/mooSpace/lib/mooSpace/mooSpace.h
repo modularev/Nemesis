@@ -1,4 +1,5 @@
 #define USEPSRAM
+#define HIGHRES
 /************************************************************************
  FAUST Architecture File
  Copyright (C) 2019-2020 GRAME, Centre National de Creation Musicale
@@ -31,6 +32,7 @@
 #include "Arduino.h"
 #include "AudioStream.h"
 #include "Audio.h"
+#include "static_malloc.h"
 
 class dsp;
 class MapUI;
