@@ -3,10 +3,7 @@
 
 import subprocess
 
-buildLib = 'faust2teensy -lib -ext -dlt 0 -hr src/*.dsp' # -ext statement for accessing PSRAM on teensy 4.1 not available in official faust release (status: feb '21)
-move = 'mv *.zip lib'
-unpack = 'unzip -o lib/*.zip -d lib && rm lib/*.zip'
+buildLib = 'rm -r lib; for i in src/*.dsp; do faust2nemesis -hr -ext -midi "$i"; done'
+# -ext statement for accessing PSRAM on teensy 4.1 not available in official faust release (status: feb '21)
 
 subprocess.run(buildLib, shell=True)
-subprocess.run(move, shell=True)
-subprocess.run(unpack, shell=True)

@@ -4,6 +4,8 @@ declare author "Arev Imer (arev.imer@students.fhnw.ch)";
 declare copyright "Arev";
 declare version "0.2";
 
+declare options "[midi:on]";
+
 import("stdfaust.lib");
 
 MAX_DIFF 	= 9.5;
@@ -11,7 +13,7 @@ MAX_LATE 	= 5;
 MAX_MOD		= 150;
 MAX_LAG		= 2^15-2;
 
-diff_mult 	= hslider("smear", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_DIFF;
+diff_mult 	= hslider("smear[midi:ctrl 11]", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_DIFF;
 late_diff 	= hslider("drag", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_LATE ;
 
 mod			= hslider("modulate", 0.02, 0, 1, 0.001) : si.smoo * MAX_MOD * rand
