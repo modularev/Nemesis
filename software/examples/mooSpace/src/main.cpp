@@ -1,11 +1,12 @@
-#include <Wire.h>
-#include <SPI.h>
-#include <SD.h>
 #include <SerialFlash.h>
+#include <SD.h>
+#include <SPI.h>
+#include <Wire.h>
 //#include <elapsedMillis.h>
 #include "nemesis_hw.h"
 #include "mooSpace.h"
-
+//#include "TeensyDebug.h"
+//#pragma GCC optimize ("O0")
 //
 // Audio Connections
 //
@@ -111,7 +112,10 @@ void send_params(int i)
 
 void setup()
 {
-   Serial.begin(31250);
+   Serial.begin(19200);
+   //debug.begin(SerialUSB1);
+   //halt();                    
+
    //while (!Serial);
    // nemesis::setSampleRate((int)AUDIO_SAMPLE_RATE_EXACT);
    nemesis::init();
@@ -130,8 +134,8 @@ void setup()
    //    pinMode(analog_pin[i], INPUT_DISABLE);
    // }
 
-   // analogReadResolution(12);
-   // analogReadAveraging(4);
+   //analogReadResolution(9);
+   //analogReadAveraging(8);
    // codec.invertDAC(0x3F);
    // codec.invertADC(0x3F);
    // delay(200); // wait for dc offset to stabilize
@@ -170,7 +174,10 @@ void update()
    // }
 }
 
+
+
 void loop()
 {
-   update();
+   nemesis::displayadc();
+   //update();
 }

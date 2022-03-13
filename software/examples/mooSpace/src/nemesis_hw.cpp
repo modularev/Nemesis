@@ -13,19 +13,67 @@
 AudioControlCS42448 nemesis::codec;
 Adafruit_SSD1306 display(128, 32, &Wire, -1);
 
-float nemesis::cv_val[7];// = {.0f, .0f, .0f, .0f, .0f, .0f, .0f};
-float nemesis::pot_val[4];// = {.0f, .0f, .0f, .0f};
+SmoothADC pot_adc[4];
 
+float nemesis::cv_val[];// = {.5f, .5f, .5f, .5f, .5f, .5f, .5f};
+float nemesis::pot_val[];// = {.0f, .0f, .0f, .0f};
 
+void nemesis::displayadc()
+{
+   //scan_CV();
+   display.clearDisplay();
+   display.setCursor(0, 7);
+   //cv_val[0] = scale_ADC(getADC_raw(LTC1867_CH1));
+   //cv_val[1] = scale_ADC(getADC_raw(LTC1867_CH0));
+   display.setCursor(0, 7);
+   cv_val[0] = scale_ADC(getADC_raw(1));
+   display.println(cv_val[0]);
+   display.setCursor(0, 17);
+   cv_val[1] = scale_ADC(getADC_raw(2));
+   display.println(cv_val[1]);
+   display.setCursor(0, 27);
+   cv_val[2] = scale_ADC(getADC_raw(3));
+   display.println(cv_val[2]);
+   display.setCursor(32, 7);
+   cv_val[3] = scale_ADC(getADC_raw(4));
+   display.println(cv_val[3]);
+   display.setCursor(32, 17);
+   cv_val[4] = scale_ADC(getADC_raw(5));
+   display.println(cv_val[4]);
+   display.setCursor(32, 27);
+   cv_val[5] = scale_ADC(getADC_raw(6));
+   display.println(cv_val[5]);
+   display.setCursor(64, 7);
+   cv_val[6] = scale_ADC(getADC_raw(0));
+   display.println(cv_val[6]);
+
+   scan_POT();
+   display.setCursor(64, 27);
+   display.println(pot_val[0]);
+   display.setCursor(96, 7);
+   display.println(pot_val[1]);
+   display.setCursor(96, 17);
+   display.println(pot_val[2]);
+   display.setCursor(96, 27);
+   display.println(pot_val[3]);
+   
+   display.display();
+}
 
 bool nemesis::init(void)
 {
-   pinMode(9, OUTPUT);
-   digitalWrite(9, HIGH);
-
-   Serial.print("hi there");
    pinMode(led_pin[0], OUTPUT);
    digitalWrite(led_pin[0], HIGH);
+   pinMode(9, OUTPUT);
+
+   digitalWrite(9, HIGH);
+   AudioMemory(100); // 832 max
+   codec.enable();
+   codec.write(0x03, 0xF4 | 0x01);
+   codec.write(0x05, 0x00);
+
+   pinMode(led_pin[1], OUTPUT);
+   digitalWrite(led_pin[1], HIGH);
 
    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
@@ -35,28 +83,32 @@ bool nemesis::init(void)
    display.setFont(&SourceCodePro_ExtraLight6pt7b);
    display.setCursor(0, 7);
    display.print(F("say hello to"));
+   display.display();
+
+   // Serial.println("we came this far");
+
    display.setCursor(0, 31);
    display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
    display.print(F(">NEMESIS"));
-
    display.display();
-   //Serial.println("we came this far");
+   display.setFont(&SourceCodePro_ExtraLight6pt7b);
+   delay(5000);
+   for (int i = 0; i < 4; i++){
+      pot_adc[i].init(pot_pin[i], TB_US, 500);
+      pot_adc[i].enable();
+   }
 
-   AudioMemory(100); // 832 max
-   codec.enable();
+
    initADC();
 
    for (int i = 0; i < 7; i++)
    {
-      cv_val[i] = 0;
+      cv_val[i] = 0.0f;
    }
    for (int i = 0; i < 4; i++)
    {
-      pot_val[i] = 0;
+      pot_val[i] = 0.0f;
    }
-
-
-
 
    // set pin modes
    // for (int i = 0; i < 3; i++)
@@ -79,37 +131,51 @@ bool nemesis::init(void)
 void nemesis::initADC(void)
 {
    pinMode(PIN_SPI_SS, OUTPUT);
+   //digitalWrite(PIN_SPI_SS, HIGH);
    SPI.begin();
-   SPI.transfer16((uint16_t)((LTC1867_CH0 | LTC1867_UNIPOLAR_MODE) << 8));
+   getADC_raw(0); // dummy for next conversion
 }
 
-uint16_t nemesis::getADC_raw(uint8_t adc_command)
+uint16_t nemesis::getADC_raw(int next_chan)
 {
-   return SPI.transfer16((uint16_t)((adc_command | LTC1867_UNIPOLAR_MODE) << 8));
+   //digitalWrite(PIN_SPI_SS, HIGH);
+   digitalWriteFast(PIN_SPI_SS, LOW);
+   uint16_t _raw_data = 0;
+
+   SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE0));
+   // digitalWrite(PIN_SPI_SS, HIGH);
+   // digitalWriteFast(PIN_SPI_SS, LOW);
+   _raw_data = SPI.transfer16((adc_chan_word[next_chan]) << 8);
+   digitalWriteFast(PIN_SPI_SS, HIGH);
+   SPI.endTransaction();
+   return _raw_data;
 }
 
 float nemesis::scale_ADC(uint16_t raw_val)
 {
-   return (~raw_val) * INT16_DIV;
+   return (float)((0x3FFF - (raw_val>>2)) & 0x3FFF) * INT14_DIV;
 }
 
 void nemesis::scan_CV(void)
 {
-   cv_val[0] = scale_ADC(getADC_raw(LTC1867_CH1)); // invert reading to acommodate for inverting opamp
-   cv_val[1] = scale_ADC(getADC_raw(LTC1867_CH2));
-   cv_val[2] = scale_ADC(getADC_raw(LTC1867_CH3));
-   cv_val[3] = scale_ADC(getADC_raw(LTC1867_CH4));
-   cv_val[4] = scale_ADC(getADC_raw(LTC1867_CH5));
-   cv_val[5] = scale_ADC(getADC_raw(LTC1867_CH6));
-   cv_val[6] = scale_ADC(getADC_raw(LTC1867_CH0));
+
+    // invert reading to acommodate for inverting opamp
+   cv_val[1] = scale_ADC(getADC_raw(2));
+   cv_val[2] = scale_ADC(getADC_raw(3));
+   cv_val[3] = scale_ADC(getADC_raw(4));
+   cv_val[4] = scale_ADC(getADC_raw(5));
+   cv_val[5] = scale_ADC(getADC_raw(6));
+   cv_val[6] = scale_ADC(getADC_raw(0));
 }
 
 void nemesis::scan_POT(void)
 {
-   for (int i = 0; i < 3; i++)
+   for (int i = 0; i < 4; i++)
    {
-      uint16_t raw_pot = analogRead(pot_pin[i]);
-      pot_val[i] = (~(raw_pot >> 1) & 0b111111111) * INT9_DIV;
+      pot_adc[i].serviceADCPin();
+      pot_val[i] = (pot_adc[i].getADCVal()>>1) * INT9_DIV;
+      //uint16_t raw_pot = analogRead(pot_pin[i]);
+      //pot_val[i] = 0.5 * pot_val[i] + 0.5 * ((raw_pot) * INT9_DIV);
    }
 }
 

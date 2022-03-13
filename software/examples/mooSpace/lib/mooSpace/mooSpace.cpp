@@ -3,7 +3,7 @@ author: "Arev Imer (arev.imer@students.fhnw.ch)"
 copyright: "Arev"
 name: "mooSpace"
 version: "0.2"
-Code generated with Faust 2.39.9 (https://faust.grame.fr)
+Code generated with Faust 2.39.10 (https://faust.grame.fr)
 Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -dtl 0 -es 1 -mcd 16 -uim -single -ftz 0
 ------------------------------------------------------------ */
 
@@ -765,7 +765,7 @@ class ScopedNoDenormals
 
 /************************** END dsp.h **************************/
 
-using namespace std;
+//using namespace std;
 
 // MIDI support
 #ifdef MIDICTRL
@@ -1350,10 +1350,7 @@ class CurveZoneControl : public ZoneControl
         }
         virtual ~CurveZoneControl()
         {
-            std::vector<UpdatableValueConverter*>::iterator it;
-            for (it = fValueConverters.begin(); it != fValueConverters.end(); it++) {
-                delete(*it);
-            }
+            for (const auto& it : fValueConverters) { delete it; }
         }
         void update(double v) const { if (fValueConverters[fCurve]->getActive()) *fZone = FAUSTFLOAT(fValueConverters[fCurve]->ui2faust(v)); }
 
@@ -1370,10 +1367,7 @@ class CurveZoneControl : public ZoneControl
 
         void setActive(bool on_off)
         {
-            std::vector<UpdatableValueConverter*>::iterator it;
-            for (it = fValueConverters.begin(); it != fValueConverters.end(); it++) {
-                (*it)->setActive(on_off);
-            }
+            for (const auto& it : fValueConverters) { it->setActive(on_off); }
         }
 
         int getCurve() { return fCurve; }
@@ -2841,6 +2835,7 @@ class GUI : public UI
             
         GUI():fStopped(false)
         {	
+            static std::list<GUI*> fGuiList;
             fGuiList.push_back(this);
         }
         
@@ -3083,7 +3078,7 @@ class uiTimedItem : public uiItem
         uiTimedItem(GUI* ui, FAUSTFLOAT* zone):uiItem(ui, zone)
         {
             if (GUI::gTimedZoneMap.find(fZone) == GUI::gTimedZoneMap.end()) {
-                GUI::gTimedZoneMap[fZone] = ringbuffer_create(8192);
+                // GUI::gTimedZoneMap[fZone] = ringbuffer_create(8192);
                 fDelete = true;
             } else {
                 fDelete = false;
@@ -4277,8 +4272,11 @@ struct MidiMeta : public Meta, public std::map<std::string, std::string> {
         for (int i = 0; i < map_ui.getParamsCount(); i++) {
             std::string path = map_ui.getParamAddress(i);
             has_freq |= MapUI::endsWith(path, "/freq");
+            has_freq |= MapUI::endsWith(path, "/key");
             has_gate |= MapUI::endsWith(path, "/gate");
             has_gain |= MapUI::endsWith(path, "/gain");
+            has_gain |= MapUI::endsWith(path, "/vel");
+            has_gain |= MapUI::endsWith(path, "/velocity");
         }
         return (has_freq && has_gate && has_gain);
     }
@@ -5096,7 +5094,7 @@ class MidiUI : public GUI, public midi, public midi_interface, public MetaDataUI
 
 #endif // FAUST_MIDIUI_H
 /**************************  END  MidiUI.h **************************/
-/************************** BEGIN nemesis-midi.h ***************************
+/************************** BEGIN nemesis-midiInterface.h ***************************
 FAUST Architecture File
 Copyright (C) 2003-2022 GRAME, Centre National de Creation Musicale
 ---------------------------------------------------------------------
@@ -5128,93 +5126,73 @@ architecture section is not modified.
 
 #include "Arduino.h"
 #include "MIDI.h"
-// extern HardwareSerial Serial1;
-
-extern MIDI_NAMESPACE::SerialMIDI<HardwareSerial>                                serialMIDI;
-extern MIDI_NAMESPACE::MidiInterface<MIDI_NAMESPACE::SerialMIDI<HardwareSerial>> MIDI;
 
 /**
  *  Serial MIDI input/output handling for the Nemesis module based on the Teensy: https://www.pjrc.com/teensy/
  */
 class nemesis_midi : public midi_handler {
-    // private:
-    //      double time = 0.;
-    //      void NemesisHandleProgChange(byte channel, byte byte1){
-    //          handleProgChange(time, channel, byte1);
-    //      }
-    //      void NemesisHandleCtrlChange(byte channel, byte byte1, byte byte2){
-    //          handleCtrlChange(time, channel, byte1, byte2);
-    //      }
-    //      void NemesisHandleAfterTouch(byte channel, byte byte1){
-    //          handleAfterTouch(time, channel, byte1);
-    //      }
-    //      void NemesisHandleNoteOn(byte channel, byte byte1, byte byte2){
-    //          handleKeyOn(time, channel, byte1, byte2);
-    //      }
-    //      void NemesisHandleNoteOff(byte channel, byte byte1, byte byte2){
-    //          handleKeyOff(time, channel, byte1, byte2);
-    //      }
-    //      void NemesisHandlePitchWheel(byte channel, byte byte1, byte byte2){
-    //          handlePitchWheel(time, channel, byte1, byte2);
-    //      }
+   
+   private:
+       
+    using MidiTransport = MIDI_NAMESPACE::SerialMIDI<HardwareSerial>;
+    using MidiInterface = MIDI_NAMESPACE::MidiInterface<MidiTransport>;
+
+    MidiTransport midiTransport;
+    MidiInterface midiInterface;
 
    public:
-    nemesis_midi() : midi_handler("nemesis") {}
+   
+    nemesis_midi() : midi_handler("nemesis"),
+        midiTransport(Serial1),
+        midiInterface((MidiTransport&)midiTransport){} //
 
     virtual ~nemesis_midi() { stopMidi(); }
 
     bool startMidi()
     {
-        //     double time = 0.;
-        //     // MIDI.setHandleClock();
-        //     // MIDI.setHandleStart();
-        //     MIDI.setHandleProgramChange(NemesisHandleProgChange);
-        //     MIDI.setHandleControlChange(NemesisHandleCtrlChange);
-        //     MIDI.setHandleAfterTouchPoly(NemesisHandleAfterTouch);
-        //     MIDI.setHandleNoteOn(NemesisHandleNoteOn);
-        //     MIDI.setHandleNoteOff(NemesisHandleNoteOff);
-        //     MIDI.setHandlePitchBend(NemesisHandlePitchWheel);
-        MIDI.begin();
+        midiInterface.begin();
         return true;
     }
     void stopMidi() {}
+
     void processMidi()
     {
         double time = 0.;
-        while (MIDI.read()) {
-            unsigned char type = MIDI.getType();
+        if (midiInterface.read()) {
+            uint8_t type = midiInterface.getType();
             switch (type) {
                 case 0x80:  // Note Off
-                    handleKeyOff(time, MIDI.getChannel(), MIDI.getData1(), MIDI.getData2());
+                    digitalWrite(33, HIGH);
+                    handleKeyOff(time, midiInterface.getChannel(), midiInterface.getData1(), midiInterface.getData2());
                     break;
                 case 0x90:  // Note On
-                    handleKeyOn(time, MIDI.getChannel(), MIDI.getData1(), MIDI.getData2());
+                    digitalWrite(33, LOW);
+                    handleKeyOn(time, midiInterface.getChannel(), midiInterface.getData1(), midiInterface.getData2());
                     break;
                 case 0xA0:  // Poly Key Pressure
-                    handlePolyAfterTouch(time, MIDI.getChannel(), MIDI.getData1(), MIDI.getData2());
+                    handlePolyAfterTouch(time, midiInterface.getChannel(), midiInterface.getData1(), midiInterface.getData2());
                     break;
                 case 0xB0:  // Control Change
-                    handleCtrlChange(time, MIDI.getChannel(), MIDI.getData1(), MIDI.getData2());
+                    handleCtrlChange(time, midiInterface.getChannel(), midiInterface.getData1(), midiInterface.getData2());
                     break;
                 case 0xC0:  // Program Change // No Bank Select in faust?
-                    handleProgChange(time, MIDI.getChannel(), MIDI.getData1());
+                    handleProgChange(time, midiInterface.getChannel(), midiInterface.getData1());
                     break;
                 case 0xD0:  // Channel Pressure
-                    handleAfterTouch(time, MIDI.getChannel(), MIDI.getData1());
+                    handleAfterTouch(time, midiInterface.getChannel(), midiInterface.getData1());
                     break;
                 case 0xE0:  // Pitch Bend
-                    handlePitchWheel(time, MIDI.getChannel(), MIDI.getData1(), MIDI.getData2());
+                    handlePitchWheel(time, midiInterface.getChannel(), midiInterface.getData1(), midiInterface.getData2());
                     break;
                 default:
                     break;
             }
         }
-        GUI::updateAllGuis();
     }
 };
 
 #endif
-/**************************  END  nemesis-midi.h **************************/
+/**************************  END  nemesis-midiInterface.h **************************/
 #endif
 
 // for polyphonic synths
@@ -9276,34 +9254,7 @@ struct dsp_poly_factory : public dsp_factory {
 #define FAUST_ADDVERTICALBARGRAPH(l,f,a,b)
 #define FAUST_ADDHORIZONTALBARGRAPH(l,f,a,b)
 
-/* Simple heap based memory manager.
- * Uses overloaded new/delete operators on Teensy.
- */
 
-//constexpr size_t bufSize = sizeof(mydsp);
-// EXTMEM uint8_t myHeap[1024*1024];
-// DMAMEM uint8_t dmaHeap[256*1024];
-
-// struct TeensyMemoryManager : public dsp_memory_manager {
-    
-//     void* allocate(size_t size)
-//     {
-         
-//         if (size > 10) {
-//             void* res = new(myHeap) uint8_t[size];
-//             return res;
-//         }
-//         else {
-//             void* res = new(dmaHeap) uint8_t[size];
-//             return res;
-//         } 
-//     }
-    
-//     virtual void destroy(void* ptr)
-//     {   
-//         delete (uint8_t*)ptr;
-//     }
-// };
 /******************************************************************************
  *******************************************************************************
  
@@ -9501,7 +9452,7 @@ class mydsp : public dsp {
 		m->declare("analyzers.lib/version", "0.1");
 		m->declare("author", "Arev Imer (arev.imer@students.fhnw.ch)");
 		m->declare("basics.lib/name", "Faust Basic Element Library");
-		m->declare("basics.lib/version", "0.4");
+		m->declare("basics.lib/version", "0.5");
 		m->declare("compile_options", "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -dtl 0 -es 1 -mcd 16 -uim -single -ftz 0");
 		m->declare("compressors.lib/compression_gain_mono:author", "Julius O. Smith III");
 		m->declare("compressors.lib/compression_gain_mono:copyright", "Copyright (C) 2014-2020 by Julius O. Smith III <jos@ccrma.stanford.edu>");
@@ -9573,7 +9524,6 @@ class mydsp : public dsp {
 		m->declare("name", "mooSpace");
 		m->declare("noises.lib/name", "Faust Noise Generator Library");
 		m->declare("noises.lib/version", "0.3");
-		m->declare("options", "[midi:on]");
 		m->declare("oscillators.lib/name", "Faust Oscillator Library");
 		m->declare("oscillators.lib/version", "0.3");
 		m->declare("platform.lib/name", "Generic Platform Library");
@@ -9953,7 +9903,6 @@ class mydsp : public dsp {
 		ui_interface->addHorizontalSlider("mix", &fHslider0, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
 		ui_interface->addHorizontalSlider("modulate", &fHslider6, FAUSTFLOAT(0.0199999996f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
 		ui_interface->addHorizontalSlider("push", &fHslider1, FAUSTFLOAT(0.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
-		ui_interface->declare(&fHslider7, "midi", "ctrl 11");
 		ui_interface->addHorizontalSlider("smear", &fHslider7, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
 		ui_interface->closeBox();
 	}
@@ -10007,7 +9956,7 @@ class mydsp : public dsp {
 			fRec29[0] = fSlow6 + fConst2 * fRec29[1];
 			fRec33[0] = fConst9 * fRec34[1] + fConst10 * fRec33[1];
 			fRec34[0] = (float(1 - iVec0[1]) + fConst10 * fRec34[1]) - fConst9 * fRec33[1];
-			int iTemp17 = fRec33[0] > fRec33[1];
+			int iTemp17 = (fRec33[1] <= 0.0f) & (fRec33[0] > 0.0f);
 			iRec35[0] = 1103515245 * iRec35[1] + 12345;
 			fRec32[0] = fRec32[1] * float(1 - iTemp17) + 4.65661287e-10f * float(iRec35[0]) * float(iTemp17);
 			fRec31[0] = 0.0f - fConst6 * (fConst7 * fRec31[1] - (fRec32[0] + fRec32[1]));
@@ -10324,16 +10273,16 @@ class mydsp : public dsp {
 			int fVec15_ridx_tmp2 = fVec15_widx - 1996;
 			int fVec17_ridx_tmp2 = fVec17_widx - 1065;
 			float fRec5 = 0.600000024f * (0.0f - (0.902578771f * fVec17[((fVec17_ridx_tmp1 < 0) ? fVec17_ridx_tmp1 + 3721 : fVec17_ridx_tmp1)] + 0.860986531f * fVec15[((fVec15_ridx_tmp1 < 0) ? fVec15_ridx_tmp1 + 4455 : fVec15_ridx_tmp1)] + fRec12 + 0.139013454f * fVec15[((fVec15_ridx_tmp2 < 0) ? fVec15_ridx_tmp2 + 4455 : fVec15_ridx_tmp2)] + 0.0974212065f * fVec17[((fVec17_ridx_tmp2 < 0) ? fVec17_ridx_tmp2 + 3721 : fVec17_ridx_tmp2)]));
-			int fVec17_ridx_tmp3 = fVec17_widx - 2676;
+			int fVec17_ridx_tmp3 = fVec17_widx - 2677;
 			int fVec15_ridx_tmp3 = fVec15_widx - 3621;
-			int fVec15_ridx_tmp4 = fVec15_widx - 3620;
 			float fTemp159 = 1765.66223f * fRec61[0];
-			float fTemp160 = std::floor(fTemp159);
-			int iTemp161 = int(fTemp159);
-			int fVec15_ridx_tmp5 = fVec15_widx - std::min<int>(4454, std::max<int>(0, iTemp161 + 1));
-			int fVec15_ridx_tmp6 = fVec15_widx - std::min<int>(4454, std::max<int>(0, iTemp161));
-			int fVec17_ridx_tmp4 = fVec17_widx - 2677;
-			float fRec6 = 0.600000024f * ((0.741007209f * fVec17[((fVec17_ridx_tmp3 < 0) ? fVec17_ridx_tmp3 + 3721 : fVec17_ridx_tmp3)] + 0.32520324f * fVec15[((fVec15_ridx_tmp3 < 0) ? fVec15_ridx_tmp3 + 4455 : fVec15_ridx_tmp3)] + 0.67479676f * fVec15[((fVec15_ridx_tmp4 < 0) ? fVec15_ridx_tmp4 + 4455 : fVec15_ridx_tmp4)] + (fTemp159 - fTemp160) * fVec15[((fVec15_ridx_tmp5 < 0) ? fVec15_ridx_tmp5 + 4455 : fVec15_ridx_tmp5)] + fVec15[((fVec15_ridx_tmp6 < 0) ? fVec15_ridx_tmp6 + 4455 : fVec15_ridx_tmp6)] * (fTemp160 + 1.0f - fTemp159) + 0.258992791f * fVec17[((fVec17_ridx_tmp4 < 0) ? fVec17_ridx_tmp4 + 3721 : fVec17_ridx_tmp4)]) - fRec13);
+			int iTemp160 = int(fTemp159);
+			int fVec15_ridx_tmp4 = fVec15_widx - std::min<int>(4454, std::max<int>(0, iTemp160));
+			float fTemp161 = std::floor(fTemp159);
+			int fVec15_ridx_tmp5 = fVec15_widx - std::min<int>(4454, std::max<int>(0, iTemp160 + 1));
+			int fVec15_ridx_tmp6 = fVec15_widx - 3620;
+			int fVec17_ridx_tmp4 = fVec17_widx - 2676;
+			float fRec6 = 0.600000024f * ((0.258992791f * fVec17[((fVec17_ridx_tmp3 < 0) ? fVec17_ridx_tmp3 + 3721 : fVec17_ridx_tmp3)] + 0.32520324f * fVec15[((fVec15_ridx_tmp3 < 0) ? fVec15_ridx_tmp3 + 4455 : fVec15_ridx_tmp3)] + fVec15[((fVec15_ridx_tmp4 < 0) ? fVec15_ridx_tmp4 + 4455 : fVec15_ridx_tmp4)] * (fTemp161 + 1.0f - fTemp159) + (fTemp159 - fTemp161) * fVec15[((fVec15_ridx_tmp5 < 0) ? fVec15_ridx_tmp5 + 4455 : fVec15_ridx_tmp5)] + 0.67479676f * fVec15[((fVec15_ridx_tmp6 < 0) ? fVec15_ridx_tmp6 + 4455 : fVec15_ridx_tmp6)] + 0.741007209f * fVec17[((fVec17_ridx_tmp4 < 0) ? fVec17_ridx_tmp4 + 3721 : fVec17_ridx_tmp4)]) - fRec13);
 			int fVec24_ridx_tmp1 = fVec24_widx - 2970;
 			float fTemp162 = 1330.28394f * fRec61[0];
 			int iTemp163 = int(fTemp162);
@@ -10595,8 +10544,7 @@ mooSpace::mooSpace() : AudioStream(FAUST_INPUTS, new audio_block_t*[FAUST_INPUTS
     fDSP = new mydsp();
 #endif
 #endif
-    // TeensyMemoryManager mem;
-    // mydsp::fManager = &mem;
+
     fDSP->init(AUDIO_SAMPLE_RATE_EXACT);
     
     fUI = new MapUI();
@@ -10612,7 +10560,7 @@ mooSpace::mooSpace() : AudioStream(FAUST_INPUTS, new audio_block_t*[FAUST_INPUTS
         fInChannel = NULL;
     }
     
-    // allocating Faust outputs
+    // allocating Faust outputs<
     if (fDSP->getNumOutputs() > 0) {
         fOutChannel = new float*[fDSP->getNumOutputs()];
         for (int i = 0; i < fDSP->getNumOutputs(); i++) {
@@ -10624,15 +10572,11 @@ mooSpace::mooSpace() : AudioStream(FAUST_INPUTS, new audio_block_t*[FAUST_INPUTS
     
 #ifdef MIDICTRL
     fMIDIHandler = new nemesis_midi();
-    //nemesis_midi midi_handler;
-    //MidiUI midi_interface(&midi_handler);
-    //fDSP->buildUserInterface(&midi_interface);
-    //midi_handler.startMidi();
+    fMIDIInterface = new MidiUI(fMIDIHandler);
+    fDSP->buildUserInterface(fMIDIInterface);
 #ifdef NVOICES
     fMIDIHandler->addMidiIn(dsp_poly);
 #endif
-    fMIDIInterface = new MidiUI(fMIDIHandler);
-    fDSP->buildUserInterface(fMIDIInterface);
     fMIDIInterface->run();
 #endif
 }
@@ -10661,10 +10605,7 @@ void mooSpace::updateImp(void)
 {
 #ifdef MIDICTRL
     fMIDIHandler->processMidi();
-    // Process the MIDI messages received by the Teensy
-    //fMIDIHandler->processMidi();
-    // Synchronize all GUI controllers
-    //GUI::updateAllGuis();
+    GUI::updateAllGuis();
 #endif
 #ifdef HIGHRES 
     if (INPUTS > 0) {
@@ -10750,6 +10691,16 @@ void mooSpace::setParamValue(const std::string& path, float value)
 float mooSpace::getParamValue(const std::string& path)
 {
     return fUI->getParamValue(path);
+}
+
+int mooSpace::getParamsCount()
+{
+    return fUI->getParamsCount();
+}
+
+const char* mooSpace::getParamAddress(int index)
+{
+    return fUI->getParamAddress1(index);
 }
 
 /********************END ARCHITECTURE SECTION (part 2/2)****************/

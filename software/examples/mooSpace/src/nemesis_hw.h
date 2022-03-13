@@ -16,14 +16,20 @@
 #include <array>
 #include <SPI.h>
 #include <Wire.h>
+#include <SmoothADC.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_SSD1306.h>
 #include <SourceCodeProItalic14.h>
 #include <SourceCodePro6.h>
 
-#define INT16_DIV 1.52587890625e-5
+#define INT14_DIV 6.103515625e-5
 #define INT9_DIV 1.953125e-3
+#define INT8_DIV 3.90625e-3
+
+#define CW(N)  (0x80+(N<<4)+0x0C) // +0x04 channel commands for unipolar mode
+
+const uint8_t adc_chan_word[7] = {CW(0), CW(4), CW(1), CW(5), CW(2), CW(3), CW(6)}; // last two channels swapped on v0.2
 
 // LTC1867 Single-Ended Channel Address
 #define LTC1867_CH0 0x80
@@ -68,7 +74,7 @@ public:
    static void initADC(void);
 
    // get 16 bit ADC value from last adc_command, send adc_command for next reading
-   static uint16_t getADC_raw(uint8_t adc_command);
+   static uint16_t getADC_raw(int next_chan);
 
    // POT XYZ: -> calibration not neccessary
    // CV A-D: 0V - 8.333V
@@ -76,6 +82,7 @@ public:
 
    static void scan_CV(void);
    static void scan_POT(void);
+   static void displayadc(void);
 
    // static uint16_t getADC_min(int idx);
    // static uint16_t getADC_max(int idx);

@@ -52,7 +52,7 @@ class mooSpace : public AudioStream {
     float** fOutChannel;
     MapUI*  fUI;
 #ifdef MIDICTRL
-    nemesis_midi* fMIDIHandler;
+    nemesis_midi* fMIDIHandler; //midi_handler
     MidiUI*       fMIDIInterface;
 #endif
     dsp* fDSP;
@@ -65,6 +65,8 @@ class mooSpace : public AudioStream {
 
     void  setParamValue(const std::string& path, float value);
     float getParamValue(const std::string& path);
+    int getParamsCount();
+    const char* getParamAddress(int index);
 };
 
 #endif
