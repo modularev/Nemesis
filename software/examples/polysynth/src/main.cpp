@@ -23,6 +23,10 @@ AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
 AudioConnection Lout_LSB(faustObj, 1, audio_out, 1);
 AudioConnection Rout_MSB(faustObj, 2, audio_out, 2);
 AudioConnection Rout_LSB(faustObj, 3, audio_out, 3);
+// AudioConnection ch3out_MSB(faustObj, 4, audio_out, 4);
+// AudioConnection ch3out_LSB(faustObj, 5, audio_out, 5);
+// AudioConnection ch4out_MSB(faustObj, 6, audio_out, 6);
+// AudioConnection ch4out_LSB(faustObj, 7, audio_out, 7);
 #else
 // AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
 // AudioConnection Rin_MSB(audio_in, 2, faustObj, 1);
@@ -211,12 +215,12 @@ void update()
    for (int p = 0; p < param_count; ++p)
    {
       //delay(100);
-      Serial.print(returnVal(param[p].second));
-      Serial.print("\t ");
+      // Serial.print(returnVal(param[p].second));
+      // Serial.print("\t ");
       faustObj.setParamValue(param[p].first, returnVal(param[p].second));
 
    }
-   Serial.println(AudioProcessorUsage());
+   //Serial.println(AudioProcessorUsage());
 }
 int i = 0;
 void loop()

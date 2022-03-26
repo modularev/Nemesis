@@ -66,7 +66,7 @@ class mooSpace : public AudioStream {
     void  setParamValue(const std::string& path, float value);
     float getParamValue(const std::string& path);
     int getParamsCount();
-    const char* getParamAddress(int index);
+    std::string getParamAddress(int index);
 };
 
 #endif
