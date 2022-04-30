@@ -14,6 +14,7 @@
 #include <Audio.h>
 #include <EEPROM.h>
 #include <array>
+#include <vector>
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -65,6 +66,7 @@ ADC *adc = new ADC();
 // Setup OLED
 Adafruit_SSD1306 display(128, 32, &Wire, -1);
 
+class abstractAudioClass;
 
 namespace nemesis
 {
@@ -78,7 +80,6 @@ namespace nemesis
 
    // setup AudioControlCS42448 as the main codec
    static AudioControlCS42448 codec;
-
 
    // get 16 bit ADC value from last adc_command, send adc_command for next reading
    uint16_t getADC_raw(int next_chan)
@@ -112,29 +113,28 @@ namespace nemesis
       return (double)((0x3FFF - (raw_val >> 2)) & 0x3FFF) * INT14_DIV;
    }
 
-   
-   #define LTC_SMOO 0.5f
+#define LTC_SMOO 0.5f
    SPISettings LTC_SPI(8000000, MSBFIRST, SPI_MODE0);
    int next_cv_index = 0;
    uint16_t _raw_cv[CV_NUM];
    float cv_val[7];
-   
+
    void scan_CV()
    {
       digitalWriteFast(PIN_SPI_SS, LOW);
 
       int current_chan = next_cv_index++;
-      if(next_cv_index >= CV_NUM) next_cv_index = 0;
+      if (next_cv_index >= CV_NUM)
+         next_cv_index = 0;
 
       SPI.beginTransaction(LTC_SPI);
       _raw_cv[current_chan] = SPI.transfer16((adc_chan_word[next_cv_index]) << 8);
-      
+
       // trigger next ADC conversion
       digitalWriteFast(PIN_SPI_SS, HIGH);
       SPI.endTransaction();
 
       cv_val[current_chan] = LTC_SMOO * scale_ADC(_raw_cv[current_chan]) + (1 - LTC_SMOO) * cv_val[current_chan];
-
    }
 
 #define SMOO_FACTOR 0.8f
@@ -156,14 +156,14 @@ namespace nemesis
       pot_raw[current_pot] = adc->analogRead(pot_pin[current_pot]); // * INT9_DIV;      // read sensor value
       pot_readings[current_pot][pot_index[current_pot]] = pot_raw[current_pot];
       pot_sum[current_pot] = pot_sum[current_pot] + pot_readings[current_pot][pot_index[current_pot]];
-      
+
       pot_index[current_pot]++;
       if (pot_index[current_pot] >= WINDOW_SIZE)
          pot_index[current_pot] = 0;
-      
+
       pot_smoo[current_pot] = (pot_sum[current_pot] / WINDOW_SIZE);
       pot_val[current_pot] = SMOO_FACTOR * ((float)pot_smoo[current_pot] * INT12_DIV) + (1 - SMOO_FACTOR) * pot_val[current_pot];
-      
+
       current_pot++;
       if (current_pot >= POT_NUM)
          current_pot = 0;
@@ -176,25 +176,25 @@ namespace nemesis
       // cv_val[0] = scale_ADC(getADC_raw(LTC1867_CH1));
       // cv_val[1] = scale_ADC(getADC_raw(LTC1867_CH0));
       display.setCursor(0, 7);
-      //cv_val[0] = scale_ADC(getADC_raw(1));
+      // cv_val[0] = scale_ADC(getADC_raw(1));
       display.println(cv_val[0], 3);
       display.setCursor(0, 17);
-      //cv_val[1] = scale_ADC(getADC_raw(2));
+      // cv_val[1] = scale_ADC(getADC_raw(2));
       display.println(cv_val[1]);
       display.setCursor(0, 27);
-      //cv_val[2] = scale_ADC(getADC_raw(3));
+      // cv_val[2] = scale_ADC(getADC_raw(3));
       display.println(cv_val[2]);
       display.setCursor(32, 7);
-      //cv_val[3] = scale_ADC(getADC_raw(4));
+      // cv_val[3] = scale_ADC(getADC_raw(4));
       display.println(cv_val[3]);
       display.setCursor(32, 17);
-      //cv_val[4] = scale_ADC(getADC_raw(5));
+      // cv_val[4] = scale_ADC(getADC_raw(5));
       display.println(cv_val[4]);
       display.setCursor(32, 27);
-      //cv_val[5] = scale_ADC(getADC_raw(6));
+      // cv_val[5] = scale_ADC(getADC_raw(6));
       display.println(cv_val[5]);
       display.setCursor(64, 7);
-      //cv_val[6] = scale_ADC(getADC_raw(0));
+      // cv_val[6] = scale_ADC(getADC_raw(0));
       display.println(cv_val[6]);
 
       display.setCursor(64, 27);

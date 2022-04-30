@@ -7,32 +7,72 @@
 #include <utility/imxrt_hw.h>
 #include "mono_voice.h"
 #include <typeinfo>
+#include <list>
+#include <memory>
+
+//class audioObjects : public mono_voice{};
 
 // Audio Connections
 //
-// AudioInputTDM audio_in;
+AudioInputTDM audio_in;
 AudioOutputTDM audio_out;
-mono_voice faustObj;
+std::list<AudioConnection*> patch_cords;
 
-#ifdef HIGHRES
-// AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
-// AudioConnection Lin_LSB(audio_in, 1, faustObj, 1);
-// AudioConnection Rin_MSB(audio_in, 2, faustObj, 2);
-// AudioConnection Rin_LSB(audio_in, 3, faustObj, 3);
-AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
-AudioConnection Lout_LSB(faustObj, 1, audio_out, 1);
-AudioConnection Rout_MSB(faustObj, 2, audio_out, 2);
-AudioConnection Rout_LSB(faustObj, 3, audio_out, 3);
-// AudioConnection ch3out_MSB(faustObj, 4, audio_out, 4);
-// AudioConnection ch3out_LSB(faustObj, 5, audio_out, 5);
-// AudioConnection ch4out_MSB(faustObj, 6, audio_out, 6);
-// AudioConnection ch4out_LSB(faustObj, 7, audio_out, 7);
-#else
-// AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
-// AudioConnection Rin_MSB(audio_in, 2, faustObj, 1);
-AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
-AudioConnection Rout_MSB(faustObj, 1, audio_out, 2);
-#endif
+std::vector<abstractAudioClass*> faust_objects;
+mono_voice synthA;
+abstractAudioClass *AudioObject[] = {&synthA};
+
+//mono_voice faustObj;
+
+// void initAudioObjects(){
+//    for (unsigned int i = 0; i < faust_objects.size(); i++){
+//       faust_objects.emplace_back(AudioObjects[i]);
+//    }
+// }
+
+
+void removeConnections(){
+   for(auto cord : patch_cords){
+      delete cord;
+      patch_cords.clear();
+   }
+}
+
+int activePatch = 0;
+
+void addConnections(){
+   int inputs = 2;
+   int outputs = 2;   
+   removeConnections();
+   for(int i = 0 ; i < inputs ; i++){
+      patch_cords.push_back(new AudioConnection(audio_in, i, AudioObject[activePatch], i));
+   }
+   for(int i = 0 ; i < outputs ; i++){
+      patch_cords.push_back(new AudioConnection(AudioObject[activePatch], i, audio_out, i));
+   }
+}
+
+//mono_voice faustObj;
+
+// #ifdef HIGHRES
+// // AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
+// // AudioConnection Lin_LSB(audio_in, 1, faustObj, 1);
+// // AudioConnection Rin_MSB(audio_in, 2, faustObj, 2);
+// // AudioConnection Rin_LSB(audio_in, 3, faustObj, 3);
+// AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
+// AudioConnection Lout_LSB(faustObj, 1, audio_out, 1);
+// AudioConnection Rout_MSB(faustObj, 2, audio_out, 2);
+// AudioConnection Rout_LSB(faustObj, 3, audio_out, 3);
+// // AudioConnection ch3out_MSB(faustObj, 4, audio_out, 4);
+// // AudioConnection ch3out_LSB(faustObj, 5, audio_out, 5);
+// // AudioConnection ch4out_MSB(faustObj, 6, audio_out, 6);
+// // AudioConnection ch4out_LSB(faustObj, 7, audio_out, 7);
+// #else
+// // AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
+// // AudioConnection Rin_MSB(audio_in, 2, faustObj, 1);
+// AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
+// AudioConnection Rout_MSB(faustObj, 1, audio_out, 2);
+// #endif
 
 //
 // Parameters from Faust
@@ -98,7 +138,7 @@ float returnVal(int hw_num)
    }
 }
 
-#include <vector>
+
 
 std::vector<std::pair<std::string, int>> param;
 
@@ -106,12 +146,12 @@ void pathFinder()
 {
    for (int i = 0; i < 11; i++)
    {
-      for (int p = 0; p < faustObj.getParamsCount(); ++p)
+      for (int p = 0; p < AudioObject[activePatch].getParamsCount(); ++p)
       {
-         size_t found = faustObj.getParamAddress(p).find(hwParams[i]);
+         size_t found = AudioObject[activePatch].getParamAddress(p).find(hwParams[i]);
          if (found != std::string::npos)
          {
-            param.emplace_back(std::make_pair(faustObj.getParamAddress(p), i));
+            param.emplace_back(std::make_pair(AudioObject[activePatch].getParamAddress(p), i));
             break;
          }
       }
@@ -217,7 +257,7 @@ void update()
       //delay(100);
       // Serial.print(returnVal(param[p].second));
       // Serial.print("\t ");
-      faustObj.setParamValue(param[p].first, returnVal(param[p].second));
+      AudioObject[activePatch].setParamValue(param[p].first, returnVal(param[p].second));
 
    }
    //Serial.println(AudioProcessorUsage());
