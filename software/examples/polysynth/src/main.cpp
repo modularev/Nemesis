@@ -199,7 +199,7 @@ void setup()
    codec.enable();
    codec.write(0x03, 0xF4 | 0x01);
    codec.write(0x05, 0x00);
-   codec.filterFreeze();
+   //codec.filterFreeze();
    codec.volume(1.);
    // init_POT();
    // while (!Serial)
@@ -220,7 +220,7 @@ void update()
       faustObj.setParamValue(param[p].first, returnVal(param[p].second));
 
    }
-   //Serial.println(AudioProcessorUsage());
+   Serial.println(AudioProcessorUsageMax());
 }
 int i = 0;
 void loop()

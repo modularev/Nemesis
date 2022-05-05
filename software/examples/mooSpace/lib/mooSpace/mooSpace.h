@@ -33,17 +33,34 @@
 #include "Arduino.h"
 #include "Audio.h"
 #include "AudioStream.h"
+//#include "nemesis_hw.h"
+#include <vector>
 
 class dsp;
 class MapUI;
 
-#ifdef MIDICTRL
+// #ifndef CREATE_ABSTRACT
+// class abstractAudioClass{
+// public:
+//    abstractAudioClass();
+//    ~abstractAudioClass();
+//    virtual void update(void);
 
+//    void setParamValue(const std::string &path, float value);
+//    float getParamValue(const std::string &path);
+//    int getParamsCount();
+//    std::string getParamAddress(int index);
+// };
+// #define CREATE_ABSTRACT
+// #endif
+
+
+#ifdef MIDICTRL
 class MidiUI;
 class nemesis_midi;
 #endif
 
-class mooSpace : public AudioStream {
+class mooSpace :  public AudioStream { // public abstractAudioClass,
    private:
     template <int INPUTS, int OUTPUTS>
     void updateImp(void);

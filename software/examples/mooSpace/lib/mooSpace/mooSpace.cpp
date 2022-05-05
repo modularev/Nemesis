@@ -3,7 +3,7 @@ author: "Arev Imer (arev.imer@students.fhnw.ch)"
 copyright: "Arev"
 name: "mooSpace"
 version: "0.2"
-Code generated with Faust 2.39.10 (https://faust.grame.fr)
+Code generated with Faust 2.40.0 (https://faust.grame.fr)
 Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -es 1 -mcd 16 -uim -single -ftz 0
 ------------------------------------------------------------ */
 
@@ -8572,7 +8572,7 @@ struct dsp_voice_group {
             ui_interface->closeBox();
 
             // If not grouped, also add individual voices UI
-            if (!fGroupControl || dynamic_cast<SoundUIInterface*>(ui_interface)) {
+            if (!fGroupControl /*||dynamic_cast<SoundUIInterface*>(ui_interface)*/) {
                 for (size_t i = 0; i < fVoiceTable.size(); i++) {
                     char buffer[32];
                     snprintf(buffer, 32, ((fVoiceTable.size() < 8) ? "Voice%ld" : "V%ld"), long(i+1));
@@ -8920,10 +8920,10 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
         void buildUserInterface(UI* ui_interface)
         {
             // MidiUI ui_interface contains the midi_handler connected to the MIDI driver
-            if (dynamic_cast<midi_interface*>(ui_interface)) {
-                fMidiHandler = dynamic_cast<midi_interface*>(ui_interface);
-                fMidiHandler->addMidiIn(this);
-            }
+            // if (dynamic_cast<midi_interface*>(ui_interface)) {
+            //     fMidiHandler = dynamic_cast<midi_interface*>(ui_interface);
+            //     fMidiHandler->addMidiIn(this);
+            // }
             dsp_voice_group::buildUserInterface(ui_interface);
         }
 
@@ -10138,9 +10138,9 @@ class mydsp : public dsp {
 			fRec4[0] = 1.5f * fRec9[0] * fVec26[(IOTA0 - 3163) & 4095];
 			float fRec5 = 0.600000024f * (0.0f - (0.902578771f * fVec17[(IOTA0 - 1066) & 4095] + 0.860986531f * fVec15[(IOTA0 - 1997) & 8191] + fRec12 + 0.139013454f * fVec15[(IOTA0 - 1996) & 8191] + 0.0974212065f * fVec17[(IOTA0 - 1065) & 4095]));
 			float fTemp159 = 1765.66223f * fRec61[0];
-			float fTemp160 = std::floor(fTemp159);
-			int iTemp161 = int(fTemp159);
-			float fRec6 = 0.600000024f * ((0.32520324f * fVec15[(IOTA0 - 3621) & 8191] + 0.67479676f * fVec15[(IOTA0 - 3620) & 8191] + (fTemp159 - fTemp160) * fVec15[(IOTA0 - std::min<int>(4454, std::max<int>(0, iTemp161 + 1))) & 8191] + fVec15[(IOTA0 - std::min<int>(4454, std::max<int>(0, iTemp161))) & 8191] * (fTemp160 + 1.0f - fTemp159) + 0.741007209f * fVec17[(IOTA0 - 2676) & 4095] + 0.258992791f * fVec17[(IOTA0 - 2677) & 4095]) - fRec13);
+			int iTemp160 = int(fTemp159);
+			float fTemp161 = std::floor(fTemp159);
+			float fRec6 = 0.600000024f * ((0.258992791f * fVec17[(IOTA0 - 2677) & 4095] + 0.32520324f * fVec15[(IOTA0 - 3621) & 8191] + fVec15[(IOTA0 - std::min<int>(4454, std::max<int>(0, iTemp160))) & 8191] * (fTemp161 + 1.0f - fTemp159) + (fTemp159 - fTemp161) * fVec15[(IOTA0 - std::min<int>(4454, std::max<int>(0, iTemp160 + 1))) & 8191] + 0.67479676f * fVec15[(IOTA0 - 3620) & 8191] + 0.741007209f * fVec17[(IOTA0 - 2676) & 4095]) - fRec13);
 			float fTemp162 = 1330.28394f * fRec61[0];
 			int iTemp163 = int(fTemp162);
 			float fTemp164 = std::floor(fTemp162);
@@ -10282,8 +10282,12 @@ class mydsp : public dsp {
 #define MULT_16 2147483648u
 #define DIV_16 4.656612873077392578125e-10
 
+
+#ifndef ARM_exidx
+#define ARM_exidx
 unsigned __exidx_start;
 unsigned __exidx_end;
+#endif
 
 #ifdef MIDICTRL
 
@@ -10425,7 +10429,7 @@ void mooSpace::updateImp(void)
             inBlock[channel] = receiveReadOnly(channel);
             if (inBlock[channel]) {
                 for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                    uint32_t val = inBlock[channel]->data[i] << 16;
+                    int32_t val = inBlock[channel]->data[i] << 16;
                     fInChannel[channel][i] = val*DIV_16;
                 }
                 release(inBlock[channel]);
@@ -10442,7 +10446,7 @@ void mooSpace::updateImp(void)
         outBlock[channel] = allocate();
         if (outBlock[channel]) {
             for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                uint32_t val = fOutChannel[channel][i]*MULT_16;
+                int32_t val = fOutChannel[channel][i]*MULT_16;
                 outBlock[channel]->data[i] = val >> 16;
             }
             transmit(outBlock[channel], channel);

@@ -153,7 +153,8 @@ namespace nemesis
    void scan_POT()
    {
       pot_sum[current_pot] = pot_sum[current_pot] - pot_readings[current_pot][pot_index[current_pot]];
-      pot_raw[current_pot] = adc->analogRead(pot_pin[current_pot]); // * INT9_DIV;      // read sensor value
+      int adc_measure = adc->analogRead(pot_pin[current_pot]);
+      if(adc_measure > 20) pot_raw[current_pot] = adc_measure; else pot_raw[current_pot] = 0; // * INT9_DIV;      // read sensor value
       pot_readings[current_pot][pot_index[current_pot]] = pot_raw[current_pot];
       pot_sum[current_pot] = pot_sum[current_pot] + pot_readings[current_pot][pot_index[current_pot]];
       
