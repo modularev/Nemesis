@@ -13,8 +13,12 @@
 #include <Arduino.h>
 #include <Audio.h>
 #include <EEPROM.h>
-#include <RunningMedian.h>
+#include <utility/imxrt_hw.h>
+// #include <RunningMedian.h>
 #include <array>
+
+
+
 
 constexpr int analog_pin[9] = {
     A0, A1, A2, A10, A11, A12, A13, A14, A15};
@@ -30,7 +34,6 @@ void writeIntIntoEEPROM(uint8_t address, uint16_t number);
 
 class nemesis
 {
-
 public:
    static bool init(void);
    static void setSampleRate(int freq);
@@ -39,7 +42,7 @@ public:
    static AudioControlCS42448 codec;
    static uint16_t getADC_min(int idx);
    static uint16_t getADC_max(int idx);
-   static RunningMedian smoo[9];
+   // static RunningMedian smoo[9];
 
 private:
    // static uint16_t *adc_max;
