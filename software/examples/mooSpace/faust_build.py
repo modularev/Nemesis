@@ -3,7 +3,7 @@
 
 import subprocess
 
-buildLib = 'rm -r lib; for i in src/*.dsp; do faust2nemesis -ext -hr -dlt 16  "$i"; done' # -ext statement for accessing PSRAM on teensy 4.1 not available in official faust release (status: feb '21)
+buildLib = 'rm -r lib; for i in src/*.dsp; do faust2nemesis -mem -hr "$i"; done' # -ext statement for accessing PSRAM on teensy 4.1 not available in official faust release (status: feb '21)
 
 # move = 'mv *.zip lib'
 # unpack = 'unzip -o lib/*.zip -d lib && rm lib/*.zip'

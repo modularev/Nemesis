@@ -1,4 +1,3 @@
-#define USEPSRAM
 #define HIGHRES
 /************************************************************************
  FAUST Architecture File
@@ -28,50 +27,37 @@
 #define faust_mooSpace_h_
 
 #include <string>
-
 #include "Arduino.h"
 #include "Audio.h"
 #include "AudioStream.h"
-//#include "nemesis_hw.h"
-#include <vector>
 
-class dsp;
+//class dsp;
+class mydsp;
 class MapUI;
-
-// #ifndef CREATE_ABSTRACT
-// class abstractAudioClass{
-// public:
-//    abstractAudioClass();
-//    ~abstractAudioClass();
-//    virtual void update(void);
-
-//    void setParamValue(const std::string &path, float value);
-//    float getParamValue(const std::string &path);
-//    int getParamsCount();
-//    std::string getParamAddress(int index);
-// };
-// #define CREATE_ABSTRACT
-// #endif
-
 
 #ifdef MIDICTRL
 class MidiUI;
 class nemesis_midi;
 #endif
 
-class mooSpace :  public AudioStream { // public abstractAudioClass,
+#include <vector>
+
+class mooSpace : public AudioStream {
+
    private:
+    
     template <int INPUTS, int OUTPUTS>
     void updateImp(void);
 
     float** fInChannel;
     float** fOutChannel;
+    //mydsp* monoDSP;
+    mydsp* fDSP;
     MapUI*  fUI;
 #ifdef MIDICTRL
-    nemesis_midi* fMIDIHandler; //midi_handler
-    MidiUI*       fMIDIInterface;
+    nemesis_midi*   fMIDIHandler;
+    MidiUI*  fMIDIInterface;
 #endif
-    dsp* fDSP;
 
    public:
     mooSpace();
@@ -81,8 +67,6 @@ class mooSpace :  public AudioStream { // public abstractAudioClass,
 
     void  setParamValue(const std::string& path, float value);
     float getParamValue(const std::string& path);
-    int getParamsCount();
-    std::string getParamAddress(int index);
 };
 
 #endif

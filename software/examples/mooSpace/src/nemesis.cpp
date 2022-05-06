@@ -37,16 +37,23 @@ uint16_t readIntFromEEPROM(uint8_t address)
 
 bool nemesis::init(void)
 {
+   setPSRAMspeed();
+   delay(10);
    AudioMemory(100); //832 max
-   nemesis::codec.enable();
-   nemesis::codec.write(0x03, 0xF4 | 0x01);
-   nemesis::codec.write(0x05, 0x00);
-   // set pin modes
+   delay(10);
+      // set pin modes
    for (int i = 0; i < 3; i++)
    {
       pinMode(led_pin[i], OUTPUT);
       pinMode(switch_pin[i], INPUT);
    }
+   nemesis::codec.enable();
+   nemesis::codec.write(0x02, 0xFF);
+   nemesis::codec.write(0x03, 0xF4 | 0x01);
+   nemesis::codec.write(0x05, 0x00);
+   nemesis::codec.write(0x02, 0);
+
+
 
 
    // initialize 
@@ -56,7 +63,6 @@ bool nemesis::init(void)
       adc_max[i] = 5;
    }   
 
-   setPSRAMspeed();
    return true;
 }
 
@@ -145,14 +151,14 @@ void nemesis::loadCalibration(void)
    }
 }
 
-void nemesis::setPSRAMspeed(void)
-{
-   //Set SPI to 180Mhz
-   CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_OFF);
-   CCM_CBCMR = (CCM_CBCMR & ~(CCM_CBCMR_FLEXSPI2_PODF_MASK | CCM_CBCMR_FLEXSPI2_CLK_SEL_MASK)) | CCM_CBCMR_FLEXSPI2_PODF(3) // 4 and 2 133MHz
-               | CCM_CBCMR_FLEXSPI2_CLK_SEL(1);
-   CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_ON);
-}
+   void nemesis::setPSRAMspeed(void)
+   {
+      // Set SPI2 to 180Mhz
+      CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_OFF);
+      CCM_CBCMR = (CCM_CBCMR & ~(CCM_CBCMR_FLEXSPI2_PODF_MASK | CCM_CBCMR_FLEXSPI2_CLK_SEL_MASK)) | CCM_CBCMR_FLEXSPI2_PODF(3) // 4 and 2 133MHz
+                  | CCM_CBCMR_FLEXSPI2_CLK_SEL(1);
+      CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_ON);
+   }
 
 // void nemesis::setSampleRate(int freq)
 // { // code by Frank B https://forum.pjrc.com/threads/38753-Discussion-about-a-simple-way-to-change-the-sample-rate?p=266346&viewfull=1#post266346

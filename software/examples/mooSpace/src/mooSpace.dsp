@@ -4,19 +4,17 @@ declare author "Arev Imer (arev.imer@students.fhnw.ch)";
 declare copyright "Arev";
 declare version "0.3";
 
-declare options "[midi:on]";
-
 import("stdfaust.lib");
 
 MAX_DIFF 	= 9.5;
 MAX_LATE 	= 5;
-MAX_MOD		= -.5;
+MAX_MOD		= .5;
 MAX_LAG		= 2^15-2;
-diff_mult 	= hslider("smear[midi:ctrl 11]", 0.5, 0, 1, 0.001) : si.smoo :_ * MAX_DIFF : _ + shift;
+diff_mult 	= hslider("smear", 0.5, 0, 1, 0.001) : si.smooth(0.998) :_ * MAX_DIFF : min(MAX_DIFF,max(0,_ - shift));
 late_diff 	= hslider("drag", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_LATE ;
 
 mod = 0;
-shift			= hslider("modulate", 0.02, 0, 1, 0.001) : _-0.5 : *(2) :  pow(_,3) : si.smoo * MAX_MOD * sine
+shift			= hslider("modulate", 0.02, 0, 1, 0.001) : _-0.5 : *(2) :  pow(_,3) : si.smoo * sine
 	with {
 		rand = (0.5 * (1 + no.lfnoiseN(3,5)));
 		sine = os.lf_sawpos(133) ;// * ma.PI : (sin + 1)*0.5;

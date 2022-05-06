@@ -3,8 +3,8 @@ author: "Arev Imer (arev.imer@students.fhnw.ch)"
 copyright: "Arev"
 name: "mooSpace"
 version: "0.3"
-Code generated with Faust 2.40.7 (https://faust.grame.fr)
-Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -dtl 16 -es 1 -mcd 16 -uim -single -ftz 0
+Code generated with Faust 2.40.8 (https://faust.grame.fr)
+Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -mem -dtl 0 -es 1 -mcd 16 -uim -single -ftz 0
 ------------------------------------------------------------ */
 
 #ifndef  __mydsp_H__
@@ -47,7 +47,11 @@ Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i 
 
 #include <string.h> // for memset
 
+//using namespace std;
+
+
 #include "mooSpace.h"
+
 
 // IMPORTANT: in order for MapUI to work, the teensy linker must be g++
 /************************** BEGIN MapUI.h ******************************
@@ -298,10 +302,12 @@ class PathBuilder
         {
             std::vector<std::string>           uniquePaths;  // all full paths transformed but made unique with a prefix
             std::map<std::string, std::string> unique2full;  // all full paths transformed but made unique with a prefix
+            char num_buffer[8];
             int pnum = 0;
         
             for (const auto& s : fFullPaths) {
-                std::string u = "/P" + std::to_string(pnum++) + str2ID(remove0x00(s));
+                sprintf(num_buffer, "%d", pnum++);
+                std::string u = "/P" + std::string(num_buffer) + str2ID(remove0x00(s));
                 uniquePaths.push_back(u);
                 unique2full[u] = s;  // remember the full path associated to a unique path
             }
@@ -962,10 +968,6 @@ class ScopedNoDenormals
 
 /************************** END dsp.h **************************/
 
-//using namespace std;
-
-// MIDI support
-#ifdef MIDICTRL
 
 /************************** BEGIN MidiUI.h ****************************
 FAUST Architecture File
@@ -3044,7 +3046,7 @@ class GUI : public UI
             
         GUI():fStopped(false)
         {	
-            static std::list<GUI*> fGuiList;
+            std::list<GUI*> fGuiList;
             fGuiList.push_back(this);
         }
         
@@ -3287,7 +3289,7 @@ class uiTimedItem : public uiItem
         uiTimedItem(GUI* ui, FAUSTFLOAT* zone):uiItem(ui, zone)
         {
             if (GUI::gTimedZoneMap.find(fZone) == GUI::gTimedZoneMap.end()) {
-                // GUI::gTimedZoneMap[fZone] = ringbuffer_create(8192);
+                //GUI::gTimedZoneMap[fZone] = ringbuffer_create(8192);
                 fDelete = true;
             } else {
                 fDelete = false;
@@ -5358,6 +5360,9 @@ class MidiUI : public GUI, public midi, public midi_interface, public MetaDataUI
 
 #endif // FAUST_MIDIUI_H
 /**************************  END  MidiUI.h **************************/
+
+// MIDI support
+#ifdef MIDICTRL
 /************************** BEGIN nemesis-midiInterface.h ***************************
 FAUST Architecture File
 Copyright (C) 2003-2022 GRAME, Centre National de Creation Musicale
@@ -5397,7 +5402,7 @@ architecture section is not modified.
 class nemesis_midi : public midi_handler {
    
    private:
-       
+
     using MidiTransport = MIDI_NAMESPACE::SerialMIDI<HardwareSerial>;
     using MidiInterface = MIDI_NAMESPACE::MidiInterface<MidiTransport>;
 
@@ -5437,7 +5442,9 @@ class nemesis_midi : public midi_handler {
                     handlePolyAfterTouch(time, midiInterface.getChannel(), midiInterface.getData1(), midiInterface.getData2());
                     break;
                 case 0xB0:  // Control Change
+                    digitalWrite(34, HIGH);
                     handleCtrlChange(time, midiInterface.getChannel(), midiInterface.getData1(), midiInterface.getData2());
+                    digitalWrite(34, LOW);
                     break;
                 case 0xC0:  // Program Change // No Bank Select in faust?
                     handleProgChange(time, midiInterface.getChannel(), midiInterface.getData1());
@@ -5457,6 +5464,36 @@ class nemesis_midi : public midi_handler {
 
 #endif
 /**************************  END  nemesis-midiInterface.h **************************/
+// private:
+
+//      double time = 0.;
+//      void NemesisHandleProgChange(byte channel, byte byte1){
+//          handleProgChange(time, channel, byte1);
+//      }
+//      void NemesisHandleCtrlChange(byte channel, byte byte1, byte byte2){
+//          handleCtrlChange(time, channel, byte1, byte2);
+//      }
+//      void NemesisHandleAfterTouch(byte channel, byte byte1){
+//          handleAfterTouch(time, channel, byte1);
+//      }
+//      void NemesisHandleNoteOn(byte channel, byte byte1, byte byte2){
+//          handleKeyOn(time, channel, byte1, byte2);
+//      }
+//      void NemesisHandleNoteOff(byte channel, byte byte1, byte byte2){
+//          handleKeyOff(time, channel, byte1, byte2);
+//      }
+//      void NemesisHandlePitchWheel(byte channel, byte byte1, byte byte2){
+//          handlePitchWheel(time, channel, byte1, byte2);
+//      }
+//     double time = 0.;
+//     // midiInterface.setHandleClock();
+//     // midiInterface.setHandleStart();
+//     midiInterface.setHandleProgramChange(NemesisHandleProgChange);
+//     midiInterface.setHandleControlChange(NemesisHandleCtrlChange);
+//     midiInterface.setHandleAfterTouchPoly(NemesisHandleAfterTouch);
+//     midiInterface.setHandleNoteOn(NemesisHandleNoteOn);
+//     midiInterface.setHandleNoteOff(NemesisHandleNoteOff);
+//     midiInterface.setHandlePitchBend(NemesisHandlePitchWheel);
 #endif
 
 // for polyphonic synths
@@ -8507,7 +8544,7 @@ struct JSONControl {
 #define kLegatoVoice   -3
 #define kNoVoice       -4
 
-#define VOICE_STOP_LEVEL  0.001    // -70 db
+#define VOICE_STOP_LEVEL  0.0005    // -70 db
 #define MIX_BUFFER_SIZE   4096
 
 /**
@@ -8836,7 +8873,7 @@ struct dsp_voice_group {
             ui_interface->closeBox();
 
             // If not grouped, also add individual voices UI
-            if (!fGroupControl /*||dynamic_cast<SoundUIInterface*>(ui_interface)*/) {
+            if (!fGroupControl || dynamic_cast<SoundUIInterface*>(ui_interface)) {
                 for (size_t i = 0; i < fVoiceTable.size(); i++) {
                     char buffer[32];
                     snprintf(buffer, 32, ((fVoiceTable.size() < 8) ? "Voice%ld" : "V%ld"), long(i+1));
@@ -9184,10 +9221,10 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
         void buildUserInterface(UI* ui_interface)
         {
             // MidiUI ui_interface contains the midi_handler connected to the MIDI driver
-            // if (dynamic_cast<midi_interface*>(ui_interface)) {
-            //     fMidiHandler = dynamic_cast<midi_interface*>(ui_interface);
-            //     fMidiHandler->addMidiIn(this);
-            // }
+            if (dynamic_cast<midi_interface*>(ui_interface)) {
+                fMidiHandler = dynamic_cast<midi_interface*>(ui_interface);
+                fMidiHandler->addMidiIn(this);
+            }
             dsp_voice_group::buildUserInterface(ui_interface);
         }
 
@@ -9518,7 +9555,47 @@ struct dsp_poly_factory : public dsp_factory {
 #define FAUST_ADDVERTICALBARGRAPH(l,f,a,b)
 #define FAUST_ADDHORIZONTALBARGRAPH(l,f,a,b)
 
+/* Simple heap based memory manager.
+ * Uses overloaded new/delete operators on Teensy.
+ */
 
+//constexpr size_t bufSize = sizeof(mydsp);
+// EXTMEM uint8_t myHeap[1024*1024];
+// DMAMEM uint8_t dmaHeap[256*1024];
+
+struct NemesisMemoryManager : public dsp_memory_manager {
+    virtual void begin(size_t count)
+    {
+        // TODO: use ‘count’
+    }
+
+    virtual void end()
+    {
+        // TODO: start sorting the list of memory zones, to prepare 
+        // for the future allocations done in memoryCreate()
+    }
+
+    virtual void info(size_t size, size_t reads, size_t writes)
+    {
+        // TODO: use 'size', ‘reads’ and ‘writes’
+        // to prepare memory layout for allocation
+    }    
+
+    virtual void* allocate(size_t size)
+    {
+        if (size > 32) {
+            return extmem_malloc(size);
+        }
+        else {
+            return malloc(size);
+        } 
+    }
+    
+    virtual void destroy(void* ptr)
+    {   
+        extmem_free(ptr);// falls back to free(ptr) if address is on RAM2
+    }
+};
 /******************************************************************************
  *******************************************************************************
  
@@ -9572,180 +9649,181 @@ class mydsp : public dsp {
 	float fConst1;
 	FAUSTFLOAT fHslider0;
 	float fConst2;
-	float fRec6[2];
+	float* fRec6;
 	FAUSTFLOAT fHslider1;
-	float fRec12[2];
+	float* fRec12;
 	int fVec0_widx;
-	float fVec0[1436];
+	float* fVec0;
 	FAUSTFLOAT fHslider2;
-	float fRec23[2];
-	float fConst3;
-	float fRec24[2];
+	float* fRec23;
 	FAUSTFLOAT fHslider3;
-	float fRec25[2];
-	float fRec21[2];
+	float* fRec24;
+	float fConst3;
+	float* fRec25;
+	float* fRec21;
 	int fVec1_widx;
-	float fVec1[961];
-	float fRec19[2];
+	float* fVec1;
+	float* fRec19;
 	int fVec2_widx;
-	float fVec2[3488];
-	float fRec17[2];
+	float* fVec2;
+	float* fRec17;
 	int fVec3_widx;
-	float fVec3[2671];
-	float fRec15[2];
+	float* fVec3;
+	float* fRec15;
 	float fConst4;
 	float fConst5;
 	int fVec4_widx;
-	float fVec4[1417];
-	float fRec35[2];
+	float* fVec4;
+	float* fRec35;
 	int fVec5_widx;
-	float fVec5[1075];
-	float fRec33[2];
+	float* fVec5;
+	float* fRec33;
 	int fVec6_widx;
-	float fVec6[3773];
-	float fRec31[2];
+	float* fVec6;
+	float* fRec31;
 	int fVec7_widx;
-	float fVec7[2690];
-	float fRec29[2];
+	float* fVec7;
+	float* fRec29;
 	float fConst6;
 	float fConst7;
-	float fRec28[2];
-	float fRec27[2];
-	float fRec26[2];
+	float* fRec28;
+	float* fRec27;
+	float* fRec26;
 	FAUSTFLOAT fHslider4;
-	float fRec47[2];
+	float* fRec47;
 	int fVec8_widx;
-	float fVec8[32768];
+	float* fVec8;
 	FAUSTFLOAT fHslider5;
-	float fRec48[2];
+	float* fRec48;
 	FAUSTFLOAT fHslider6;
-	float fRec49[2];
+	float* fRec49;
 	int fVec9_widx;
-	float fVec9[1350];
-	float fRec45[2];
+	float* fVec9;
+	float* fRec45;
 	int fVec10_widx;
-	float fVec10[1018];
-	float fRec43[2];
+	float* fVec10;
+	float* fRec43;
 	int fVec11_widx;
-	float fVec11[3602];
-	float fRec41[2];
+	float* fVec11;
+	float* fRec41;
 	int fVec12_widx;
-	float fVec12[2633];
-	float fRec39[2];
-	float fVec13[2];
-	float fRec38[2];
+	float* fVec12;
+	float* fRec39;
+	float* fVec13;
+	float* fRec38;
 	float fConst8;
 	FAUSTFLOAT fHslider7;
-	float fRec50[2];
-	float fRec37[3];
-	float fRec51[3];
+	float* fRec50;
+	float* fRec37;
+	float* fRec51;
 	float fConst9;
 	float fConst10;
 	float fConst11;
-	float fRec54[2];
-	float fRec53[2];
-	float fRec52[2];
+	float* fRec54;
+	float* fRec53;
+	float* fRec52;
 	float fConst12;
 	float fConst13;
 	float fConst14;
-	float fRec57[2];
-	float fRec56[2];
-	float fRec55[2];
+	float* fRec57;
+	float* fRec56;
+	float* fRec55;
 	int fVec14_widx;
-	float fVec14[3361];
-	float fRec13[2];
+	float* fVec14;
+	float* fRec13;
 	int fVec15_widx;
-	float fVec15[4454];
-	float fRec11[3];
+	float* fVec15;
+	float* fRec11;
 	int fVec16_widx;
-	float fVec16[9001];
-	float fRec58[2];
-	float fRec59[2];
-	float fRec60[2];
-	float fRec61[2];
-	float fRec7[2];
-	float fRec62[2];
-	float fRec63[2];
-	float fRec64[2];
-	float fRec65[2];
-	float fRec66[2];
-	float fRec67[2];
-	float fRec68[2];
-	float fRec69[2];
+	float* fVec16;
+	float* fRec58;
+	float* fRec59;
+	float* fRec60;
+	float* fRec61;
+	float* fRec7;
+	float* fRec62;
+	float* fRec63;
+	float* fRec64;
+	float* fRec65;
+	float* fRec66;
+	float* fRec67;
+	float* fRec68;
+	float* fRec69;
 	int fVec17_widx;
-	float fVec17[3721];
-	float fRec0[2];
+	float* fVec17;
+	float* fRec0;
 	int fVec18_widx;
-	float fVec18[32768];
+	float* fVec18;
 	int fVec19_widx;
-	float fVec19[1350];
-	float fRec85[2];
+	float* fVec19;
+	float* fRec85;
 	int fVec20_widx;
-	float fVec20[1018];
-	float fRec83[2];
+	float* fVec20;
+	float* fRec83;
 	int fVec21_widx;
-	float fVec21[3602];
-	float fRec81[2];
+	float* fVec21;
+	float* fRec81;
 	int fVec22_widx;
-	float fVec22[2633];
-	float fRec79[2];
-	float fVec23[2];
-	float fRec78[2];
-	float fRec77[3];
-	float fRec87[3];
-	float fRec90[2];
-	float fRec89[2];
-	float fRec88[2];
-	float fRec93[2];
-	float fRec92[2];
-	float fRec91[2];
+	float* fVec22;
+	float* fRec79;
+	float* fVec23;
+	float* fRec78;
+	float* fRec77;
+	float* fRec87;
+	float* fRec90;
+	float* fRec89;
+	float* fRec88;
+	float* fRec93;
+	float* fRec92;
+	float* fRec91;
 	int fVec24_widx;
-	float fVec24[4541];
-	float fRec75[2];
+	float* fVec24;
+	float* fRec75;
 	int fVec25_widx;
-	float fVec25[4218];
-	float fRec74[3];
+	float* fVec25;
+	float* fRec74;
 	int fVec26_widx;
-	float fVec26[13281];
-	float fRec94[2];
-	float fRec95[2];
-	float fRec96[2];
-	float fRec97[2];
-	float fRec70[2];
-	float fRec98[2];
-	float fRec99[2];
-	float fRec100[2];
-	float fRec101[2];
-	float fRec102[2];
-	float fRec103[2];
-	float fRec104[2];
-	float fRec105[2];
+	float* fVec26;
+	float* fRec94;
+	float* fRec95;
+	float* fRec96;
+	float* fRec97;
+	float* fRec70;
+	float* fRec98;
+	float* fRec99;
+	float* fRec100;
+	float* fRec101;
+	float* fRec102;
+	float* fRec103;
+	float* fRec104;
+	float* fRec105;
 	int fVec27_widx;
-	float fVec27[3164];
-	float fRec1[2];
-	float fRec106[2];
-	float fRec107[2];
-	float fRec108[2];
-	float fRec109[2];
-	float fRec110[2];
-	float fRec111[2];
-	float fRec112[2];
-	float fRec113[2];
-	float fRec114[2];
-	float fRec115[2];
-	float fRec116[2];
-	float fRec117[2];
-	float fRec118[2];
-	float fRec119[2];
-	float fRec120[2];
-	float fRec121[2];
+	float* fVec27;
+	float* fRec1;
+	float* fRec106;
+	float* fRec107;
+	float* fRec108;
+	float* fRec109;
+	float* fRec110;
+	float* fRec111;
+	float* fRec112;
+	float* fRec113;
+	float* fRec114;
+	float* fRec115;
+	float* fRec116;
+	float* fRec117;
+	float* fRec118;
+	float* fRec119;
+	float* fRec120;
+	float* fRec121;
 	FAUSTFLOAT fHslider8;
-	float fRec122[2];
-	float fRec125[2];
-	float fRec124[2];
-	float fRec123[2];
+	float* fRec122;
+	float* fRec125;
+	float* fRec124;
+	float* fRec123;
 	
  public:
+	static dsp_memory_manager* fManager;
 	
 	void metadata(Meta* m) { 
 		m->declare("analyzers.lib/name", "Faust Analyzer Library");
@@ -9753,7 +9831,7 @@ class mydsp : public dsp {
 		m->declare("author", "Arev Imer (arev.imer@students.fhnw.ch)");
 		m->declare("basics.lib/name", "Faust Basic Element Library");
 		m->declare("basics.lib/version", "0.6");
-		m->declare("compile_options", "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -dtl 16 -es 1 -mcd 16 -uim -single -ftz 0");
+		m->declare("compile_options", "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -mem -dtl 0 -es 1 -mcd 16 -uim -single -ftz 0");
 		m->declare("compressors.lib/compression_gain_mono:author", "Julius O. Smith III");
 		m->declare("compressors.lib/compression_gain_mono:copyright", "Copyright (C) 2014-2020 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("compressors.lib/compression_gain_mono:license", "MIT-style STK-4.3 license");
@@ -9812,7 +9890,6 @@ class mydsp : public dsp {
 		m->declare("maths.lib/name", "Faust Math Library");
 		m->declare("maths.lib/version", "2.5");
 		m->declare("name", "mooSpace");
-		m->declare("options", "[midi:on]");
 		m->declare("oscillators.lib/name", "Faust Oscillator Library");
 		m->declare("oscillators.lib/version", "0.3");
 		m->declare("platform.lib/name", "Generic Platform Library");
@@ -9830,6 +9907,9 @@ class mydsp : public dsp {
 	}
 	
 	static void classInit(int sample_rate) {
+	}
+	
+	static void classDestroy() {
 	}
 	
 	virtual void instanceConstants(int sample_rate) {
@@ -10031,7 +10111,7 @@ class mydsp : public dsp {
 		for (int l46 = 0; l46 < 2; l46 = l46 + 1) {
 			fRec55[l46] = 0.0f;
 		}
-		for (int l47 = 0; l47 < 3361; l47 = l47 + 1) {
+		for (int l47 = 0; l47 < 3362; l47 = l47 + 1) {
 			fVec14[l47] = 0.0f;
 		}
 		for (int l48 = 0; l48 < 2; l48 = l48 + 1) {
@@ -10043,7 +10123,7 @@ class mydsp : public dsp {
 		for (int l50 = 0; l50 < 3; l50 = l50 + 1) {
 			fRec11[l50] = 0.0f;
 		}
-		for (int l51 = 0; l51 < 9001; l51 = l51 + 1) {
+		for (int l51 = 0; l51 < 9002; l51 = l51 + 1) {
 			fVec16[l51] = 0.0f;
 		}
 		for (int l52 = 0; l52 < 2; l52 = l52 + 1) {
@@ -10148,7 +10228,7 @@ class mydsp : public dsp {
 		for (int l85 = 0; l85 < 2; l85 = l85 + 1) {
 			fRec91[l85] = 0.0f;
 		}
-		for (int l86 = 0; l86 < 4541; l86 = l86 + 1) {
+		for (int l86 = 0; l86 < 4542; l86 = l86 + 1) {
 			fVec24[l86] = 0.0f;
 		}
 		for (int l87 = 0; l87 < 2; l87 = l87 + 1) {
@@ -10160,7 +10240,7 @@ class mydsp : public dsp {
 		for (int l89 = 0; l89 < 3; l89 = l89 + 1) {
 			fRec74[l89] = 0.0f;
 		}
-		for (int l90 = 0; l90 < 13281; l90 = l90 + 1) {
+		for (int l90 = 0; l90 < 13282; l90 = l90 + 1) {
 			fVec26[l90] = 0.0f;
 		}
 		for (int l91 = 0; l91 < 2; l91 = l91 + 1) {
@@ -10270,10 +10350,7 @@ class mydsp : public dsp {
 		}
 	}
 	
-	virtual void init(int sample_rate) {
-		classInit(sample_rate);
-		instanceInit(sample_rate);
-	}
+	virtual void init(int sample_rate) {}
 	virtual void instanceInit(int sample_rate) {
 		instanceConstants(sample_rate);
 		instanceResetUserInterface();
@@ -10281,7 +10358,7 @@ class mydsp : public dsp {
 	}
 	
 	virtual mydsp* clone() {
-		return new mydsp();
+		return create();
 	}
 	
 	virtual int getSampleRate() {
@@ -10298,7 +10375,6 @@ class mydsp : public dsp {
 		ui_interface->addHorizontalSlider("mix", &fHslider8, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
 		ui_interface->addHorizontalSlider("modulate", &fHslider3, FAUSTFLOAT(0.0199999996f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
 		ui_interface->addHorizontalSlider("push", &fHslider4, FAUSTFLOAT(0.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
-		ui_interface->declare(&fHslider2, "midi", "ctrl 11");
 		ui_interface->addHorizontalSlider("smear", &fHslider2, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
 		ui_interface->closeBox();
 	}
@@ -10310,7 +10386,7 @@ class mydsp : public dsp {
 		FAUSTFLOAT* output1 = outputs[1];
 		float fSlow0 = fConst1 * std::sqrt(float(fHslider0));
 		float fSlow1 = fConst1 * float(fHslider1);
-		float fSlow2 = fConst1 * float(fHslider2);
+		float fSlow2 = 0.00200000009f * float(fHslider2);
 		float fSlow3 = fConst1 * mydsp_faustpower3_f(2.0f * (float(fHslider3) + -0.5f));
 		float fSlow4 = fConst1 * float(fHslider4);
 		float fSlow5 = fConst1 * mydsp_faustpower2_f(float(fHslider5));
@@ -10324,10 +10400,10 @@ class mydsp : public dsp {
 			float fTemp1 = fRec1[1] - 0.75f * fRec21[1];
 			int fVec0_widx_tmp = fVec0_widx;
 			fVec0[fVec0_widx_tmp] = fTemp1;
-			fRec23[0] = fSlow2 + fConst2 * fRec23[1];
-			fRec24[0] = fConst3 + fRec24[1] - std::floor(fConst3 + fRec24[1]);
-			fRec25[0] = fSlow3 + fConst2 * fRec25[1];
-			float fTemp2 = 9.5f * fRec23[0] + fRec24[0] * (0.0f - 0.5f * fRec25[0]);
+			fRec23[0] = fSlow2 + 0.998000026f * fRec23[1];
+			fRec24[0] = fSlow3 + fConst2 * fRec24[1];
+			fRec25[0] = fConst3 + fRec25[1] - std::floor(fConst3 + fRec25[1]);
+			float fTemp2 = std::min<float>(9.5f, std::max<float>(0.0f, 9.5f * fRec23[0] - fRec24[0] * fRec25[0]));
 			float fTemp3 = 151.0f * fTemp2;
 			float fTemp4 = fTemp3 + -1.49999499f;
 			int iTemp5 = int(fTemp4);
@@ -10547,7 +10623,7 @@ class mydsp : public dsp {
 			fRec39[0] = fVec12[((fVec12_ridx_tmp0 < 0) ? fVec12_ridx_tmp0 + 2633 : fVec12_ridx_tmp0)] * fTemp122 * fTemp124 + fTemp125 * (fVec12[((fVec12_ridx_tmp1 < 0) ? fVec12_ridx_tmp1 + 2633 : fVec12_ridx_tmp1)] * fTemp127 + 0.5f * fTemp121 * fVec12[((fVec12_ridx_tmp2 < 0) ? fVec12_ridx_tmp2 + 2633 : fVec12_ridx_tmp2)]);
 			float fRec40 = 0.625f * fRec49[0] * fTemp115;
 			fVec13[0] = fRec40 + fRec39[1];
-			fRec38[0] = (fRec39[1] + fRec40 + 0.995000005f * fRec38[1]) - fVec13[1];
+			fRec38[0] = (fRec40 + 0.995000005f * fRec38[1] + fRec39[1]) - fVec13[1];
 			fRec50[0] = fSlow7 + fConst2 * fRec50[1];
 			float fTemp129 = std::tan(fConst8 * (68988.3359f * mydsp_faustpower2_f(std::max<float>(0.0f, std::min<float>(0.479999989f, fRec50[0]))) + 100.0f));
 			float fTemp130 = 1.0f / fTemp129;
@@ -10581,13 +10657,13 @@ class mydsp : public dsp {
 			float fTemp148 = 672.0f * fTemp2;
 			float fTemp149 = fTemp148 + -1.49999499f;
 			int iTemp150 = int(fTemp149);
-			int fVec14_ridx_tmp0 = fVec14_widx - int(std::min<float>(3359.5f, float(std::max<int>(0, iTemp150))));
+			int fVec14_ridx_tmp0 = fVec14_widx - int(std::min<float>(3360.5f, float(std::max<int>(0, iTemp150))));
 			float fTemp151 = std::floor(fTemp149);
 			float fTemp152 = fTemp148 + -2.0f - fTemp151;
 			float fTemp153 = fTemp148 + -3.0f - fTemp151;
-			int fVec14_ridx_tmp1 = fVec14_widx - int(std::min<float>(3359.5f, float(std::max<int>(0, iTemp150 + 1))));
-			int fVec14_ridx_tmp2 = fVec14_widx - int(std::min<float>(3359.5f, float(std::max<int>(0, iTemp150 + 2))));
-			fRec13[0] = fVec14[((fVec14_ridx_tmp0 < 0) ? fVec14_ridx_tmp0 + 3361 : fVec14_ridx_tmp0)] * (0.0f - fTemp152) * (0.0f - 0.5f * fTemp153) + (fTemp148 + -1.0f - fTemp151) * (fVec14[((fVec14_ridx_tmp1 < 0) ? fVec14_ridx_tmp1 + 3361 : fVec14_ridx_tmp1)] * (0.0f - fTemp153) + 0.5f * fTemp152 * fVec14[((fVec14_ridx_tmp2 < 0) ? fVec14_ridx_tmp2 + 3361 : fVec14_ridx_tmp2)]);
+			int fVec14_ridx_tmp1 = fVec14_widx - int(std::min<float>(3360.5f, float(std::max<int>(0, iTemp150 + 1))));
+			int fVec14_ridx_tmp2 = fVec14_widx - int(std::min<float>(3360.5f, float(std::max<int>(0, iTemp150 + 2))));
+			fRec13[0] = fVec14[((fVec14_ridx_tmp0 < 0) ? fVec14_ridx_tmp0 + 3362 : fVec14_ridx_tmp0)] * (0.0f - fTemp152) * (0.0f - 0.5f * fTemp153) + (fTemp148 + -1.0f - fTemp151) * (fVec14[((fVec14_ridx_tmp1 < 0) ? fVec14_ridx_tmp1 + 3362 : fVec14_ridx_tmp1)] * (0.0f - fTemp153) + 0.5f * fTemp152 * fVec14[((fVec14_ridx_tmp2 < 0) ? fVec14_ridx_tmp2 + 3362 : fVec14_ridx_tmp2)]);
 			float fRec14 = 0.0f - 0.699999988f * fTemp147;
 			float fTemp154 = fRec14 + fRec13[1];
 			int fVec15_widx_tmp = fVec15_widx;
@@ -10606,10 +10682,10 @@ class mydsp : public dsp {
 			fRec59[0] = std::max<float>(0.0f, std::min<float>(1.0f, fRec59[1] + fTemp157));
 			fRec60[0] = (((fRec59[1] >= 1.0f) & (fRec61[1] != fTemp156)) ? fTemp156 : fRec60[1]);
 			fRec61[0] = (((fRec59[1] <= 0.0f) & (fRec60[1] != fTemp156)) ? fTemp156 : fRec61[1]);
-			int fVec16_ridx_tmp0 = fVec16_widx - int(std::min<float>(8999.5f, std::max<float>(0.0f, fRec60[0])));
-			float fTemp158 = fVec16[((fVec16_ridx_tmp0 < 0) ? fVec16_ridx_tmp0 + 9001 : fVec16_ridx_tmp0)];
-			int fVec16_ridx_tmp1 = fVec16_widx - int(std::min<float>(8999.5f, std::max<float>(0.0f, fRec61[0])));
-			fRec7[0] = fTemp158 + fRec59[0] * (fVec16[((fVec16_ridx_tmp1 < 0) ? fVec16_ridx_tmp1 + 9001 : fVec16_ridx_tmp1)] - fTemp158);
+			int fVec16_ridx_tmp0 = fVec16_widx - int(std::min<float>(9000.5f, std::max<float>(0.0f, fRec60[0])));
+			float fTemp158 = fVec16[((fVec16_ridx_tmp0 < 0) ? fVec16_ridx_tmp0 + 9002 : fVec16_ridx_tmp0)];
+			int fVec16_ridx_tmp1 = fVec16_widx - int(std::min<float>(9000.5f, std::max<float>(0.0f, fRec61[0])));
+			fRec7[0] = fTemp158 + fRec59[0] * (fVec16[((fVec16_ridx_tmp1 < 0) ? fVec16_ridx_tmp1 + 9002 : fVec16_ridx_tmp1)] - fTemp158);
 			float fRec8 = 0.5f * fTemp155;
 			float fTemp159 = 934.579468f * fRec49[0];
 			float fThen10 = (((fRec63[1] == 1.0f) & (fTemp159 != fRec65[1])) ? -0.0009765625f : 0.0f);
@@ -10620,10 +10696,10 @@ class mydsp : public dsp {
 			fRec63[0] = std::max<float>(0.0f, std::min<float>(1.0f, fRec63[1] + fTemp160));
 			fRec64[0] = (((fRec63[1] >= 1.0f) & (fRec65[1] != fTemp159)) ? fTemp159 : fRec64[1]);
 			fRec65[0] = (((fRec63[1] <= 0.0f) & (fRec64[1] != fTemp159)) ? fTemp159 : fRec65[1]);
-			int fVec16_ridx_tmp2 = fVec16_widx - int(std::min<float>(8999.5f, std::max<float>(0.0f, fRec64[0])));
-			float fTemp161 = fVec16[((fVec16_ridx_tmp2 < 0) ? fVec16_ridx_tmp2 + 9001 : fVec16_ridx_tmp2)];
-			int fVec16_ridx_tmp3 = fVec16_widx - int(std::min<float>(8999.5f, std::max<float>(0.0f, fRec65[0])));
-			float fRec9 = fTemp161 + fRec63[0] * (fVec16[((fVec16_ridx_tmp3 < 0) ? fVec16_ridx_tmp3 + 9001 : fVec16_ridx_tmp3)] - fTemp161);
+			int fVec16_ridx_tmp2 = fVec16_widx - int(std::min<float>(9000.5f, std::max<float>(0.0f, fRec64[0])));
+			float fTemp161 = fVec16[((fVec16_ridx_tmp2 < 0) ? fVec16_ridx_tmp2 + 9002 : fVec16_ridx_tmp2)];
+			int fVec16_ridx_tmp3 = fVec16_widx - int(std::min<float>(9000.5f, std::max<float>(0.0f, fRec65[0])));
+			float fRec9 = fTemp161 + fRec63[0] * (fVec16[((fVec16_ridx_tmp3 < 0) ? fVec16_ridx_tmp3 + 9002 : fVec16_ridx_tmp3)] - fTemp161);
 			float fTemp162 = 6164.38379f * fRec49[0];
 			float fThen16 = (((fRec67[1] == 1.0f) & (fTemp162 != fRec69[1])) ? -0.0009765625f : 0.0f);
 			float fThen18 = (((fRec67[1] == 0.0f) & (fTemp162 != fRec68[1])) ? 0.0009765625f : fThen16);
@@ -10633,10 +10709,10 @@ class mydsp : public dsp {
 			fRec67[0] = std::max<float>(0.0f, std::min<float>(1.0f, fRec67[1] + fTemp163));
 			fRec68[0] = (((fRec67[1] >= 1.0f) & (fRec69[1] != fTemp162)) ? fTemp162 : fRec68[1]);
 			fRec69[0] = (((fRec67[1] <= 0.0f) & (fRec68[1] != fTemp162)) ? fTemp162 : fRec69[1]);
-			int fVec16_ridx_tmp4 = fVec16_widx - int(std::min<float>(8999.5f, std::max<float>(0.0f, fRec68[0])));
-			float fTemp164 = fVec16[((fVec16_ridx_tmp4 < 0) ? fVec16_ridx_tmp4 + 9001 : fVec16_ridx_tmp4)];
-			int fVec16_ridx_tmp5 = fVec16_widx - int(std::min<float>(8999.5f, std::max<float>(0.0f, fRec69[0])));
-			float fRec10 = fTemp164 + fRec67[0] * (fVec16[((fVec16_ridx_tmp5 < 0) ? fVec16_ridx_tmp5 + 9001 : fVec16_ridx_tmp5)] - fTemp164);
+			int fVec16_ridx_tmp4 = fVec16_widx - int(std::min<float>(9000.5f, std::max<float>(0.0f, fRec68[0])));
+			float fTemp164 = fVec16[((fVec16_ridx_tmp4 < 0) ? fVec16_ridx_tmp4 + 9002 : fVec16_ridx_tmp4)];
+			int fVec16_ridx_tmp5 = fVec16_widx - int(std::min<float>(9000.5f, std::max<float>(0.0f, fRec69[0])));
+			float fRec10 = fTemp164 + fRec67[0] * (fVec16[((fVec16_ridx_tmp5 < 0) ? fVec16_ridx_tmp5 + 9002 : fVec16_ridx_tmp5)] - fTemp164);
 			float fTemp165 = fRec8 + fRec7[1];
 			int fVec17_widx_tmp = fVec17_widx;
 			fVec17[fVec17_widx_tmp] = fTemp165;
@@ -10681,7 +10757,7 @@ class mydsp : public dsp {
 			fRec79[0] = fTemp122 * fTemp124 * fVec22[((fVec22_ridx_tmp0 < 0) ? fVec22_ridx_tmp0 + 2633 : fVec22_ridx_tmp0)] + fTemp125 * (fTemp127 * fVec22[((fVec22_ridx_tmp1 < 0) ? fVec22_ridx_tmp1 + 2633 : fVec22_ridx_tmp1)] + 0.5f * fTemp121 * fVec22[((fVec22_ridx_tmp2 < 0) ? fVec22_ridx_tmp2 + 2633 : fVec22_ridx_tmp2)]);
 			float fRec80 = 0.625f * fRec49[0] * fTemp171;
 			fVec23[0] = fRec80 + fRec79[1];
-			fRec78[0] = (fRec79[1] + fRec80 + 0.995000005f * fRec78[1]) - fVec23[1];
+			fRec78[0] = (fRec80 + 0.995000005f * fRec78[1] + fRec79[1]) - fVec23[1];
 			fRec77[0] = fRec78[0] - (fTemp132 * fRec77[2] + 2.0f * fTemp133 * fRec77[1]) / fTemp134;
 			float fTemp172 = (fRec77[2] + fRec77[0] + 2.0f * fRec77[1]) / fTemp134;
 			fRec87[0] = fTemp172 - (fTemp138 * fRec87[2] + 2.0f * fTemp139 * fRec87[1]) / fTemp140;
@@ -10703,13 +10779,13 @@ class mydsp : public dsp {
 			float fTemp180 = 908.0f * fTemp2;
 			float fTemp181 = fTemp180 + -1.49999499f;
 			int iTemp182 = int(fTemp181);
-			int fVec24_ridx_tmp0 = fVec24_widx - int(std::min<float>(4539.5f, float(std::max<int>(0, iTemp182))));
+			int fVec24_ridx_tmp0 = fVec24_widx - int(std::min<float>(4540.5f, float(std::max<int>(0, iTemp182))));
 			float fTemp183 = std::floor(fTemp181);
 			float fTemp184 = fTemp180 + -2.0f - fTemp183;
 			float fTemp185 = fTemp180 + -3.0f - fTemp183;
-			int fVec24_ridx_tmp1 = fVec24_widx - int(std::min<float>(4539.5f, float(std::max<int>(0, iTemp182 + 1))));
-			int fVec24_ridx_tmp2 = fVec24_widx - int(std::min<float>(4539.5f, float(std::max<int>(0, iTemp182 + 2))));
-			fRec75[0] = fVec24[((fVec24_ridx_tmp0 < 0) ? fVec24_ridx_tmp0 + 4541 : fVec24_ridx_tmp0)] * (0.0f - fTemp184) * (0.0f - 0.5f * fTemp185) + (fTemp180 + -1.0f - fTemp183) * (fVec24[((fVec24_ridx_tmp1 < 0) ? fVec24_ridx_tmp1 + 4541 : fVec24_ridx_tmp1)] * (0.0f - fTemp185) + 0.5f * fTemp184 * fVec24[((fVec24_ridx_tmp2 < 0) ? fVec24_ridx_tmp2 + 4541 : fVec24_ridx_tmp2)]);
+			int fVec24_ridx_tmp1 = fVec24_widx - int(std::min<float>(4540.5f, float(std::max<int>(0, iTemp182 + 1))));
+			int fVec24_ridx_tmp2 = fVec24_widx - int(std::min<float>(4540.5f, float(std::max<int>(0, iTemp182 + 2))));
+			fRec75[0] = fVec24[((fVec24_ridx_tmp0 < 0) ? fVec24_ridx_tmp0 + 4542 : fVec24_ridx_tmp0)] * (0.0f - fTemp184) * (0.0f - 0.5f * fTemp185) + (fTemp180 + -1.0f - fTemp183) * (fVec24[((fVec24_ridx_tmp1 < 0) ? fVec24_ridx_tmp1 + 4542 : fVec24_ridx_tmp1)] * (0.0f - fTemp185) + 0.5f * fTemp184 * fVec24[((fVec24_ridx_tmp2 < 0) ? fVec24_ridx_tmp2 + 4542 : fVec24_ridx_tmp2)]);
 			float fRec76 = 0.0f - 0.699999988f * fTemp179;
 			float fTemp186 = fRec76 + fRec75[1];
 			int fVec25_widx_tmp = fVec25_widx;
@@ -10728,10 +10804,10 @@ class mydsp : public dsp {
 			fRec95[0] = std::max<float>(0.0f, std::min<float>(1.0f, fRec95[1] + fTemp189));
 			fRec96[0] = (((fRec95[1] >= 1.0f) & (fRec97[1] != fTemp188)) ? fTemp188 : fRec96[1]);
 			fRec97[0] = (((fRec95[1] <= 0.0f) & (fRec96[1] != fTemp188)) ? fTemp188 : fRec97[1]);
-			int fVec26_ridx_tmp0 = fVec26_widx - int(std::min<float>(13279.5f, std::max<float>(0.0f, fRec96[0])));
-			float fTemp190 = fVec26[((fVec26_ridx_tmp0 < 0) ? fVec26_ridx_tmp0 + 13281 : fVec26_ridx_tmp0)];
-			int fVec26_ridx_tmp1 = fVec26_widx - int(std::min<float>(13279.5f, std::max<float>(0.0f, fRec97[0])));
-			fRec70[0] = fTemp190 + fRec95[0] * (fVec26[((fVec26_ridx_tmp1 < 0) ? fVec26_ridx_tmp1 + 13281 : fVec26_ridx_tmp1)] - fTemp190);
+			int fVec26_ridx_tmp0 = fVec26_widx - int(std::min<float>(13280.5f, std::max<float>(0.0f, fRec96[0])));
+			float fTemp190 = fVec26[((fVec26_ridx_tmp0 < 0) ? fVec26_ridx_tmp0 + 13282 : fVec26_ridx_tmp0)];
+			int fVec26_ridx_tmp1 = fVec26_widx - int(std::min<float>(13280.5f, std::max<float>(0.0f, fRec97[0])));
+			fRec70[0] = fTemp190 + fRec95[0] * (fVec26[((fVec26_ridx_tmp1 < 0) ? fVec26_ridx_tmp1 + 13282 : fVec26_ridx_tmp1)] - fTemp190);
 			float fRec71 = 0.5f * fTemp187;
 			float fTemp191 = 1674.6532f * fRec49[0];
 			float fThen30 = (((fRec99[1] == 1.0f) & (fTemp191 != fRec101[1])) ? -0.0009765625f : 0.0f);
@@ -10742,10 +10818,10 @@ class mydsp : public dsp {
 			fRec99[0] = std::max<float>(0.0f, std::min<float>(1.0f, fRec99[1] + fTemp192));
 			fRec100[0] = (((fRec99[1] >= 1.0f) & (fRec101[1] != fTemp191)) ? fTemp191 : fRec100[1]);
 			fRec101[0] = (((fRec99[1] <= 0.0f) & (fRec100[1] != fTemp191)) ? fTemp191 : fRec101[1]);
-			int fVec26_ridx_tmp2 = fVec26_widx - int(std::min<float>(13279.5f, std::max<float>(0.0f, fRec100[0])));
-			float fTemp193 = fVec26[((fVec26_ridx_tmp2 < 0) ? fVec26_ridx_tmp2 + 13281 : fVec26_ridx_tmp2)];
-			int fVec26_ridx_tmp3 = fVec26_widx - int(std::min<float>(13279.5f, std::max<float>(0.0f, fRec101[0])));
-			float fRec72 = fTemp193 + fRec99[0] * (fVec26[((fVec26_ridx_tmp3 < 0) ? fVec26_ridx_tmp3 + 13281 : fVec26_ridx_tmp3)] - fTemp193);
+			int fVec26_ridx_tmp2 = fVec26_widx - int(std::min<float>(13280.5f, std::max<float>(0.0f, fRec100[0])));
+			float fTemp193 = fVec26[((fVec26_ridx_tmp2 < 0) ? fVec26_ridx_tmp2 + 13282 : fVec26_ridx_tmp2)];
+			int fVec26_ridx_tmp3 = fVec26_widx - int(std::min<float>(13280.5f, std::max<float>(0.0f, fRec101[0])));
+			float fRec72 = fTemp193 + fRec99[0] * (fVec26[((fVec26_ridx_tmp3 < 0) ? fVec26_ridx_tmp3 + 13282 : fVec26_ridx_tmp3)] - fTemp193);
 			float fTemp194 = 9553.95703f * fRec49[0];
 			float fThen36 = (((fRec103[1] == 1.0f) & (fTemp194 != fRec105[1])) ? -0.0009765625f : 0.0f);
 			float fThen38 = (((fRec103[1] == 0.0f) & (fTemp194 != fRec104[1])) ? 0.0009765625f : fThen36);
@@ -10755,19 +10831,19 @@ class mydsp : public dsp {
 			fRec103[0] = std::max<float>(0.0f, std::min<float>(1.0f, fRec103[1] + fTemp195));
 			fRec104[0] = (((fRec103[1] >= 1.0f) & (fRec105[1] != fTemp194)) ? fTemp194 : fRec104[1]);
 			fRec105[0] = (((fRec103[1] <= 0.0f) & (fRec104[1] != fTemp194)) ? fTemp194 : fRec105[1]);
-			int fVec26_ridx_tmp4 = fVec26_widx - int(std::min<float>(13279.5f, std::max<float>(0.0f, fRec104[0])));
-			float fTemp196 = fVec26[((fVec26_ridx_tmp4 < 0) ? fVec26_ridx_tmp4 + 13281 : fVec26_ridx_tmp4)];
-			int fVec26_ridx_tmp5 = fVec26_widx - int(std::min<float>(13279.5f, std::max<float>(0.0f, fRec105[0])));
-			float fRec73 = fTemp196 + fRec103[0] * (fVec26[((fVec26_ridx_tmp5 < 0) ? fVec26_ridx_tmp5 + 13281 : fVec26_ridx_tmp5)] - fTemp196);
+			int fVec26_ridx_tmp4 = fVec26_widx - int(std::min<float>(13280.5f, std::max<float>(0.0f, fRec104[0])));
+			float fTemp196 = fVec26[((fVec26_ridx_tmp4 < 0) ? fVec26_ridx_tmp4 + 13282 : fVec26_ridx_tmp4)];
+			int fVec26_ridx_tmp5 = fVec26_widx - int(std::min<float>(13280.5f, std::max<float>(0.0f, fRec105[0])));
+			float fRec73 = fTemp196 + fRec103[0] * (fVec26[((fVec26_ridx_tmp5 < 0) ? fVec26_ridx_tmp5 + 13282 : fVec26_ridx_tmp5)] - fTemp196);
 			float fTemp197 = fRec71 + fRec70[1];
 			int fVec27_widx_tmp = fVec27_widx;
 			fVec27[fVec27_widx_tmp] = fTemp197;
 			int fVec27_ridx_tmp0 = fVec27_widx - 3163;
 			fRec1[0] = 1.10000002f * fRec6[0] * fVec27[((fVec27_ridx_tmp0 < 0) ? fVec27_ridx_tmp0 + 3164 : fVec27_ridx_tmp0)];
-			int fVec15_ridx_tmp1 = fVec15_widx - 1997;
-			int fVec15_ridx_tmp2 = fVec15_widx - 1996;
+			int fVec15_ridx_tmp1 = fVec15_widx - 1996;
+			int fVec15_ridx_tmp2 = fVec15_widx - 1997;
 			int fVec17_ridx_tmp1 = fVec17_widx - 1065;
-			float fRec2 = 0.600000024f * (0.0f - (0.860986531f * fVec15[((fVec15_ridx_tmp1 < 0) ? fVec15_ridx_tmp1 + 4454 : fVec15_ridx_tmp1)] + fRec9 + 0.139013454f * fVec15[((fVec15_ridx_tmp2 < 0) ? fVec15_ridx_tmp2 + 4454 : fVec15_ridx_tmp2)] + fVec17[((fVec17_ridx_tmp1 < 0) ? fVec17_ridx_tmp1 + 3721 : fVec17_ridx_tmp1)]));
+			float fRec2 = 0.600000024f * (0.0f - (fRec9 + 0.139013454f * fVec15[((fVec15_ridx_tmp1 < 0) ? fVec15_ridx_tmp1 + 4454 : fVec15_ridx_tmp1)] + 0.860986531f * fVec15[((fVec15_ridx_tmp2 < 0) ? fVec15_ridx_tmp2 + 4454 : fVec15_ridx_tmp2)] + fVec17[((fVec17_ridx_tmp1 < 0) ? fVec17_ridx_tmp1 + 3721 : fVec17_ridx_tmp1)]));
 			float fTemp198 = 13381.2949f * fRec49[0];
 			float fThen42 = (((fRec107[1] == 1.0f) & (fTemp198 != fRec109[1])) ? -0.0009765625f : 0.0f);
 			float fThen44 = (((fRec107[1] == 0.0f) & (fTemp198 != fRec108[1])) ? 0.0009765625f : fThen42);
@@ -10817,10 +10893,10 @@ class mydsp : public dsp {
 			fRec119[0] = std::max<float>(0.0f, std::min<float>(1.0f, fRec119[1] + fTemp208));
 			fRec120[0] = (((fRec119[1] >= 1.0f) & (fRec121[1] != fTemp207)) ? fTemp207 : fRec120[1]);
 			fRec121[0] = (((fRec119[1] <= 0.0f) & (fRec120[1] != fTemp207)) ? fTemp207 : fRec121[1]);
-			int fVec27_ridx_tmp1 = fVec27_widx - int(std::min<float>(3163.0f, std::max<float>(0.0f, fRec121[0])));
-			int fVec27_ridx_tmp2 = fVec27_widx - int(std::min<float>(3163.0f, std::max<float>(0.0f, fRec120[0])));
-			float fTemp209 = fVec27[((fVec27_ridx_tmp2 < 0) ? fVec27_ridx_tmp2 + 3164 : fVec27_ridx_tmp2)];
-			float fRec4 = 0.600000024f * ((fTemp206 + fRec115[0] * (fVec25[((fVec25_ridx_tmp2 < 0) ? fVec25_ridx_tmp2 + 4218 : fVec25_ridx_tmp2)] - fTemp206) + fVec25[((fVec25_ridx_tmp3 < 0) ? fVec25_ridx_tmp3 + 4218 : fVec25_ridx_tmp3)]) - (fRec119[0] * (fVec27[((fVec27_ridx_tmp1 < 0) ? fVec27_ridx_tmp1 + 3164 : fVec27_ridx_tmp1)] - fTemp209) + fRec73 + fTemp209));
+			int fVec27_ridx_tmp1 = fVec27_widx - int(std::min<float>(3163.0f, std::max<float>(0.0f, fRec120[0])));
+			float fTemp209 = fVec27[((fVec27_ridx_tmp1 < 0) ? fVec27_ridx_tmp1 + 3164 : fVec27_ridx_tmp1)];
+			int fVec27_ridx_tmp2 = fVec27_widx - int(std::min<float>(3163.0f, std::max<float>(0.0f, fRec121[0])));
+			float fRec4 = 0.600000024f * ((fTemp206 + fRec115[0] * (fVec25[((fVec25_ridx_tmp2 < 0) ? fVec25_ridx_tmp2 + 4218 : fVec25_ridx_tmp2)] - fTemp206) + fVec25[((fVec25_ridx_tmp3 < 0) ? fVec25_ridx_tmp3 + 4218 : fVec25_ridx_tmp3)]) - (fRec73 + fTemp209 + fRec119[0] * (fVec27[((fVec27_ridx_tmp2 < 0) ? fVec27_ridx_tmp2 + 3164 : fVec27_ridx_tmp2)] - fTemp209)));
 			int fVec27_ridx_tmp3 = fVec27_widx - 2001;
 			int fVec25_ridx_tmp4 = fVec25_widx - 2108;
 			int fVec25_ridx_tmp5 = fVec25_widx - 2109;
@@ -10914,7 +10990,7 @@ class mydsp : public dsp {
 			fRec56[1] = fRec56[0];
 			fRec55[1] = fRec55[0];
 			fVec14_widx_tmp = fVec14_widx_tmp + 1;
-			fVec14_widx_tmp = ((fVec14_widx_tmp == 3361) ? 0 : fVec14_widx_tmp);
+			fVec14_widx_tmp = ((fVec14_widx_tmp == 3362) ? 0 : fVec14_widx_tmp);
 			fVec14_widx = fVec14_widx_tmp;
 			fRec13[1] = fRec13[0];
 			fVec15_widx_tmp = fVec15_widx_tmp + 1;
@@ -10923,7 +10999,7 @@ class mydsp : public dsp {
 			fRec11[2] = fRec11[1];
 			fRec11[1] = fRec11[0];
 			fVec16_widx_tmp = fVec16_widx_tmp + 1;
-			fVec16_widx_tmp = ((fVec16_widx_tmp == 9001) ? 0 : fVec16_widx_tmp);
+			fVec16_widx_tmp = ((fVec16_widx_tmp == 9002) ? 0 : fVec16_widx_tmp);
 			fVec16_widx = fVec16_widx_tmp;
 			fRec58[1] = fRec58[0];
 			fRec59[1] = fRec59[0];
@@ -10974,7 +11050,7 @@ class mydsp : public dsp {
 			fRec92[1] = fRec92[0];
 			fRec91[1] = fRec91[0];
 			fVec24_widx_tmp = fVec24_widx_tmp + 1;
-			fVec24_widx_tmp = ((fVec24_widx_tmp == 4541) ? 0 : fVec24_widx_tmp);
+			fVec24_widx_tmp = ((fVec24_widx_tmp == 4542) ? 0 : fVec24_widx_tmp);
 			fVec24_widx = fVec24_widx_tmp;
 			fRec75[1] = fRec75[0];
 			fVec25_widx_tmp = fVec25_widx_tmp + 1;
@@ -10983,7 +11059,7 @@ class mydsp : public dsp {
 			fRec74[2] = fRec74[1];
 			fRec74[1] = fRec74[0];
 			fVec26_widx_tmp = fVec26_widx_tmp + 1;
-			fVec26_widx_tmp = ((fVec26_widx_tmp == 13281) ? 0 : fVec26_widx_tmp);
+			fVec26_widx_tmp = ((fVec26_widx_tmp == 13282) ? 0 : fVec26_widx_tmp);
 			fVec26_widx = fVec26_widx_tmp;
 			fRec94[1] = fRec94[0];
 			fRec95[1] = fRec95[0];
@@ -11024,14 +11100,544 @@ class mydsp : public dsp {
 			fRec123[1] = fRec123[0];
 		}
 	}
+	
+	static void memoryInfo() {
+		fManager->begin(127);
+		// mydsp
+		fManager->info(1224, 153, 26);
+		// fRec6
+		fManager->info(8, 9, 2);
+		// fRec12
+		fManager->info(8, 5, 2);
+		// fVec0
+		fManager->info(5744, 3, 1);
+		// fRec23
+		fManager->info(8, 3, 2);
+		// fRec24
+		fManager->info(8, 3, 2);
+		// fRec25
+		fManager->info(8, 4, 2);
+		// fRec21
+		fManager->info(8, 3, 2);
+		// fVec1
+		fManager->info(3844, 3, 1);
+		// fRec19
+		fManager->info(8, 3, 2);
+		// fVec2
+		fManager->info(13952, 3, 1);
+		// fRec17
+		fManager->info(8, 3, 2);
+		// fVec3
+		fManager->info(10684, 3, 1);
+		// fRec15
+		fManager->info(8, 3, 2);
+		// fVec4
+		fManager->info(5668, 3, 1);
+		// fRec35
+		fManager->info(8, 3, 2);
+		// fVec5
+		fManager->info(4300, 3, 1);
+		// fRec33
+		fManager->info(8, 3, 2);
+		// fVec6
+		fManager->info(15092, 3, 1);
+		// fRec31
+		fManager->info(8, 3, 2);
+		// fVec7
+		fManager->info(10760, 3, 1);
+		// fRec29
+		fManager->info(8, 3, 2);
+		// fRec28
+		fManager->info(8, 3, 2);
+		// fRec27
+		fManager->info(8, 3, 2);
+		// fRec26
+		fManager->info(8, 3, 2);
+		// fRec47
+		fManager->info(8, 3, 2);
+		// fVec8
+		fManager->info(131072, 2, 1);
+		// fRec48
+		fManager->info(8, 3, 2);
+		// fRec49
+		fManager->info(8, 28, 2);
+		// fVec9
+		fManager->info(5400, 3, 1);
+		// fRec45
+		fManager->info(8, 3, 2);
+		// fVec10
+		fManager->info(4072, 3, 1);
+		// fRec43
+		fManager->info(8, 3, 2);
+		// fVec11
+		fManager->info(14408, 3, 1);
+		// fRec41
+		fManager->info(8, 3, 2);
+		// fVec12
+		fManager->info(10532, 3, 1);
+		// fRec39
+		fManager->info(8, 4, 2);
+		// fVec13
+		fManager->info(8, 2, 2);
+		// fRec38
+		fManager->info(8, 3, 2);
+		// fRec50
+		fManager->info(8, 5, 2);
+		// fRec37
+		fManager->info(12, 7, 3);
+		// fRec51
+		fManager->info(12, 7, 3);
+		// fRec54
+		fManager->info(8, 3, 2);
+		// fRec53
+		fManager->info(8, 3, 2);
+		// fRec52
+		fManager->info(8, 3, 2);
+		// fRec57
+		fManager->info(8, 3, 2);
+		// fRec56
+		fManager->info(8, 3, 2);
+		// fRec55
+		fManager->info(8, 3, 2);
+		// fVec14
+		fManager->info(13448, 3, 1);
+		// fRec13
+		fManager->info(8, 3, 2);
+		// fVec15
+		fManager->info(17816, 7, 1);
+		// fRec11
+		fManager->info(12, 4, 3);
+		// fVec16
+		fManager->info(36008, 6, 1);
+		// fRec58
+		fManager->info(8, 3, 2);
+		// fRec59
+		fManager->info(8, 9, 2);
+		// fRec60
+		fManager->info(8, 5, 2);
+		// fRec61
+		fManager->info(8, 5, 2);
+		// fRec7
+		fManager->info(8, 3, 2);
+		// fRec62
+		fManager->info(8, 3, 2);
+		// fRec63
+		fManager->info(8, 9, 2);
+		// fRec64
+		fManager->info(8, 5, 2);
+		// fRec65
+		fManager->info(8, 5, 2);
+		// fRec66
+		fManager->info(8, 3, 2);
+		// fRec67
+		fManager->info(8, 9, 2);
+		// fRec68
+		fManager->info(8, 5, 2);
+		// fRec69
+		fManager->info(8, 5, 2);
+		// fVec17
+		fManager->info(14884, 4, 1);
+		// fRec0
+		fManager->info(8, 2, 2);
+		// fVec18
+		fManager->info(131072, 2, 1);
+		// fVec19
+		fManager->info(5400, 3, 1);
+		// fRec85
+		fManager->info(8, 3, 2);
+		// fVec20
+		fManager->info(4072, 3, 1);
+		// fRec83
+		fManager->info(8, 3, 2);
+		// fVec21
+		fManager->info(14408, 3, 1);
+		// fRec81
+		fManager->info(8, 3, 2);
+		// fVec22
+		fManager->info(10532, 3, 1);
+		// fRec79
+		fManager->info(8, 4, 2);
+		// fVec23
+		fManager->info(8, 2, 2);
+		// fRec78
+		fManager->info(8, 3, 2);
+		// fRec77
+		fManager->info(12, 7, 3);
+		// fRec87
+		fManager->info(12, 7, 3);
+		// fRec90
+		fManager->info(8, 3, 2);
+		// fRec89
+		fManager->info(8, 3, 2);
+		// fRec88
+		fManager->info(8, 3, 2);
+		// fRec93
+		fManager->info(8, 3, 2);
+		// fRec92
+		fManager->info(8, 3, 2);
+		// fRec91
+		fManager->info(8, 3, 2);
+		// fVec24
+		fManager->info(18168, 3, 1);
+		// fRec75
+		fManager->info(8, 3, 2);
+		// fVec25
+		fManager->info(16872, 6, 1);
+		// fRec74
+		fManager->info(12, 4, 3);
+		// fVec26
+		fManager->info(53128, 6, 1);
+		// fRec94
+		fManager->info(8, 3, 2);
+		// fRec95
+		fManager->info(8, 9, 2);
+		// fRec96
+		fManager->info(8, 5, 2);
+		// fRec97
+		fManager->info(8, 5, 2);
+		// fRec70
+		fManager->info(8, 3, 2);
+		// fRec98
+		fManager->info(8, 3, 2);
+		// fRec99
+		fManager->info(8, 9, 2);
+		// fRec100
+		fManager->info(8, 5, 2);
+		// fRec101
+		fManager->info(8, 5, 2);
+		// fRec102
+		fManager->info(8, 3, 2);
+		// fRec103
+		fManager->info(8, 9, 2);
+		// fRec104
+		fManager->info(8, 5, 2);
+		// fRec105
+		fManager->info(8, 5, 2);
+		// fVec27
+		fManager->info(12656, 4, 1);
+		// fRec1
+		fManager->info(8, 2, 2);
+		// fRec106
+		fManager->info(8, 3, 2);
+		// fRec107
+		fManager->info(8, 9, 2);
+		// fRec108
+		fManager->info(8, 5, 2);
+		// fRec109
+		fManager->info(8, 5, 2);
+		// fRec110
+		fManager->info(8, 3, 2);
+		// fRec111
+		fManager->info(8, 9, 2);
+		// fRec112
+		fManager->info(8, 5, 2);
+		// fRec113
+		fManager->info(8, 5, 2);
+		// fRec114
+		fManager->info(8, 3, 2);
+		// fRec115
+		fManager->info(8, 9, 2);
+		// fRec116
+		fManager->info(8, 5, 2);
+		// fRec117
+		fManager->info(8, 5, 2);
+		// fRec118
+		fManager->info(8, 3, 2);
+		// fRec119
+		fManager->info(8, 9, 2);
+		// fRec120
+		fManager->info(8, 5, 2);
+		// fRec121
+		fManager->info(8, 5, 2);
+		// fRec122
+		fManager->info(8, 4, 2);
+		// fRec125
+		fManager->info(8, 3, 2);
+		// fRec124
+		fManager->info(8, 3, 2);
+		// fRec123
+		fManager->info(8, 3, 2);
+		fManager->end();
+	}
+	
+	void memoryCreate() {
+		fRec6 = static_cast<float*>(fManager->allocate(8));
+		fRec12 = static_cast<float*>(fManager->allocate(8));
+		fVec0 = static_cast<float*>(fManager->allocate(5744));
+		fRec23 = static_cast<float*>(fManager->allocate(8));
+		fRec24 = static_cast<float*>(fManager->allocate(8));
+		fRec25 = static_cast<float*>(fManager->allocate(8));
+		fRec21 = static_cast<float*>(fManager->allocate(8));
+		fVec1 = static_cast<float*>(fManager->allocate(3844));
+		fRec19 = static_cast<float*>(fManager->allocate(8));
+		fVec2 = static_cast<float*>(fManager->allocate(13952));
+		fRec17 = static_cast<float*>(fManager->allocate(8));
+		fVec3 = static_cast<float*>(fManager->allocate(10684));
+		fRec15 = static_cast<float*>(fManager->allocate(8));
+		fVec4 = static_cast<float*>(fManager->allocate(5668));
+		fRec35 = static_cast<float*>(fManager->allocate(8));
+		fVec5 = static_cast<float*>(fManager->allocate(4300));
+		fRec33 = static_cast<float*>(fManager->allocate(8));
+		fVec6 = static_cast<float*>(fManager->allocate(15092));
+		fRec31 = static_cast<float*>(fManager->allocate(8));
+		fVec7 = static_cast<float*>(fManager->allocate(10760));
+		fRec29 = static_cast<float*>(fManager->allocate(8));
+		fRec28 = static_cast<float*>(fManager->allocate(8));
+		fRec27 = static_cast<float*>(fManager->allocate(8));
+		fRec26 = static_cast<float*>(fManager->allocate(8));
+		fRec47 = static_cast<float*>(fManager->allocate(8));
+		fVec8 = static_cast<float*>(fManager->allocate(131072));
+		fRec48 = static_cast<float*>(fManager->allocate(8));
+		fRec49 = static_cast<float*>(fManager->allocate(8));
+		fVec9 = static_cast<float*>(fManager->allocate(5400));
+		fRec45 = static_cast<float*>(fManager->allocate(8));
+		fVec10 = static_cast<float*>(fManager->allocate(4072));
+		fRec43 = static_cast<float*>(fManager->allocate(8));
+		fVec11 = static_cast<float*>(fManager->allocate(14408));
+		fRec41 = static_cast<float*>(fManager->allocate(8));
+		fVec12 = static_cast<float*>(fManager->allocate(10532));
+		fRec39 = static_cast<float*>(fManager->allocate(8));
+		fVec13 = static_cast<float*>(fManager->allocate(8));
+		fRec38 = static_cast<float*>(fManager->allocate(8));
+		fRec50 = static_cast<float*>(fManager->allocate(8));
+		fRec37 = static_cast<float*>(fManager->allocate(12));
+		fRec51 = static_cast<float*>(fManager->allocate(12));
+		fRec54 = static_cast<float*>(fManager->allocate(8));
+		fRec53 = static_cast<float*>(fManager->allocate(8));
+		fRec52 = static_cast<float*>(fManager->allocate(8));
+		fRec57 = static_cast<float*>(fManager->allocate(8));
+		fRec56 = static_cast<float*>(fManager->allocate(8));
+		fRec55 = static_cast<float*>(fManager->allocate(8));
+		fVec14 = static_cast<float*>(fManager->allocate(13448));
+		fRec13 = static_cast<float*>(fManager->allocate(8));
+		fVec15 = static_cast<float*>(fManager->allocate(17816));
+		fRec11 = static_cast<float*>(fManager->allocate(12));
+		fVec16 = static_cast<float*>(fManager->allocate(36008));
+		fRec58 = static_cast<float*>(fManager->allocate(8));
+		fRec59 = static_cast<float*>(fManager->allocate(8));
+		fRec60 = static_cast<float*>(fManager->allocate(8));
+		fRec61 = static_cast<float*>(fManager->allocate(8));
+		fRec7 = static_cast<float*>(fManager->allocate(8));
+		fRec62 = static_cast<float*>(fManager->allocate(8));
+		fRec63 = static_cast<float*>(fManager->allocate(8));
+		fRec64 = static_cast<float*>(fManager->allocate(8));
+		fRec65 = static_cast<float*>(fManager->allocate(8));
+		fRec66 = static_cast<float*>(fManager->allocate(8));
+		fRec67 = static_cast<float*>(fManager->allocate(8));
+		fRec68 = static_cast<float*>(fManager->allocate(8));
+		fRec69 = static_cast<float*>(fManager->allocate(8));
+		fVec17 = static_cast<float*>(fManager->allocate(14884));
+		fRec0 = static_cast<float*>(fManager->allocate(8));
+		fVec18 = static_cast<float*>(fManager->allocate(131072));
+		fVec19 = static_cast<float*>(fManager->allocate(5400));
+		fRec85 = static_cast<float*>(fManager->allocate(8));
+		fVec20 = static_cast<float*>(fManager->allocate(4072));
+		fRec83 = static_cast<float*>(fManager->allocate(8));
+		fVec21 = static_cast<float*>(fManager->allocate(14408));
+		fRec81 = static_cast<float*>(fManager->allocate(8));
+		fVec22 = static_cast<float*>(fManager->allocate(10532));
+		fRec79 = static_cast<float*>(fManager->allocate(8));
+		fVec23 = static_cast<float*>(fManager->allocate(8));
+		fRec78 = static_cast<float*>(fManager->allocate(8));
+		fRec77 = static_cast<float*>(fManager->allocate(12));
+		fRec87 = static_cast<float*>(fManager->allocate(12));
+		fRec90 = static_cast<float*>(fManager->allocate(8));
+		fRec89 = static_cast<float*>(fManager->allocate(8));
+		fRec88 = static_cast<float*>(fManager->allocate(8));
+		fRec93 = static_cast<float*>(fManager->allocate(8));
+		fRec92 = static_cast<float*>(fManager->allocate(8));
+		fRec91 = static_cast<float*>(fManager->allocate(8));
+		fVec24 = static_cast<float*>(fManager->allocate(18168));
+		fRec75 = static_cast<float*>(fManager->allocate(8));
+		fVec25 = static_cast<float*>(fManager->allocate(16872));
+		fRec74 = static_cast<float*>(fManager->allocate(12));
+		fVec26 = static_cast<float*>(fManager->allocate(53128));
+		fRec94 = static_cast<float*>(fManager->allocate(8));
+		fRec95 = static_cast<float*>(fManager->allocate(8));
+		fRec96 = static_cast<float*>(fManager->allocate(8));
+		fRec97 = static_cast<float*>(fManager->allocate(8));
+		fRec70 = static_cast<float*>(fManager->allocate(8));
+		fRec98 = static_cast<float*>(fManager->allocate(8));
+		fRec99 = static_cast<float*>(fManager->allocate(8));
+		fRec100 = static_cast<float*>(fManager->allocate(8));
+		fRec101 = static_cast<float*>(fManager->allocate(8));
+		fRec102 = static_cast<float*>(fManager->allocate(8));
+		fRec103 = static_cast<float*>(fManager->allocate(8));
+		fRec104 = static_cast<float*>(fManager->allocate(8));
+		fRec105 = static_cast<float*>(fManager->allocate(8));
+		fVec27 = static_cast<float*>(fManager->allocate(12656));
+		fRec1 = static_cast<float*>(fManager->allocate(8));
+		fRec106 = static_cast<float*>(fManager->allocate(8));
+		fRec107 = static_cast<float*>(fManager->allocate(8));
+		fRec108 = static_cast<float*>(fManager->allocate(8));
+		fRec109 = static_cast<float*>(fManager->allocate(8));
+		fRec110 = static_cast<float*>(fManager->allocate(8));
+		fRec111 = static_cast<float*>(fManager->allocate(8));
+		fRec112 = static_cast<float*>(fManager->allocate(8));
+		fRec113 = static_cast<float*>(fManager->allocate(8));
+		fRec114 = static_cast<float*>(fManager->allocate(8));
+		fRec115 = static_cast<float*>(fManager->allocate(8));
+		fRec116 = static_cast<float*>(fManager->allocate(8));
+		fRec117 = static_cast<float*>(fManager->allocate(8));
+		fRec118 = static_cast<float*>(fManager->allocate(8));
+		fRec119 = static_cast<float*>(fManager->allocate(8));
+		fRec120 = static_cast<float*>(fManager->allocate(8));
+		fRec121 = static_cast<float*>(fManager->allocate(8));
+		fRec122 = static_cast<float*>(fManager->allocate(8));
+		fRec125 = static_cast<float*>(fManager->allocate(8));
+		fRec124 = static_cast<float*>(fManager->allocate(8));
+		fRec123 = static_cast<float*>(fManager->allocate(8));
+	}
+	
+	void memoryDestroy() {
+		fManager->destroy(fRec6);
+		fManager->destroy(fRec12);
+		fManager->destroy(fVec0);
+		fManager->destroy(fRec23);
+		fManager->destroy(fRec24);
+		fManager->destroy(fRec25);
+		fManager->destroy(fRec21);
+		fManager->destroy(fVec1);
+		fManager->destroy(fRec19);
+		fManager->destroy(fVec2);
+		fManager->destroy(fRec17);
+		fManager->destroy(fVec3);
+		fManager->destroy(fRec15);
+		fManager->destroy(fVec4);
+		fManager->destroy(fRec35);
+		fManager->destroy(fVec5);
+		fManager->destroy(fRec33);
+		fManager->destroy(fVec6);
+		fManager->destroy(fRec31);
+		fManager->destroy(fVec7);
+		fManager->destroy(fRec29);
+		fManager->destroy(fRec28);
+		fManager->destroy(fRec27);
+		fManager->destroy(fRec26);
+		fManager->destroy(fRec47);
+		fManager->destroy(fVec8);
+		fManager->destroy(fRec48);
+		fManager->destroy(fRec49);
+		fManager->destroy(fVec9);
+		fManager->destroy(fRec45);
+		fManager->destroy(fVec10);
+		fManager->destroy(fRec43);
+		fManager->destroy(fVec11);
+		fManager->destroy(fRec41);
+		fManager->destroy(fVec12);
+		fManager->destroy(fRec39);
+		fManager->destroy(fVec13);
+		fManager->destroy(fRec38);
+		fManager->destroy(fRec50);
+		fManager->destroy(fRec37);
+		fManager->destroy(fRec51);
+		fManager->destroy(fRec54);
+		fManager->destroy(fRec53);
+		fManager->destroy(fRec52);
+		fManager->destroy(fRec57);
+		fManager->destroy(fRec56);
+		fManager->destroy(fRec55);
+		fManager->destroy(fVec14);
+		fManager->destroy(fRec13);
+		fManager->destroy(fVec15);
+		fManager->destroy(fRec11);
+		fManager->destroy(fVec16);
+		fManager->destroy(fRec58);
+		fManager->destroy(fRec59);
+		fManager->destroy(fRec60);
+		fManager->destroy(fRec61);
+		fManager->destroy(fRec7);
+		fManager->destroy(fRec62);
+		fManager->destroy(fRec63);
+		fManager->destroy(fRec64);
+		fManager->destroy(fRec65);
+		fManager->destroy(fRec66);
+		fManager->destroy(fRec67);
+		fManager->destroy(fRec68);
+		fManager->destroy(fRec69);
+		fManager->destroy(fVec17);
+		fManager->destroy(fRec0);
+		fManager->destroy(fVec18);
+		fManager->destroy(fVec19);
+		fManager->destroy(fRec85);
+		fManager->destroy(fVec20);
+		fManager->destroy(fRec83);
+		fManager->destroy(fVec21);
+		fManager->destroy(fRec81);
+		fManager->destroy(fVec22);
+		fManager->destroy(fRec79);
+		fManager->destroy(fVec23);
+		fManager->destroy(fRec78);
+		fManager->destroy(fRec77);
+		fManager->destroy(fRec87);
+		fManager->destroy(fRec90);
+		fManager->destroy(fRec89);
+		fManager->destroy(fRec88);
+		fManager->destroy(fRec93);
+		fManager->destroy(fRec92);
+		fManager->destroy(fRec91);
+		fManager->destroy(fVec24);
+		fManager->destroy(fRec75);
+		fManager->destroy(fVec25);
+		fManager->destroy(fRec74);
+		fManager->destroy(fVec26);
+		fManager->destroy(fRec94);
+		fManager->destroy(fRec95);
+		fManager->destroy(fRec96);
+		fManager->destroy(fRec97);
+		fManager->destroy(fRec70);
+		fManager->destroy(fRec98);
+		fManager->destroy(fRec99);
+		fManager->destroy(fRec100);
+		fManager->destroy(fRec101);
+		fManager->destroy(fRec102);
+		fManager->destroy(fRec103);
+		fManager->destroy(fRec104);
+		fManager->destroy(fRec105);
+		fManager->destroy(fVec27);
+		fManager->destroy(fRec1);
+		fManager->destroy(fRec106);
+		fManager->destroy(fRec107);
+		fManager->destroy(fRec108);
+		fManager->destroy(fRec109);
+		fManager->destroy(fRec110);
+		fManager->destroy(fRec111);
+		fManager->destroy(fRec112);
+		fManager->destroy(fRec113);
+		fManager->destroy(fRec114);
+		fManager->destroy(fRec115);
+		fManager->destroy(fRec116);
+		fManager->destroy(fRec117);
+		fManager->destroy(fRec118);
+		fManager->destroy(fRec119);
+		fManager->destroy(fRec120);
+		fManager->destroy(fRec121);
+		fManager->destroy(fRec122);
+		fManager->destroy(fRec125);
+		fManager->destroy(fRec124);
+		fManager->destroy(fRec123);
+	}
+
+	static mydsp* create() {
+		mydsp* dsp = new (fManager->allocate(sizeof(mydsp))) mydsp();
+		dsp->memoryCreate();
+		return dsp;
+	}
+	
+	static void destroy(dsp* dsp) {
+		static_cast<mydsp*>(dsp)->memoryDestroy();
+		fManager->destroy(dsp);
+	}
 
 };
+
+dsp_memory_manager* mydsp::fManager = nullptr;
 
 #ifdef FAUST_UIMACROS
 	
 	#define FAUST_FILE_NAME "mooSpace.dsp"
 	#define FAUST_CLASS_NAME "mydsp"
-	#define FAUST_COMPILATION_OPIONS "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -dtl 16 -es 1 -mcd 16 -uim -single -ftz 0"
+	#define FAUST_COMPILATION_OPIONS "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -mem -dtl 0 -es 1 -mcd 16 -uim -single -ftz 0"
 	#define FAUST_INPUTS 2
 	#define FAUST_OUTPUTS 2
 	#define FAUST_ACTIVES 9
@@ -11069,12 +11675,10 @@ class mydsp : public dsp {
 #define MULT_16 2147483648u
 #define DIV_16 4.656612873077392578125e-10
 
-
-#ifndef ARM_exidx
-#define ARM_exidx
 unsigned __exidx_start;
 unsigned __exidx_end;
-#endif
+
+
 
 #ifdef MIDICTRL
 
@@ -11082,12 +11686,20 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 
 std::list<GUI*> GUI::fGuiList;
 ztimedmap GUI::gTimedZoneMap;
+
 #endif
 
-#ifdef USEPSRAM
-constexpr size_t bufSize = sizeof(mydsp);
-EXTMEM uint8_t myHeap[bufSize];
-#endif
+
+// #ifdef USEPSRAM
+// #ifdef NVOICES
+// constexpr size_t bufSize = 4 * NVOICES * sizeof(mydsp);
+// #else
+// constexpr size_t bufSize = sizeof(mydsp);
+// #endif
+// EXTMEM uint8_t myHeap[bufSize];
+// #endif
+
+static NemesisMemoryManager gManager;
 
 #ifdef HIGHRES
 mooSpace::mooSpace() : AudioStream(2 * FAUST_INPUTS, new audio_block_t*[2 * FAUST_INPUTS])
@@ -11095,19 +11707,19 @@ mooSpace::mooSpace() : AudioStream(2 * FAUST_INPUTS, new audio_block_t*[2 * FAUS
 mooSpace::mooSpace() : AudioStream(FAUST_INPUTS, new audio_block_t*[FAUST_INPUTS])
 #endif
 {
+    mydsp::fManager = &gManager;
+    mydsp::memoryInfo();
+    mydsp::classInit(AUDIO_SAMPLE_RATE_EXACT);
 #ifdef NVOICES
     int nvoices = NVOICES;
-    mydsp_poly* dsp_poly = new mydsp_poly(new mydsp(), nvoices, true, true);
+    monoDSP = new mydsp();
+    mydsp_poly* dsp_poly = new mydsp_poly(monoDSP, nvoices, true, true);
     fDSP = dsp_poly;
-#else
-#ifdef USEPSRAM
-    fDSP = new(myHeap) mydsp();
-#else
+ #else
     fDSP = new mydsp();
 #endif
-#endif
-
-    fDSP->init(AUDIO_SAMPLE_RATE_EXACT);
+    fDSP->memoryCreate();
+    fDSP->instanceInit(AUDIO_SAMPLE_RATE_EXACT);
     
     fUI = new MapUI();
     fDSP->buildUserInterface(fUI);
@@ -11122,7 +11734,7 @@ mooSpace::mooSpace() : AudioStream(FAUST_INPUTS, new audio_block_t*[FAUST_INPUTS
         fInChannel = NULL;
     }
     
-    // allocating Faust outputs<
+    // allocating Faust outputs
     if (fDSP->getNumOutputs() > 0) {
         fOutChannel = new float*[fDSP->getNumOutputs()];
         for (int i = 0; i < fDSP->getNumOutputs(); i++) {
@@ -11135,17 +11747,20 @@ mooSpace::mooSpace() : AudioStream(FAUST_INPUTS, new audio_block_t*[FAUST_INPUTS
 #ifdef MIDICTRL
     fMIDIHandler = new nemesis_midi();
     fMIDIInterface = new MidiUI(fMIDIHandler);
-    fDSP->buildUserInterface(fMIDIInterface);
 #ifdef NVOICES
     fMIDIHandler->addMidiIn(dsp_poly);
 #endif
+    fDSP->buildUserInterface(fMIDIInterface);
     fMIDIInterface->run();
 #endif
 }
 
 mooSpace::~mooSpace()
 {
+    fDSP->memoryDestroy();
+    mydsp::destroy(fDSP);
     delete fDSP;
+    mydsp::classDestroy();
     delete fUI;
     for (int i = 0; i < fDSP->getNumInputs(); i++) {
         delete[] fInChannel[i];
@@ -11156,7 +11771,6 @@ mooSpace::~mooSpace()
     }
     delete [] fOutChannel;
 #ifdef MIDICTRL
-
     delete fMIDIInterface;
     delete fMIDIHandler;
 #endif
@@ -11166,7 +11780,9 @@ template <int INPUTS, int OUTPUTS>
 void mooSpace::updateImp(void)
 {
 #ifdef MIDICTRL
+    // Process the MIDI messages received by the Teensy
     fMIDIHandler->processMidi();
+    // Synchronize all GUI controllers
     GUI::updateAllGuis();
 #endif
 #ifdef HIGHRES 
@@ -11216,7 +11832,7 @@ void mooSpace::updateImp(void)
             inBlock[channel] = receiveReadOnly(channel);
             if (inBlock[channel]) {
                 for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                    int32_t val = inBlock[channel]->data[i] << 16;
+                    uint32_t val = inBlock[channel]->data[i] << 16;
                     fInChannel[channel][i] = val*DIV_16;
                 }
                 release(inBlock[channel]);
@@ -11233,7 +11849,7 @@ void mooSpace::updateImp(void)
         outBlock[channel] = allocate();
         if (outBlock[channel]) {
             for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                int32_t val = fOutChannel[channel][i]*MULT_16;
+                uint32_t val = fOutChannel[channel][i]*MULT_16;
                 outBlock[channel]->data[i] = val >> 16;
             }
             transmit(outBlock[channel], channel);
@@ -11253,16 +11869,6 @@ void mooSpace::setParamValue(const std::string& path, float value)
 float mooSpace::getParamValue(const std::string& path)
 {
     return fUI->getParamValue(path);
-}
-
-int mooSpace::getParamsCount()
-{
-    return fUI->getParamsCount();
-}
-
-std::string mooSpace::getParamAddress(int index)
-{
-    return fUI->getParamAddress(index);
 }
 
 /********************END ARCHITECTURE SECTION (part 2/2)****************/

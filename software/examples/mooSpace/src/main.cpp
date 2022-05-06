@@ -71,18 +71,20 @@ constexpr float smoothing = 0.2f;
 // 
 // 
 // 
+extern unsigned long _heap_end;
+extern char *__brkval;
+uint32_t FreeMem(){ // for Teensy 4.1
+  char* p = (char*) extmem_malloc(100000); // size should be quite big, to avoid allocating fragment!
+  extmem_free(p);
+  return (char *)&_heap_end - p; // __brkval;
+}
+
 void print_audio_usage()
 {
-   Serial.print(AudioProcessorUsage());
-   Serial.print("\t");
+   // Serial.print(FreeMem());
+   // Serial.print("\t");
    Serial.print(faustObj.processorUsage());
    Serial.print("\t");
-
-   for (int i = 0; i < 9; i++)
-   {
-      Serial.print(adc_new[i]);
-      Serial.print("\t");
-   }
    Serial.println(AudioMemoryUsageMax());
 }
 
@@ -147,13 +149,15 @@ void update()
          current_pot = 0;
 }
 
-
 void setup()
 {
-   Serial.begin(9600);
+//    Serial.begin(9600);
 //    while (!Serial) {
 //     ; // wait for serial port to connect. Needed for native USB
 //   }
+   // Serial.print(CrashReport);
+   
+   nemesis::init();
 
    for (int i = 0; i < 9; i++)
    {
@@ -162,18 +166,17 @@ void setup()
       // Setup both adc modules on teensy
    adc->adc0->setAveraging(ADC_AVERAGING);                          // set number of averages
    adc->adc0->setResolution(ADC_RES);                               // set bits of resolution
-   adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED);  // change the conversion speed
-   adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED); // change the sampling speed
+   // adc->adc0->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED);  // change the conversion speed
+   // adc->adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED); // change the sampling speed
    // adc->adc0->recalibrate();
 
    adc->adc1->setAveraging(ADC_AVERAGING);                          // set number of averages
    adc->adc1->setResolution(ADC_RES);                               // set bits of resolution
-   adc->adc1->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED);  // change the conversion speed
-   adc->adc1->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED); // change the sampling speed
+   // adc->adc1->setConversionSpeed(ADC_CONVERSION_SPEED::LOW_SPEED);  // change the conversion speed
+   // adc->adc1->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED); // change the sampling speed
    // adc->adc1->recalibrate();
    
    //nemesis::setSampleRate((int)AUDIO_SAMPLE_RATE_EXACT);
-   nemesis::init();
    nemesis::calibration(); // calibration routine
 
    if (EEPROM.read(0) == 0xFF) // check for calbration flag
@@ -194,7 +197,8 @@ void setup()
    //codec.invertADC(0x3F);
    //delay(200); // wait for dc offset to stabilize
    //codec.filterFreeze();
-   myTimer.begin(print_audio_usage, 500000);
+   //print_audio_usage();
+   //myTimer.begin(print_audio_usage, 500000);
    nemesis::codec.volume(1.0);
 
 }
