@@ -3,7 +3,7 @@ author: "Arev Imer (arev.imer@students.fhnw.ch)"
 copyright: "Arev"
 name: "mooSpace"
 version: "0.2"
-Code generated with Faust 2.40.0 (https://faust.grame.fr)
+Code generated with Faust 2.40.7 (https://faust.grame.fr)
 Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -es 1 -mcd 16 -uim -single -ftz 0
 ------------------------------------------------------------ */
 
@@ -196,8 +196,10 @@ struct UI : public UIReal<FAUSTFLOAT>
 #define FAUST_PATHBUILDER_H
 
 #include <vector>
+#include <set>
 #include <string>
 #include <algorithm>
+#include <regex>
 
 /*******************************************************************************
  * PathBuilder : Faust User Interface
@@ -210,11 +212,134 @@ class PathBuilder
     protected:
     
         std::vector<std::string> fControlsLevel;
-       
-    public:
+        std::vector<std::string> fFullPaths;
+        std::map<std::string, std::string> fFull2Short;  // filled by computeShortNames()
     
-        PathBuilder() {}
-        virtual ~PathBuilder() {}
+        /**
+         * @brief check if a character is acceptable for an ID
+         *
+         * @param c
+         * @return true is the character is acceptable for an ID
+         */
+        bool isIDChar(char c) const
+        {
+            return ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z')) || ((c >= '0') && (c <= '9'));
+        }
+    
+        /**
+         * @brief remove all "/0x00" parts
+         *
+         * @param src
+         * @return modified string
+         */
+        std::string remove0x00(const std::string& src) const
+        {
+            return std::regex_replace(src, std::regex("/0x00"), "");
+        }
+    
+        /**
+         * @brief replace all non ID char with '_' (one '_' may replace several non ID char)
+         *
+         * @param src
+         * @return modified string
+         */
+        std::string str2ID(const std::string& src) const
+        {
+            std::string dst;
+            bool need_underscore = false;
+            for (char c : src) {
+                if (isIDChar(c) || (c == '/')) {
+                    if (need_underscore) {
+                        dst.push_back('_');
+                        need_underscore = false;
+                    }
+                    dst.push_back(c);
+                } else {
+                    need_underscore = true;
+                }
+            }
+            return dst;
+        }
+    
+        /**
+         * @brief Keep only the last n slash-parts
+         *
+         * @param src
+         * @param n : 1 indicates the last slash-part
+         * @return modified string
+         */
+        std::string cut(const std::string& src, int n) const
+        {
+            std::string rdst;
+            for (int i = src.length()-1; i >= 0; i--) {
+                char c = src[i];
+                if (c != '/') {
+                    rdst.push_back(c);
+                } else if (n == 1) {
+                    std::string dst;
+                    for (int j = rdst.length()-1; j >= 0; j--) {
+                        dst.push_back(rdst[j]);
+                    }
+                    return dst;
+                } else {
+                    n--;
+                    rdst.push_back(c);
+                }
+            }
+            return src;
+        }
+    
+        void addFullPath(const std::string& label) { fFullPaths.push_back(buildPath(label)); }
+    
+        /**
+         * @brief Compute the mapping between full path and short names
+         */
+        void computeShortNames()
+        {
+            std::vector<std::string>           uniquePaths;  // all full paths transformed but made unique with a prefix
+            std::map<std::string, std::string> unique2full;  // all full paths transformed but made unique with a prefix
+            int pnum = 0;
+        
+            for (const auto& s : fFullPaths) {
+                std::string u = "/P" + std::to_string(pnum++) + str2ID(remove0x00(s));
+                uniquePaths.push_back(u);
+                unique2full[u] = s;  // remember the full path associated to a unique path
+            }
+        
+            std::map<std::string, int> uniquePath2level;                // map path to level
+            for (const auto& s : uniquePaths) uniquePath2level[s] = 1;   // we init all levels to 1
+            bool have_collisions = true;
+        
+            while (have_collisions) {
+                // compute collision list
+                std::set<std::string>              collisionSet;
+                std::map<std::string, std::string> short2full;
+                have_collisions = false;
+                for (const auto& it : uniquePath2level) {
+                    std::string u = it.first;
+                    int n = it.second;
+                    std::string shortName = cut(u, n);
+                    auto p = short2full.find(shortName);
+                    if (p == short2full.end()) {
+                        // no collision
+                        short2full[shortName] = u;
+                    } else {
+                        // we have a collision, add the two paths to the collision set
+                        have_collisions = true;
+                        collisionSet.insert(u);
+                        collisionSet.insert(p->second);
+                    }
+                }
+                for (const auto& s : collisionSet) uniquePath2level[s]++;  // increase level of colliding path
+            }
+        
+            for (const auto& it : uniquePath2level) {
+                std::string u = it.first;
+                int n = it.second;
+                std::string shortName = replaceCharList(cut(u, n), {'/'}, '_');
+                fFull2Short[unique2full[u]] = shortName;
+            }
+        }
     
         std::string replaceCharList(std::string str, const std::vector<char>& ch1, char ch2)
         {
@@ -227,8 +352,19 @@ class PathBuilder
             }
             return str;
         }
+     
+    public:
     
-        std::string buildPath(const std::string& label) 
+        PathBuilder() {}
+        virtual ~PathBuilder() {}
+    
+        // Return true for the first level of groups
+        bool pushLabel(const std::string& label) { fControlsLevel.push_back(label); return fControlsLevel.size() == 1;}
+    
+        // Return true for the last level of groups
+        bool popLabel() { fControlsLevel.pop_back(); return fControlsLevel.size() == 0; }
+    
+        std::string buildPath(const std::string& label)
         {
             std::string res = "/";
             for (size_t i = 0; i < fControlsLevel.size(); i++) {
@@ -236,13 +372,9 @@ class PathBuilder
                 res += "/";
             }
             res += label;
-            std::vector<char> rep = {' ', '#', '*', ',', '/', '?', '[', ']', '{', '}', '(', ')'};
-            replaceCharList(res, rep, '_');
+            replaceCharList(res, {' ', '#', '*', ',', '/', '?', '[', ']', '{', '}', '(', ')'}, '_');
             return res;
         }
-    
-        void pushLabel(const std::string& label) { fControlsLevel.push_back(label); }
-        void popLabel() { fControlsLevel.pop_back(); }
     
 };
 
@@ -254,9 +386,10 @@ class PathBuilder
  *
  * This class creates:
  * - a map of 'labels' and zones for each UI item.
- * - a map of complete hierarchical 'paths' and zones for each UI item.
+ * - a map of unique 'shortname' (built so that they never collide) and zones
+ * - a map of complete hierarchical 'paths' and zones for each UI item
  *
- * Simple 'labels' and complete 'paths' (to fully discriminate between possible same
+ * Simple 'labels', 'shortname' and complete 'paths' (to fully discriminate between possible same
  * 'labels' at different location in the UI hierachy) can be used to access a given parameter.
  ******************************************************************************/
 
@@ -265,11 +398,22 @@ class MapUI : public UI, public PathBuilder
     
     protected:
     
-        // Complete path map
-        std::map<std::string, FAUSTFLOAT*> fPathZoneMap;
-    
         // Label zone map
         std::map<std::string, FAUSTFLOAT*> fLabelZoneMap;
+    
+        // Shortname zone map
+        std::map<std::string, FAUSTFLOAT*> fShortnameZoneMap;
+    
+        // Fill path map
+        std::map<std::string, FAUSTFLOAT*> fFullpathZoneMap;
+    
+        void addZoneLabel(const std::string& label, FAUSTFLOAT* zone)
+        {
+            std::string path = buildPath(label);
+            fFullPaths.push_back(path);
+            fFullpathZoneMap[path] = zone;
+            fLabelZoneMap[label] = zone;
+        }
     
     public:
         
@@ -291,46 +435,46 @@ class MapUI : public UI, public PathBuilder
         }
         void closeBox()
         {
-            popLabel();
+            if (popLabel()) {
+                // Shortnames can be computed when all fullnames are known
+                computeShortNames();
+                // Fill 'shortname' map
+                for (const auto& it : fFullPaths) {
+                    fShortnameZoneMap[fFull2Short[it]] = fFullpathZoneMap[it];
+                }
+            }
         }
         
         // -- active widgets
         void addButton(const char* label, FAUSTFLOAT* zone)
         {
-            fPathZoneMap[buildPath(label)] = zone;
-            fLabelZoneMap[label] = zone;
+            addZoneLabel(label, zone);
         }
         void addCheckButton(const char* label, FAUSTFLOAT* zone)
         {
-            fPathZoneMap[buildPath(label)] = zone;
-            fLabelZoneMap[label] = zone;
+            addZoneLabel(label, zone);
         }
         void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT fmin, FAUSTFLOAT fmax, FAUSTFLOAT step)
         {
-            fPathZoneMap[buildPath(label)] = zone;
-            fLabelZoneMap[label] = zone;
+            addZoneLabel(label, zone);
         }
         void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT fmin, FAUSTFLOAT fmax, FAUSTFLOAT step)
         {
-            fPathZoneMap[buildPath(label)] = zone;
-            fLabelZoneMap[label] = zone;
+            addZoneLabel(label, zone);
         }
         void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT fmin, FAUSTFLOAT fmax, FAUSTFLOAT step)
         {
-            fPathZoneMap[buildPath(label)] = zone;
-            fLabelZoneMap[label] = zone;
+            addZoneLabel(label, zone);
         }
         
         // -- passive widgets
         void addHorizontalBargraph(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT fmin, FAUSTFLOAT fmax)
         {
-            fPathZoneMap[buildPath(label)] = zone;
-            fLabelZoneMap[label] = zone;
+            addZoneLabel(label, zone);
         }
         void addVerticalBargraph(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT fmin, FAUSTFLOAT fmax)
         {
-            fPathZoneMap[buildPath(label)] = zone;
-            fLabelZoneMap[label] = zone;
+            addZoneLabel(label, zone);
         }
     
         // -- soundfiles
@@ -343,8 +487,10 @@ class MapUI : public UI, public PathBuilder
         // setParamValue/getParamValue
         void setParamValue(const std::string& path, FAUSTFLOAT value)
         {
-            if (fPathZoneMap.find(path) != fPathZoneMap.end()) {
-                *fPathZoneMap[path] = value;
+            if (fFullpathZoneMap.find(path) != fFullpathZoneMap.end()) {
+                *fFullpathZoneMap[path] = value;
+            } else if (fShortnameZoneMap.find(path) != fShortnameZoneMap.end()) {
+                *fShortnameZoneMap[path] = value;
             } else if (fLabelZoneMap.find(path) != fLabelZoneMap.end()) {
                 *fLabelZoneMap[path] = value;
             } else {
@@ -354,8 +500,10 @@ class MapUI : public UI, public PathBuilder
         
         FAUSTFLOAT getParamValue(const std::string& path)
         {
-            if (fPathZoneMap.find(path) != fPathZoneMap.end()) {
-                return *fPathZoneMap[path];
+            if (fFullpathZoneMap.find(path) != fFullpathZoneMap.end()) {
+                return *fFullpathZoneMap[path];
+            } else if (fShortnameZoneMap.find(path) != fShortnameZoneMap.end()) {
+                return *fShortnameZoneMap[path];
             } else if (fLabelZoneMap.find(path) != fLabelZoneMap.end()) {
                 return *fLabelZoneMap[path];
             } else {
@@ -365,35 +513,81 @@ class MapUI : public UI, public PathBuilder
         }
     
         // map access 
-        std::map<std::string, FAUSTFLOAT*>& getMap() { return fPathZoneMap; }
+        std::map<std::string, FAUSTFLOAT*>& getFullpathMap() { return fFullpathZoneMap; }
+        std::map<std::string, FAUSTFLOAT*>& getShortnameMap() { return fShortnameZoneMap; }
+        std::map<std::string, FAUSTFLOAT*>& getLabelMap() { return fLabelZoneMap; }
         
-        int getParamsCount() { return int(fPathZoneMap.size()); }
+        int getParamsCount() { return int(fFullpathZoneMap.size()); }
         
         std::string getParamAddress(int index)
         {
-            if (index < 0 || index > int(fPathZoneMap.size())) {
+            if (index < 0 || index > int(fFullpathZoneMap.size())) {
                 return "";
             } else {
-                auto it = fPathZoneMap.begin();
-                while (index-- > 0 && it++ != fPathZoneMap.end()) {}
+                auto it = fFullpathZoneMap.begin();
+                while (index-- > 0 && it++ != fFullpathZoneMap.end()) {}
                 return it->first;
             }
         }
         
         const char* getParamAddress1(int index)
         {
-            if (index < 0 || index > int(fPathZoneMap.size())) {
+            if (index < 0 || index > int(fFullpathZoneMap.size())) {
                 return nullptr;
             } else {
-                auto it = fPathZoneMap.begin();
-                while (index-- > 0 && it++ != fPathZoneMap.end()) {}
+                auto it = fFullpathZoneMap.begin();
+                while (index-- > 0 && it++ != fFullpathZoneMap.end()) {}
+                return it->first.c_str();
+            }
+        }
+    
+        std::string getParamShortname(int index)
+        {
+            if (index < 0 || index > int(fShortnameZoneMap.size())) {
+                return "";
+            } else {
+                auto it = fShortnameZoneMap.begin();
+                while (index-- > 0 && it++ != fShortnameZoneMap.end()) {}
+                return it->first;
+            }
+        }
+        
+        const char* getParamShortname1(int index)
+        {
+            if (index < 0 || index > int(fShortnameZoneMap.size())) {
+                return nullptr;
+            } else {
+                auto it = fShortnameZoneMap.begin();
+                while (index-- > 0 && it++ != fShortnameZoneMap.end()) {}
+                return it->first.c_str();
+            }
+        }
+    
+        std::string getParamLabel(int index)
+        {
+            if (index < 0 || index > int(fLabelZoneMap.size())) {
+                return "";
+            } else {
+                auto it = fLabelZoneMap.begin();
+                while (index-- > 0 && it++ != fLabelZoneMap.end()) {}
+                return it->first;
+            }
+        }
+        
+        const char* getParamLabel1(int index)
+        {
+            if (index < 0 || index > int(fLabelZoneMap.size())) {
+                return nullptr;
+            } else {
+                auto it = fLabelZoneMap.begin();
+                while (index-- > 0 && it++ != fLabelZoneMap.end()) {}
                 return it->first.c_str();
             }
         }
     
         std::string getParamAddress(FAUSTFLOAT* zone)
         {
-            for (const auto& it : fPathZoneMap) {
+            for (const auto& it : fFullpathZoneMap) {
                 if (it.second == zone) return it.first;
             }
             return "";
@@ -401,8 +595,10 @@ class MapUI : public UI, public PathBuilder
     
         FAUSTFLOAT* getParamZone(const std::string& str)
         {
-            if (fPathZoneMap.find(str) != fPathZoneMap.end()) {
-                return fPathZoneMap[str];
+            if (fFullpathZoneMap.find(str) != fFullpathZoneMap.end()) {
+                return fFullpathZoneMap[str];
+            } else if (fShortnameZoneMap.find(str) != fShortnameZoneMap.end()) {
+                return fShortnameZoneMap[str];
             } else if (fLabelZoneMap.find(str) != fLabelZoneMap.end()) {
                 return fLabelZoneMap[str];
             }
@@ -411,11 +607,11 @@ class MapUI : public UI, public PathBuilder
     
         FAUSTFLOAT* getParamZone(int index)
         {
-            if (index < 0 || index > int(fPathZoneMap.size())) {
+            if (index < 0 || index > int(fFullpathZoneMap.size())) {
                 return nullptr;
             } else {
-                auto it = fPathZoneMap.begin();
-                while (index-- > 0 && it++ != fPathZoneMap.end()) {}
+                auto it = fFullpathZoneMap.begin();
+                while (index-- > 0 && it++ != fFullpathZoneMap.end()) {}
                 return it->second;
             }
         }
@@ -426,6 +622,7 @@ class MapUI : public UI, public PathBuilder
             size_t l2 = end.length();
             return (l1 >= l2) && (0 == str.compare(l1 - l2, l2, end));
         }
+    
 };
 
 #endif // FAUST_MAPUI_H
@@ -1476,6 +1673,7 @@ class ZoneReader
 #include <sstream>
 #include <stdio.h> // We use the lighter fprintf code
 #include <ctype.h>
+#include <assert.h>
 
 #ifndef _WIN32
 # pragma GCC diagnostic ignored "-Wunused-function"
@@ -1484,8 +1682,9 @@ class ZoneReader
 struct itemInfo {
     std::string type;
     std::string label;
-    std::string url;
+    std::string shortname;
     std::string address;
+    std::string url;
     int index;
     double init;
     double fmin;
@@ -1886,15 +2085,21 @@ static bool parseUI(const char*& p, std::vector<itemInfo>& uiItems, int& numItem
                     }
                 }
                 
-                else if (label == "url") {
+                else if (label == "shortname") {
                     if (parseChar(p, ':') && parseDQString(p, value)) {
-                        uiItems[numItems].url = value;
+                        uiItems[numItems].shortname = value;
                     }
                 }
                 
                 else if (label == "address") {
                     if (parseChar(p, ':') && parseDQString(p, value)) {
                         uiItems[numItems].address = value;
+                    }
+                }
+                
+                else if (label == "url") {
+                    if (parseChar(p, ':') && parseDQString(p, value)) {
+                        uiItems[numItems].url = value;
                     }
                 }
                 
@@ -1949,6 +2154,10 @@ static bool parseUI(const char*& p, std::vector<itemInfo>& uiItems, int& numItem
                             numItems++;
                         }
                     }
+            
+                } else {
+                    fprintf(stderr, "Parse error unknown : %s \n", label.c_str());
+                    assert(false);
                 }
             } else {
                 p = saved;
@@ -3200,6 +3409,10 @@ static void deleteClist(clist* cl)
 /*******************************************************************************
  * JSONUI : Faust User Interface
  * This class produce a complete JSON decription of the DSP instance.
+ *
+ * Since 'shortname' can only be computed when all paths have been created,
+ * the fAllUI vector is progressively filled with partially built UI items,
+ * which are finally created in the JSON(...) method.
  ******************************************************************************/
 
 typedef std::vector<std::tuple<std::string, int, int, int, int, int>> MemoryLayoutType;
@@ -3212,6 +3425,7 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
     protected:
     
         std::stringstream fUI;
+        std::vector<std::string> fAllUI;
         std::stringstream fMeta;
         std::vector<std::pair <std::string, std::string> > fMetaAux;
         std::string fVersion;           // Compiler version
@@ -3222,6 +3436,7 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
         std::string fFileName;
         std::string fExpandedCode;
         std::string fSHAKey;
+        std::string fJSON;
         int fDSPSize;                   // In bytes
         PathTableType fPathTable;
         MemoryLayoutType fMemoryLayout;
@@ -3403,7 +3618,10 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
     
         virtual void closeBox()
         {
-            popLabel();
+            if (popLabel()) {
+                // Shortnames can be computed when all fullnames are known
+                computeShortNames();
+            }
             fTab -= 1;
             tab(fTab, fUI); fUI << "]";
             fTab -= 1;
@@ -3416,12 +3634,21 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
         virtual void addGenericButton(const char* label, const char* name)
         {
             std::string path = buildPath(label);
+            fFullPaths.push_back(path);
             
             fUI << fCloseUIPar;
             tab(fTab, fUI); fUI << "{";
             fTab += 1;
             tab(fTab, fUI); fUI << "\"type\": \"" << name << "\",";
             tab(fTab, fUI); fUI << "\"label\": \"" << label << "\",";
+        
+            // Generate 'shortname' entry
+            tab(fTab, fUI); fUI << "\"shortname\": \"";
+        
+            // Add fUI section
+            fAllUI.push_back(fUI.str());
+            fUI.str("");
+        
             if (fPathTable.size() > 0) {
                 tab(fTab, fUI); fUI << "\"address\": \"" << path << "\",";
                 tab(fTab, fUI); fUI << "\"index\": " << getAddressIndex(path) << ((fMetaAux.size() > 0) ? "," : "");
@@ -3447,12 +3674,21 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
         virtual void addGenericEntry(const char* label, const char* name, REAL init, REAL min, REAL max, REAL step)
         {
             std::string path = buildPath(label);
+            fFullPaths.push_back(path);
             
             fUI << fCloseUIPar;
             tab(fTab, fUI); fUI << "{";
             fTab += 1;
             tab(fTab, fUI); fUI << "\"type\": \"" << name << "\",";
             tab(fTab, fUI); fUI << "\"label\": \"" << label << "\",";
+         
+            // Generate 'shortname' entry
+            tab(fTab, fUI); fUI << "\"shortname\": \"";
+        
+            // Add fUI section
+            fAllUI.push_back(fUI.str());
+            fUI.str("");
+        
             tab(fTab, fUI); fUI << "\"address\": \"" << path << "\",";
             if (fPathTable.size() > 0) {
                 tab(fTab, fUI); fUI << "\"index\": " << getAddressIndex(path) << ",";
@@ -3487,12 +3723,21 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
         virtual void addGenericBargraph(const char* label, const char* name, REAL min, REAL max) 
         {
             std::string path = buildPath(label);
+            fFullPaths.push_back(path);
             
             fUI << fCloseUIPar;
             tab(fTab, fUI); fUI << "{";
             fTab += 1;
             tab(fTab, fUI); fUI << "\"type\": \"" << name << "\",";
             tab(fTab, fUI); fUI << "\"label\": \"" << label << "\",";
+         
+            // Generate 'shortname' entry
+            tab(fTab, fUI); fUI << "\"shortname\": \"";
+        
+            // Add fUI section
+            fAllUI.push_back(fUI.str());
+            fUI.str("");
+            
             tab(fTab, fUI); fUI << "\"address\": \"" << path << "\",";
             if (fPathTable.size() > 0) {
                 tab(fTab, fUI); fUI << "\"index\": " << getAddressIndex(path) << ",";
@@ -3555,66 +3800,85 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
     
         std::string JSON(bool flat = false)
         {
-            fTab = 0;
-            std::stringstream JSON;
-            if (fExtended) {
-                JSON << std::setprecision(std::numeric_limits<REAL>::max_digits10);
-            }
-            JSON << "{";
-            fTab += 1;
-            tab(fTab, JSON); JSON << "\"name\": \"" << fName << "\",";
-            tab(fTab, JSON); JSON << "\"filename\": \"" << fFileName << "\",";
-            if (fVersion != "") { tab(fTab, JSON); JSON << "\"version\": \"" << fVersion << "\","; }
-            if (fCompileOptions != "") { tab(fTab, JSON); JSON << "\"compile_options\": \"" <<  fCompileOptions << "\","; }
-            if (fLibraryList.size() > 0) {
-                tab(fTab, JSON);
-                JSON << "\"library_list\": [";
-                for (size_t i = 0; i < fLibraryList.size(); i++) {
-                    JSON << "\"" << fLibraryList[i] << "\"";
-                    if (i < (fLibraryList.size() - 1)) JSON << ",";
+            if (fJSON.empty()) {
+                fTab = 0;
+                std::stringstream JSON;
+                if (fExtended) {
+                    JSON << std::setprecision(std::numeric_limits<REAL>::max_digits10);
                 }
-                JSON << "],";
-            }
-            if (fIncludePathnames.size() > 0) {
-                tab(fTab, JSON);
-                JSON << "\"include_pathnames\": [";
-                for (size_t i = 0; i < fIncludePathnames.size(); i++) {
-                    JSON << "\"" << fIncludePathnames[i] << "\"";
-                    if (i < (fIncludePathnames.size() - 1)) JSON << ",";
+                JSON << "{";
+                fTab += 1;
+                tab(fTab, JSON); JSON << "\"name\": \"" << fName << "\",";
+                tab(fTab, JSON); JSON << "\"filename\": \"" << fFileName << "\",";
+                if (fVersion != "") { tab(fTab, JSON); JSON << "\"version\": \"" << fVersion << "\","; }
+                if (fCompileOptions != "") { tab(fTab, JSON); JSON << "\"compile_options\": \"" <<  fCompileOptions << "\","; }
+                if (fLibraryList.size() > 0) {
+                    tab(fTab, JSON);
+                    JSON << "\"library_list\": [";
+                    for (size_t i = 0; i < fLibraryList.size(); i++) {
+                        JSON << "\"" << fLibraryList[i] << "\"";
+                        if (i < (fLibraryList.size() - 1)) JSON << ",";
+                    }
+                    JSON << "],";
                 }
-                JSON << "],";
-            }
-            if (fMemoryLayout.size() > 0) {
-                tab(fTab, JSON);
-                JSON << "\"memory_layout\": [";
-                for (size_t i = 0; i < fMemoryLayout.size(); i++) {
-                    // DSP or field name, type, size, sizeBytes, reads, writes
-                    std::tuple<std::string, int, int, int, int, int> item = fMemoryLayout[i];
-                    tab(fTab + 1, JSON);
-                    JSON << "{\"size\": " << std::get<3>(item) << ", ";
-                    JSON << "\"reads\": " << std::get<4>(item) << ", ";
-                    JSON << "\"writes\": " << std::get<5>(item) << "}";
-                    if (i < (fMemoryLayout.size() - 1)) JSON << ",";
+                if (fIncludePathnames.size() > 0) {
+                    tab(fTab, JSON);
+                    JSON << "\"include_pathnames\": [";
+                    for (size_t i = 0; i < fIncludePathnames.size(); i++) {
+                        JSON << "\"" << fIncludePathnames[i] << "\"";
+                        if (i < (fIncludePathnames.size() - 1)) JSON << ",";
+                    }
+                    JSON << "],";
                 }
-                tab(fTab, JSON);
-                JSON << "],";
+                if (fMemoryLayout.size() > 0) {
+                    tab(fTab, JSON);
+                    JSON << "\"memory_layout\": [";
+                    for (size_t i = 0; i < fMemoryLayout.size(); i++) {
+                        // DSP or field name, type, size, sizeBytes, reads, writes
+                        std::tuple<std::string, int, int, int, int, int> item = fMemoryLayout[i];
+                        tab(fTab + 1, JSON);
+                        JSON << "{\"size\": " << std::get<3>(item) << ", ";
+                        JSON << "\"reads\": " << std::get<4>(item) << ", ";
+                        JSON << "\"writes\": " << std::get<5>(item) << "}";
+                        if (i < (fMemoryLayout.size() - 1)) JSON << ",";
+                    }
+                    tab(fTab, JSON);
+                    JSON << "],";
+                }
+                if (fDSPSize != -1) { tab(fTab, JSON); JSON << "\"size\": " << fDSPSize << ","; }
+                if (fSHAKey != "") { tab(fTab, JSON); JSON << "\"sha_key\": \"" << fSHAKey << "\","; }
+                if (fExpandedCode != "") { tab(fTab, JSON); JSON << "\"code\": \"" << fExpandedCode << "\","; }
+                tab(fTab, JSON); JSON << "\"inputs\": " << fInputs << ",";
+                tab(fTab, JSON); JSON << "\"outputs\": " << fOutputs << ",";
+                if (fSRIndex != -1) { tab(fTab, JSON); JSON << "\"sr_index\": " << fSRIndex << ","; }
+                tab(fTab, fMeta); fMeta << "],";
+              
+                // Add last UI section
+                fAllUI.push_back(fUI.str());
+                // Finalize UI generation
+                fUI.str("");
+                // Add N-1 sections
+                for (size_t i = 0; i < fAllUI.size()-1; i++) {
+                    fUI << fAllUI[i] << fFull2Short[fFullPaths[i]] << "\",";
+                }
+                // And the last one
+                fUI << fAllUI[fAllUI.size()-1];
+                // Terminates the UI section
+                tab(fTab, fUI); fUI << "]";
+            
+                fTab -= 1;
+                if (fCloseMetaPar == ',') { // If "declare" has been called, fCloseMetaPar state is now ','
+                    JSON << fMeta.str() << fUI.str();
+                } else {
+                    JSON << fUI.str();
+                }
+                
+                tab(fTab, JSON); JSON << "}";
+                
+                // Keep result in fJSON
+                fJSON = JSON.str();
             }
-            if (fDSPSize != -1) { tab(fTab, JSON); JSON << "\"size\": " << fDSPSize << ","; }
-            if (fSHAKey != "") { tab(fTab, JSON); JSON << "\"sha_key\": \"" << fSHAKey << "\","; }
-            if (fExpandedCode != "") { tab(fTab, JSON); JSON << "\"code\": \"" << fExpandedCode << "\","; }
-            tab(fTab, JSON); JSON << "\"inputs\": " << fInputs << ",";
-            tab(fTab, JSON); JSON << "\"outputs\": " << fOutputs << ",";
-            if (fSRIndex != -1) { tab(fTab, JSON); JSON << "\"sr_index\": " << fSRIndex << ","; }
-            tab(fTab, fMeta); fMeta << "],";
-            tab(fTab, fUI); fUI << "]";
-            fTab -= 1;
-            if (fCloseMetaPar == ',') { // If "declare" has been called, fCloseMetaPar state is now ','
-                JSON << fMeta.str() << fUI.str();
-            } else {
-                JSON << fUI.str();
-            }
-            tab(fTab, JSON); JSON << "}";
-            return (flat) ? flatten(JSON.str()) : JSON.str();
+            return (flat) ? flatten(fJSON) : fJSON;
         }
     
 };
@@ -8418,7 +8682,7 @@ struct dsp_voice : public MapUI, public decorator_dsp {
     void extractPaths(std::vector<std::string>& gate, std::vector<std::string>& freq, std::vector<std::string>& gain)
     {
         // Keep gain/vel|velocity, freq/key and gate labels
-        for (const auto& it : getMap()) {
+        for (const auto& it : getFullpathMap()) {
             std::string path = it.first;
             if (endsWith(path, "/gate")) {
                 gate.push_back(path);
@@ -9427,7 +9691,7 @@ class mydsp : public dsp {
 		m->declare("analyzers.lib/version", "0.1");
 		m->declare("author", "Arev Imer (arev.imer@students.fhnw.ch)");
 		m->declare("basics.lib/name", "Faust Basic Element Library");
-		m->declare("basics.lib/version", "0.5");
+		m->declare("basics.lib/version", "0.6");
 		m->declare("compile_options", "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -es 1 -mcd 16 -uim -single -ftz 0");
 		m->declare("compressors.lib/compression_gain_mono:author", "Julius O. Smith III");
 		m->declare("compressors.lib/compression_gain_mono:copyright", "Copyright (C) 2014-2020 by Julius O. Smith III <jos@ccrma.stanford.edu>");
@@ -9457,7 +9721,7 @@ class mydsp : public dsp {
 		m->declare("filters.lib/iir:author", "Julius O. Smith III");
 		m->declare("filters.lib/iir:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("filters.lib/iir:license", "MIT-style STK-4.3 license");
-		m->declare("filters.lib/lowpass0_highpass1", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
+		m->declare("filters.lib/lowpass0_highpass1", "MIT-style STK-4.3 license");
 		m->declare("filters.lib/lowpass0_highpass1:author", "Julius O. Smith III");
 		m->declare("filters.lib/lowpass:author", "Julius O. Smith III");
 		m->declare("filters.lib/lowpass:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
