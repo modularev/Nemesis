@@ -4,9 +4,9 @@
 
 ![Panel](media/nemesis-picture.jpeg)
 
-**\hardware** bom, gerber, panel, pcb and schematic files
+**\hardware** gerber, panel, pcb and schematic files, sorted by hardware revision (rev1, rev2)
 
-**\software** project template
+**\software** hardware library, FAUST toolchain, template and examples for both revisions, see [software/README.md](software/README.md)
 
 **\doc** datasheets and additional information
 

@@ -1,0 +1,13 @@
+{
+  "name": "nemesis",
+  "version": "0.3.0",
+  "description": "Hardware library for the NEMESIS Eurorack DSP module (hardware rev1 and rev2) running FAUST programs on a Teensy 4.1",
+  "keywords": "eurorack, faust, teensy, dsp",
+  "authors": [{ "name": "Arev Imer" }],
+  "license": "GPL-3.0-or-later",
+  "frameworks": "arduino",
+  "platforms": "teensy",
+  "dependencies": {
+    "adafruit/Adafruit SSD1306": "^2.5.3"
+  }
+}

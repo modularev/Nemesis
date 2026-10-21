@@ -1,11 +1,9 @@
 # template
-### PlatformIO based template to get started with 
 
-**\src** source files including `main.cpp`, `nemesis.h`, `nemesis.cpp` and the FAUST `.dsp` file
+Starting point for your own Nemesis program, see `../README.md` for details.
 
-**\lib** folder for compiled `\src\*.dsp` file
-
-**\platformio.ini** PlatformIO Project Configuration File
-
-**\faust_build.py** extra script included in `\platformio.ini` to build `.dsp` file in `\src`
-
+- **src/myProgram.dsp** the FAUST program, rename it and the `#include` and
+  class name in `main.cpp` with it
+- **src/main.cpp** starts the hardware and runs the program
+- **platformio.ini** environments `rev1` and `rev2`, build with
+  `pio run -e rev2 -t upload`
