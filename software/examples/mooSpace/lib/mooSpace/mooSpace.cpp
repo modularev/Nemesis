@@ -3,8 +3,8 @@ author: "Arev Imer (arev.imer@students.fhnw.ch)"
 copyright: "Arev"
 name: "mooSpace"
 version: "0.2"
-Code generated with Faust 2.40.7 (https://faust.grame.fr)
-Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -es 1 -mcd 16 -uim -single -ftz 0
+Code generated with Faust 2.69.7 (https://faust.grame.fr)
+Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -ct 1 -es 1 -mcd 16 -uim -single -ftz 0
 ------------------------------------------------------------ */
 
 #ifndef  __mydsp_H__
@@ -109,6 +109,68 @@ Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i 
 #ifndef __UI_H__
 #define __UI_H__
 
+/************************************************************************
+ FAUST Architecture File
+ Copyright (C) 2003-2022 GRAME, Centre National de Creation Musicale
+ ---------------------------------------------------------------------
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU Lesser General Public License as published by
+ the Free Software Foundation; either version 2.1 of the License, or
+ (at your option) any later version.
+ 
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Lesser General Public License for more details.
+ 
+ You should have received a copy of the GNU Lesser General Public License
+ along with this program; if not, write to the Free Software
+ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ 
+ EXCEPTION : As a special exception, you may create a larger work
+ that contains this FAUST architecture section and distribute
+ that work under terms of your choice, so long as this FAUST
+ architecture section is not modified.
+ ***************************************************************************/
+
+#ifndef __export__
+#define __export__
+
+// Version as a global string
+#define FAUSTVERSION "2.69.7"
+
+// Version as separated [major,minor,patch] values
+#define FAUSTMAJORVERSION 2
+#define FAUSTMINORVERSION 69
+#define FAUSTPATCHVERSION 7
+
+// Use FAUST_API for code that is part of the external API but is also compiled in faust and libfaust
+// Use LIBFAUST_API for code that is compiled in faust and libfaust
+
+#ifdef _WIN32
+    #pragma warning (disable: 4251)
+    #ifdef FAUST_EXE
+        #define FAUST_API
+        #define LIBFAUST_API
+    #elif FAUST_LIB
+        #define FAUST_API __declspec(dllexport)
+        #define LIBFAUST_API __declspec(dllexport)
+    #else
+        #define FAUST_API
+        #define LIBFAUST_API 
+    #endif
+#else
+    #ifdef FAUST_EXE
+        #define FAUST_API
+        #define LIBFAUST_API
+    #else
+        #define FAUST_API __attribute__((visibility("default")))
+        #define LIBFAUST_API __attribute__((visibility("default")))
+    #endif
+#endif
+
+#endif
+
 #ifndef FAUSTFLOAT
 #define FAUSTFLOAT float
 #endif
@@ -123,8 +185,8 @@ Compilation options: -a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i 
 struct Soundfile;
 
 template <typename REAL>
-struct UIReal
-{
+struct FAUST_API UIReal {
+    
     UIReal() {}
     virtual ~UIReal() {}
     
@@ -154,14 +216,13 @@ struct UIReal
     
     // -- metadata declarations
     
-    virtual void declare(REAL* zone, const char* key, const char* val) {}
-    
+    virtual void declare(REAL* /*zone*/, const char* /*key*/, const char* /*val*/) {}
+
     // To be used by LLVM client
     virtual int sizeOfFAUSTFLOAT() { return sizeof(FAUSTFLOAT); }
 };
 
-struct UI : public UIReal<FAUSTFLOAT>
-{
+struct FAUST_API UI : public UIReal<FAUSTFLOAT> {
     UI() {}
     virtual ~UI() {}
 };
@@ -192,22 +253,23 @@ struct UI : public UIReal<FAUSTFLOAT>
  architecture section is not modified.
  ************************************************************************/
 
-#ifndef FAUST_PATHBUILDER_H
-#define FAUST_PATHBUILDER_H
+#ifndef __PathBuilder__
+#define __PathBuilder__
 
 #include <vector>
 #include <set>
+#include <map>
 #include <string>
 #include <algorithm>
 #include <regex>
+
 
 /*******************************************************************************
  * PathBuilder : Faust User Interface
  * Helper class to build complete hierarchical path for UI items.
  ******************************************************************************/
 
-class PathBuilder
-{
+class FAUST_API PathBuilder {
 
     protected:
     
@@ -271,13 +333,13 @@ class PathBuilder
         std::string cut(const std::string& src, int n) const
         {
             std::string rdst;
-            for (int i = src.length()-1; i >= 0; i--) {
+            for (int i = int(src.length())-1; i >= 0; i--) {
                 char c = src[i];
                 if (c != '/') {
                     rdst.push_back(c);
                 } else if (n == 1) {
                     std::string dst;
-                    for (int j = rdst.length()-1; j >= 0; j--) {
+                    for (int j = int(rdst.length())-1; j >= 0; j--) {
                         dst.push_back(rdst[j]);
                     }
                     return dst;
@@ -298,10 +360,13 @@ class PathBuilder
         {
             std::vector<std::string>           uniquePaths;  // all full paths transformed but made unique with a prefix
             std::map<std::string, std::string> unique2full;  // all full paths transformed but made unique with a prefix
+            char num_buffer[16];
             int pnum = 0;
-        
+            
             for (const auto& s : fFullPaths) {
-                std::string u = "/P" + std::to_string(pnum++) + str2ID(remove0x00(s));
+                // Using snprintf since Teensy does not have the std::to_string function
+                snprintf(num_buffer, 16, "%d", pnum++);
+                std::string u = "/P" + std::string(num_buffer) + str2ID(remove0x00(s));
                 uniquePaths.push_back(u);
                 unique2full[u] = s;  // remember the full path associated to a unique path
             }
@@ -341,16 +406,15 @@ class PathBuilder
             }
         }
     
-        std::string replaceCharList(std::string str, const std::vector<char>& ch1, char ch2)
+        std::string replaceCharList(const std::string& str, const std::vector<char>& ch1, char ch2)
         {
-            std::vector<char>::const_iterator beg = ch1.begin();
-            std::vector<char>::const_iterator end = ch1.end();
+            auto beg = ch1.begin();
+            auto end = ch1.end();
+            std::string res = str;
             for (size_t i = 0; i < str.length(); ++i) {
-                if (std::find(beg, end, str[i]) != end) {
-                    str[i] = ch2;
-                }
+                if (std::find(beg, end, str[i]) != end) res[i] = ch2;
             }
-            return str;
+            return res;
         }
      
     public:
@@ -364,21 +428,28 @@ class PathBuilder
         // Return true for the last level of groups
         bool popLabel() { fControlsLevel.pop_back(); return fControlsLevel.size() == 0; }
     
+        // Return a complete path built from a label
         std::string buildPath(const std::string& label)
         {
             std::string res = "/";
             for (size_t i = 0; i < fControlsLevel.size(); i++) {
-                res += fControlsLevel[i];
-                res += "/";
+                res = res + fControlsLevel[i] + "/";
             }
             res += label;
-            replaceCharList(res, {' ', '#', '*', ',', '/', '?', '[', ']', '{', '}', '(', ')'}, '_');
-            return res;
+            return replaceCharList(res, {' ', '#', '*', ',', '?', '[', ']', '{', '}', '(', ')'}, '_');
         }
+    
+        // Assuming shortnames have been built, return the shortname from a label
+        std::string buildShortname(const std::string& label)
+        {
+            return (hasShortname()) ? fFull2Short[buildPath(label)] : "";
+        }
+    
+        bool hasShortname() { return fFull2Short.size() > 0; }
     
 };
 
-#endif  // FAUST_PATHBUILDER_H
+#endif  // __PathBuilder__
 /**************************  END  PathBuilder.h **************************/
 
 /*******************************************************************************
@@ -386,14 +457,14 @@ class PathBuilder
  *
  * This class creates:
  * - a map of 'labels' and zones for each UI item.
- * - a map of unique 'shortname' (built so that they never collide) and zones
+ * - a map of unique 'shortname' (built so that they never collide) and zones for each UI item
  * - a map of complete hierarchical 'paths' and zones for each UI item
  *
  * Simple 'labels', 'shortname' and complete 'paths' (to fully discriminate between possible same
  * 'labels' at different location in the UI hierachy) can be used to access a given parameter.
  ******************************************************************************/
 
-class MapUI : public UI, public PathBuilder
+class FAUST_API MapUI : public UI, public PathBuilder
 {
     
     protected:
@@ -404,14 +475,14 @@ class MapUI : public UI, public PathBuilder
         // Shortname zone map
         std::map<std::string, FAUSTFLOAT*> fShortnameZoneMap;
     
-        // Fill path map
-        std::map<std::string, FAUSTFLOAT*> fFullpathZoneMap;
+        // Full path map
+        std::map<std::string, FAUSTFLOAT*> fPathZoneMap;
     
         void addZoneLabel(const std::string& label, FAUSTFLOAT* zone)
         {
             std::string path = buildPath(label);
             fFullPaths.push_back(path);
-            fFullpathZoneMap[path] = zone;
+            fPathZoneMap[path] = zone;
             fLabelZoneMap[label] = zone;
         }
     
@@ -440,7 +511,7 @@ class MapUI : public UI, public PathBuilder
                 computeShortNames();
                 // Fill 'shortname' map
                 for (const auto& it : fFullPaths) {
-                    fShortnameZoneMap[fFull2Short[it]] = fFullpathZoneMap[it];
+                    fShortnameZoneMap[fFull2Short[it]] = fPathZoneMap[it];
                 }
             }
         }
@@ -483,64 +554,117 @@ class MapUI : public UI, public PathBuilder
         // -- metadata declarations
         virtual void declare(FAUSTFLOAT* zone, const char* key, const char* val)
         {}
-        
-        // setParamValue/getParamValue
-        void setParamValue(const std::string& path, FAUSTFLOAT value)
+    
+        //-------------------------------------------------------------------------------
+        // Public API
+        //-------------------------------------------------------------------------------
+    
+        /**
+         * Set the param value.
+         *
+         * @param str - the UI parameter label/shortname/path
+         * @param value - the UI parameter value
+         *
+         */
+        void setParamValue(const std::string& str, FAUSTFLOAT value)
         {
-            if (fFullpathZoneMap.find(path) != fFullpathZoneMap.end()) {
-                *fFullpathZoneMap[path] = value;
-            } else if (fShortnameZoneMap.find(path) != fShortnameZoneMap.end()) {
-                *fShortnameZoneMap[path] = value;
-            } else if (fLabelZoneMap.find(path) != fLabelZoneMap.end()) {
-                *fLabelZoneMap[path] = value;
-            } else {
-                fprintf(stderr, "ERROR : setParamValue '%s' not found\n", path.c_str());
+            const auto fPathZoneMapIter = fPathZoneMap.find(str);
+            if (fPathZoneMapIter != fPathZoneMap.end()) {
+                *fPathZoneMapIter->second = value;
+                return;
             }
+            
+            const auto fShortnameZoneMapIter = fShortnameZoneMap.find(str);
+            if (fShortnameZoneMapIter != fShortnameZoneMap.end()) {
+                *fShortnameZoneMapIter->second = value;
+                return;
+            }
+            
+            const auto fLabelZoneMapIter = fLabelZoneMap.find(str);
+            if (fLabelZoneMapIter != fLabelZoneMap.end()) {
+                *fLabelZoneMapIter->second = value;
+                return;
+            }
+            
+            fprintf(stderr, "ERROR : setParamValue '%s' not found\n", str.c_str());
         }
         
-        FAUSTFLOAT getParamValue(const std::string& path)
+        /**
+         * Return the param value.
+         *
+         * @param str - the UI parameter label/shortname/path
+         *
+         * @return the param value.
+         */
+        FAUSTFLOAT getParamValue(const std::string& str)
         {
-            if (fFullpathZoneMap.find(path) != fFullpathZoneMap.end()) {
-                return *fFullpathZoneMap[path];
-            } else if (fShortnameZoneMap.find(path) != fShortnameZoneMap.end()) {
-                return *fShortnameZoneMap[path];
-            } else if (fLabelZoneMap.find(path) != fLabelZoneMap.end()) {
-                return *fLabelZoneMap[path];
-            } else {
-                fprintf(stderr, "ERROR : getParamValue '%s' not found\n", path.c_str());
-                return 0;
+            const auto fPathZoneMapIter = fPathZoneMap.find(str);
+            if (fPathZoneMapIter != fPathZoneMap.end()) {
+                return *fPathZoneMapIter->second;
             }
+            
+            const auto fShortnameZoneMapIter = fShortnameZoneMap.find(str);
+            if (fShortnameZoneMapIter != fShortnameZoneMap.end()) {
+                return *fShortnameZoneMapIter->second;
+            }
+            
+            const auto fLabelZoneMapIter = fLabelZoneMap.find(str);
+            if (fLabelZoneMapIter != fLabelZoneMap.end()) {
+                return *fLabelZoneMapIter->second;
+            }
+            
+            fprintf(stderr, "ERROR : getParamValue '%s' not found\n", str.c_str());
+            return 0;
         }
     
         // map access 
-        std::map<std::string, FAUSTFLOAT*>& getFullpathMap() { return fFullpathZoneMap; }
+        std::map<std::string, FAUSTFLOAT*>& getFullpathMap() { return fPathZoneMap; }
         std::map<std::string, FAUSTFLOAT*>& getShortnameMap() { return fShortnameZoneMap; }
         std::map<std::string, FAUSTFLOAT*>& getLabelMap() { return fLabelZoneMap; }
+            
+        /**
+         * Return the number of parameters in the UI.
+         *
+         * @return the number of parameters
+         */
+        int getParamsCount() { return int(fPathZoneMap.size()); }
         
-        int getParamsCount() { return int(fFullpathZoneMap.size()); }
-        
+        /**
+         * Return the param path.
+         *
+         * @param index - the UI parameter index
+         *
+         * @return the param path
+         */
         std::string getParamAddress(int index)
         {
-            if (index < 0 || index > int(fFullpathZoneMap.size())) {
+            if (index < 0 || index > int(fPathZoneMap.size())) {
                 return "";
             } else {
-                auto it = fFullpathZoneMap.begin();
-                while (index-- > 0 && it++ != fFullpathZoneMap.end()) {}
+                auto it = fPathZoneMap.begin();
+                while (index-- > 0 && it++ != fPathZoneMap.end()) {}
                 return it->first;
             }
         }
         
         const char* getParamAddress1(int index)
         {
-            if (index < 0 || index > int(fFullpathZoneMap.size())) {
+            if (index < 0 || index > int(fPathZoneMap.size())) {
                 return nullptr;
             } else {
-                auto it = fFullpathZoneMap.begin();
-                while (index-- > 0 && it++ != fFullpathZoneMap.end()) {}
+                auto it = fPathZoneMap.begin();
+                while (index-- > 0 && it++ != fPathZoneMap.end()) {}
                 return it->first.c_str();
             }
         }
     
+        /**
+         * Return the param shortname.
+         *
+         * @param index - the UI parameter index
+         *
+         * @return the param shortname
+         */
         std::string getParamShortname(int index)
         {
             if (index < 0 || index > int(fShortnameZoneMap.size())) {
@@ -563,6 +687,13 @@ class MapUI : public UI, public PathBuilder
             }
         }
     
+        /**
+         * Return the param label.
+         *
+         * @param index - the UI parameter index
+         *
+         * @return the param label
+         */
         std::string getParamLabel(int index)
         {
             if (index < 0 || index > int(fLabelZoneMap.size())) {
@@ -585,33 +716,62 @@ class MapUI : public UI, public PathBuilder
             }
         }
     
+        /**
+         * Return the param path.
+         *
+         * @param zone - the UI parameter memory zone
+         *
+         * @return the param path
+         */
         std::string getParamAddress(FAUSTFLOAT* zone)
         {
-            for (const auto& it : fFullpathZoneMap) {
+            for (const auto& it : fPathZoneMap) {
                 if (it.second == zone) return it.first;
             }
             return "";
         }
     
+        /**
+         * Return the param memory zone.
+         *
+         * @param zone - the UI parameter label/shortname/path
+         *
+         * @return the param path
+         */
         FAUSTFLOAT* getParamZone(const std::string& str)
         {
-            if (fFullpathZoneMap.find(str) != fFullpathZoneMap.end()) {
-                return fFullpathZoneMap[str];
-            } else if (fShortnameZoneMap.find(str) != fShortnameZoneMap.end()) {
-                return fShortnameZoneMap[str];
-            } else if (fLabelZoneMap.find(str) != fLabelZoneMap.end()) {
-                return fLabelZoneMap[str];
+            const auto fPathZoneMapIter = fPathZoneMap.find(str);
+            if (fPathZoneMapIter != fPathZoneMap.end()) {
+                return fPathZoneMapIter->second;
             }
+            
+            const auto fShortnameZoneMapIter = fShortnameZoneMap.find(str);
+            if (fShortnameZoneMapIter != fShortnameZoneMap.end()) {
+                return fShortnameZoneMapIter->second;
+            }
+            
+            const auto fLabelZoneMapIter = fLabelZoneMap.find(str);
+            if (fLabelZoneMapIter != fLabelZoneMap.end()) {
+                return fLabelZoneMapIter->second;
+            }
+
             return nullptr;
         }
     
+        /**
+         * Return the param memory zone.
+         *
+         * @param zone - the UI parameter index
+         *
+         * @return the param path
+         */
         FAUSTFLOAT* getParamZone(int index)
         {
-            if (index < 0 || index > int(fFullpathZoneMap.size())) {
+            if (index < 0 || index > int(fPathZoneMap.size())) {
                 return nullptr;
             } else {
-                auto it = fFullpathZoneMap.begin();
-                while (index-- > 0 && it++ != fFullpathZoneMap.end()) {}
+                auto it = fPathZoneMap.begin();
+                while (index-- > 0 && it++ != fPathZoneMap.end()) {}
                 return it->second;
             }
         }
@@ -654,11 +814,11 @@ class MapUI : public UI, public PathBuilder
 #ifndef __meta__
 #define __meta__
 
+
 /**
  The base class of Meta handler to be used in dsp::metadata(Meta* m) method to retrieve (key, value) metadata.
  */
-struct Meta
-{
+struct FAUST_API Meta {
     virtual ~Meta() {}
     virtual void declare(const char* key, const char* value) = 0;
 };
@@ -694,19 +854,21 @@ struct Meta
 
 #include <string>
 #include <vector>
+#include <cstdint>
+
 
 #ifndef FAUSTFLOAT
 #define FAUSTFLOAT float
 #endif
 
-struct UI;
-struct Meta;
+struct FAUST_API UI;
+struct FAUST_API Meta;
 
 /**
  * DSP memory manager.
  */
 
-struct dsp_memory_manager {
+struct FAUST_API dsp_memory_manager {
     
     virtual ~dsp_memory_manager() {}
     
@@ -714,7 +876,7 @@ struct dsp_memory_manager {
      * Inform the Memory Manager with the number of expected memory zones.
      * @param count - the number of expected memory zones
      */
-    virtual void begin(size_t count) {}
+    virtual void begin(size_t /*count*/) {}
     
     /**
      * Give the Memory Manager information on a given memory zone.
@@ -722,8 +884,8 @@ struct dsp_memory_manager {
      * @param reads - the number of Read access to the zone used to compute one frame
      * @param writes - the number of Write access to the zone used to compute one frame
      */
-    virtual void info(size_t size, size_t reads, size_t writes) {}
-    
+    virtual void info(size_t /*size*/, size_t /*reads*/, size_t /*writes*/) {}
+
     /**
      * Inform the Memory Manager that all memory zones have been described,
      * to possibly start a 'compute the best allocation strategy' step.
@@ -748,7 +910,7 @@ struct dsp_memory_manager {
 * Signal processor definition.
 */
 
-class dsp {
+class FAUST_API dsp {
 
     public:
 
@@ -842,7 +1004,7 @@ class dsp {
  * Generic DSP decorator.
  */
 
-class decorator_dsp : public dsp {
+class FAUST_API decorator_dsp : public dsp {
 
     protected:
 
@@ -875,7 +1037,7 @@ class decorator_dsp : public dsp {
  * to create DSP instances from a compiled DSP program.
  */
 
-class dsp_factory {
+class FAUST_API dsp_factory {
     
     protected:
     
@@ -884,16 +1046,37 @@ class dsp_factory {
     
     public:
     
+        /* Return factory name */
         virtual std::string getName() = 0;
+    
+        /* Return factory SHA key */
         virtual std::string getSHAKey() = 0;
+    
+        /* Return factory expanded DSP code */
         virtual std::string getDSPCode() = 0;
+    
+        /* Return factory compile options */
         virtual std::string getCompileOptions() = 0;
+    
+        /* Get the Faust DSP factory list of library dependancies */
         virtual std::vector<std::string> getLibraryList() = 0;
+    
+        /* Get the list of all used includes */
         virtual std::vector<std::string> getIncludePathnames() = 0;
     
+        /* Get warning messages list for a given compilation */
+        virtual std::vector<std::string> getWarningMessages() = 0;
+    
+        /* Create a new DSP instance, to be deleted with C++ 'delete' */
         virtual dsp* createDSPInstance() = 0;
     
+        /* Static tables initialization, possibly implemened in sub-classes*/
+        virtual void classInit(int sample_rate) {};
+    
+        /* Set a custom memory manager to be used when creating instances */
         virtual void setMemoryManager(dsp_memory_manager* manager) = 0;
+    
+        /* Return the currently set custom memory manager */
         virtual dsp_memory_manager* getMemoryManager() = 0;
     
 };
@@ -904,18 +1087,21 @@ class dsp_factory {
 #include <xmmintrin.h>
 #endif
 
-class ScopedNoDenormals
-{
+class FAUST_API ScopedNoDenormals {
+    
     private:
     
-        intptr_t fpsr;
+        intptr_t fpsr = 0;
         
         void setFpStatusRegister(intptr_t fpsr_aux) noexcept
         {
         #if defined (__arm64__) || defined (__aarch64__)
-           asm volatile("msr fpcr, %0" : : "ri" (fpsr_aux));
+            asm volatile("msr fpcr, %0" : : "ri" (fpsr_aux));
         #elif defined (__SSE__)
-            _mm_setcsr(static_cast<uint32_t>(fpsr_aux));
+            // The volatile keyword here is needed to workaround a bug in AppleClang 13.0
+            // which aggressively optimises away the variable otherwise
+            volatile uint32_t fpsr_w = static_cast<uint32_t>(fpsr_aux);
+            _mm_setcsr(fpsr_w);
         #endif
         }
         
@@ -923,7 +1109,7 @@ class ScopedNoDenormals
         {
         #if defined (__arm64__) || defined (__aarch64__)
             asm volatile("mrs %0, fpcr" : "=r" (fpsr));
-        #elif defined ( __SSE__)
+        #elif defined (__SSE__)
             fpsr = static_cast<intptr_t>(_mm_getcsr());
         #endif
         }
@@ -934,16 +1120,14 @@ class ScopedNoDenormals
         {
         #if defined (__arm64__) || defined (__aarch64__)
             intptr_t mask = (1 << 24 /* FZ */);
+        #elif defined (__SSE__)
+        #if defined (__SSE2__)
+            intptr_t mask = 0x8040;
         #else
-            #if defined(__SSE__)
-            #if defined(__SSE2__)
-                intptr_t mask = 0x8040;
-            #else
-                intptr_t mask = 0x8000;
-            #endif
-            #else
-                intptr_t mask = 0x0000;
-            #endif
+            intptr_t mask = 0x8000;
+        #endif
+        #else
+            intptr_t mask = 0x0000;
         #endif
             getFpStatusRegister();
             setFpStatusRegister(fpsr | mask);
@@ -956,7 +1140,7 @@ class ScopedNoDenormals
 
 };
 
-#define AVOIDDENORMALS ScopedNoDenormals();
+#define AVOIDDENORMALS ScopedNoDenormals ftz_scope;
 
 #endif
 
@@ -1114,6 +1298,7 @@ architecture section is not modified.
 #include <vector>
 #include <assert.h>
 
+
 //--------------------------------------------------------------------------------------
 // Interpolator(lo,hi,v1,v2)
 // Maps a value x between lo and hi to a value y between v1 and v2
@@ -1123,8 +1308,8 @@ architecture section is not modified.
 // y = v1 - lo*coef + x*coef
 // y = offset + x*coef              with offset = v1 - lo*coef
 //--------------------------------------------------------------------------------------
-class Interpolator
-{
+class FAUST_API Interpolator {
+    
     private:
 
         //--------------------------------------------------------------------------------------
@@ -1138,7 +1323,6 @@ class Interpolator
             Range(double x, double y) : fLo(std::min<double>(x,y)), fHi(std::max<double>(x,y)) {}
             double operator()(double x) { return (x<fLo) ? fLo : (x>fHi) ? fHi : x; }
         };
-
 
         Range fRange;
         double fCoef;
@@ -1175,8 +1359,7 @@ class Interpolator
 // Interpolator3pt(lo,mi,hi,v1,vm,v2)
 // Map values between lo mid hi to values between v1 vm v2
 //--------------------------------------------------------------------------------------
-class Interpolator3pt
-{
+class FAUST_API Interpolator3pt {
 
     private:
 
@@ -1202,8 +1385,7 @@ class Interpolator3pt
 //--------------------------------------------------------------------------------------
 // Abstract ValueConverter class. Converts values between UI and Faust representations
 //--------------------------------------------------------------------------------------
-class ValueConverter // Identity by default
-{
+class FAUST_API ValueConverter {
 
     public:
 
@@ -1216,7 +1398,7 @@ class ValueConverter // Identity by default
 // A converter than can be updated
 //--------------------------------------------------------------------------------------
 
-class UpdatableValueConverter : public ValueConverter {
+class FAUST_API UpdatableValueConverter : public ValueConverter {
     
     protected:
         
@@ -1240,8 +1422,7 @@ class UpdatableValueConverter : public ValueConverter {
 //--------------------------------------------------------------------------------------
 // Linear conversion between ui and Faust values
 //--------------------------------------------------------------------------------------
-class LinearValueConverter : public ValueConverter
-{
+class FAUST_API LinearValueConverter : public ValueConverter {
     
     private:
         
@@ -1264,8 +1445,7 @@ class LinearValueConverter : public ValueConverter
 //--------------------------------------------------------------------------------------
 // Two segments linear conversion between ui and Faust values
 //--------------------------------------------------------------------------------------
-class LinearValueConverter2 : public UpdatableValueConverter
-{
+class FAUST_API LinearValueConverter2 : public UpdatableValueConverter {
     
     private:
     
@@ -1300,25 +1480,24 @@ class LinearValueConverter2 : public UpdatableValueConverter
 //--------------------------------------------------------------------------------------
 // Logarithmic conversion between ui and Faust values
 //--------------------------------------------------------------------------------------
-class LogValueConverter : public LinearValueConverter
-{
+class FAUST_API LogValueConverter : public LinearValueConverter {
 
     public:
-
+    
+        // We use DBL_EPSILON which is bigger than DBL_MIN (safer)
         LogValueConverter(double umin, double umax, double fmin, double fmax) :
-            LinearValueConverter(umin, umax, std::log(std::max<double>(DBL_MIN, fmin)), std::log(std::max<double>(DBL_MIN, fmax)))
+            LinearValueConverter(umin, umax, std::log(std::max<double>(DBL_EPSILON, fmin)), std::log(std::max<double>(DBL_EPSILON, fmax)))
         {}
 
         virtual double ui2faust(double x) { return std::exp(LinearValueConverter::ui2faust(x)); }
-        virtual double faust2ui(double x) { return LinearValueConverter::faust2ui(std::log(std::max<double>(x, DBL_MIN))); }
+        virtual double faust2ui(double x) { return LinearValueConverter::faust2ui(std::log(std::max<double>(DBL_EPSILON, x))); }
 
 };
 
 //--------------------------------------------------------------------------------------
 // Exponential conversion between ui and Faust values
 //--------------------------------------------------------------------------------------
-class ExpValueConverter : public LinearValueConverter
-{
+class FAUST_API ExpValueConverter : public LinearValueConverter {
 
     public:
 
@@ -1335,8 +1514,7 @@ class ExpValueConverter : public LinearValueConverter
 // Convert accelerometer or gyroscope values to Faust values
 // Using an Up curve (curve 0)
 //--------------------------------------------------------------------------------------
-class AccUpConverter : public UpdatableValueConverter
-{
+class FAUST_API AccUpConverter : public UpdatableValueConverter {
 
     private:
 
@@ -1371,8 +1549,7 @@ class AccUpConverter : public UpdatableValueConverter
 // Convert accelerometer or gyroscope values to Faust values
 // Using a Down curve (curve 1)
 //--------------------------------------------------------------------------------------
-class AccDownConverter : public UpdatableValueConverter
-{
+class FAUST_API AccDownConverter : public UpdatableValueConverter {
 
     private:
 
@@ -1406,8 +1583,7 @@ class AccDownConverter : public UpdatableValueConverter
 // Convert accelerometer or gyroscope values to Faust values
 // Using an Up-Down curve (curve 2)
 //--------------------------------------------------------------------------------------
-class AccUpDownConverter : public UpdatableValueConverter
-{
+class FAUST_API AccUpDownConverter : public UpdatableValueConverter {
 
     private:
 
@@ -1441,8 +1617,7 @@ class AccUpDownConverter : public UpdatableValueConverter
 // Convert accelerometer or gyroscope values to Faust values
 // Using a Down-Up curve (curve 3)
 //--------------------------------------------------------------------------------------
-class AccDownUpConverter : public UpdatableValueConverter
-{
+class FAUST_API AccDownUpConverter : public UpdatableValueConverter {
 
     private:
 
@@ -1475,8 +1650,7 @@ class AccDownUpConverter : public UpdatableValueConverter
 //--------------------------------------------------------------------------------------
 // Base class for ZoneControl
 //--------------------------------------------------------------------------------------
-class ZoneControl
-{
+class FAUST_API ZoneControl {
 
     protected:
 
@@ -1504,8 +1678,7 @@ class ZoneControl
 //--------------------------------------------------------------------------------------
 //  Useful to implement accelerometers metadata as a list of ZoneControl for each axes
 //--------------------------------------------------------------------------------------
-class ConverterZoneControl : public ZoneControl
-{
+class FAUST_API ConverterZoneControl : public ZoneControl {
 
     protected:
 
@@ -1526,8 +1699,7 @@ class ConverterZoneControl : public ZoneControl
 // Association of a zone and a four value converter, each one for each possible curve.
 // Useful to implement accelerometers metadata as a list of ZoneControl for each axes
 //--------------------------------------------------------------------------------------
-class CurveZoneControl : public ZoneControl
-{
+class FAUST_API CurveZoneControl : public ZoneControl {
 
     private:
 
@@ -1570,8 +1742,7 @@ class CurveZoneControl : public ZoneControl
         int getCurve() { return fCurve; }
 };
 
-class ZoneReader
-{
+class FAUST_API ZoneReader {
 
     private:
 
@@ -2486,7 +2657,7 @@ class MetaDataUI {
                 if (strcmp(key, "tooltip") == 0) {
                     // only group tooltip are currently implemented
                     fGroupTooltip = formatTooltip(30, value);
-                } else if (strcmp(key, "hidden") == 0) {
+                } else if ((strcmp(key, "hidden") == 0) && (strcmp(value, "1") == 0)) {
                     fHiddenSet.insert(zone);
                 }
             } else {
@@ -2499,7 +2670,7 @@ class MetaDataUI {
                 else if (strcmp(key, "unit") == 0) {
                     fUnit[zone] = value;
                 }
-                else if (strcmp(key, "hidden") == 0) {
+                else if ((strcmp(key, "hidden") == 0) && (strcmp(value, "1") == 0)) {
                     fHiddenSet.insert(zone);
                 }
                 else if (strcmp(key, "scale") == 0) {
@@ -3044,7 +3215,6 @@ class GUI : public UI
             
         GUI():fStopped(false)
         {	
-            static std::list<GUI*> fGuiList;
             fGuiList.push_back(this);
         }
         
@@ -3287,7 +3457,7 @@ class uiTimedItem : public uiItem
         uiTimedItem(GUI* ui, FAUSTFLOAT* zone):uiItem(ui, zone)
         {
             if (GUI::gTimedZoneMap.find(fZone) == GUI::gTimedZoneMap.end()) {
-                // GUI::gTimedZoneMap[fZone] = ringbuffer_create(8192);
+                GUI::gTimedZoneMap[fZone] = ringbuffer_create(8192);
                 fDelete = true;
             } else {
                 fDelete = false;
@@ -3415,12 +3585,47 @@ static void deleteClist(clist* cl)
  * which are finally created in the JSON(...) method.
  ******************************************************************************/
 
-typedef std::vector<std::tuple<std::string, int, int, int, int, int>> MemoryLayoutType;
+// Instruction complexity statistics
+struct InstComplexity {
+    
+    int fLoad = 0;
+    int fStore = 0;
+    int fBinop = 0;
+    int fMathop = 0;
+    int fNumbers = 0;
+    int fDeclare = 0;
+    int fCast = 0;
+    int fSelect = 0;
+    int fLoop = 0;
+    
+    std::map<std::string, int> fFunctionSymbolTable;
+    std::map<std::string, int> fBinopSymbolTable;
+   
+    InstComplexity operator+(const InstComplexity& icomp)
+    {
+        fLoad += icomp.fLoad;
+        fStore += icomp.fStore;
+        fBinop += icomp.fBinop;
+        fMathop += icomp.fMathop;
+        fNumbers += icomp.fNumbers;
+        fDeclare += icomp.fDeclare;
+        fCast += icomp.fCast;
+        fSelect += icomp.fSelect;
+        fLoop += icomp.fLoop;
+        return *this;
+    }
+};
+
+// DSP or field name, type, size, size-in-bytes, reads, writes
+typedef std::tuple<std::string, std::string, int, int, int, int> MemoryLayoutItem;
+typedef std::vector<MemoryLayoutItem> MemoryLayoutType;
 typedef std::map<std::string, int> PathTableType;
 
+/*
+    Build a JSON description of the DSP.
+ */
 template <typename REAL>
-class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
-{
+class FAUST_API JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL> {
 
     protected:
     
@@ -3440,6 +3645,7 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
         int fDSPSize;                   // In bytes
         PathTableType fPathTable;
         MemoryLayoutType fMemoryLayout;
+        InstComplexity fIComp;
         bool fExtended;
     
         char fCloseUIPar;
@@ -3507,24 +3713,25 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
                   const std::vector<std::string>& include_pathnames,
                   int size,
                   const PathTableType& path_table,
-                  MemoryLayoutType memory_layout)
+                  MemoryLayoutType memory_layout,
+                  InstComplexity inst_comp)
         {
-            init(name, filename, inputs, outputs, sr_index, sha_key, dsp_code, version, compile_options, library_list, include_pathnames, size, path_table, memory_layout);
+            init(name, filename, inputs, outputs, sr_index, sha_key, dsp_code, version, compile_options, library_list, include_pathnames, size, path_table, memory_layout, inst_comp);
         }
 
         JSONUIReal(const std::string& name, const std::string& filename, int inputs, int outputs)
         {
-            init(name, filename, inputs, outputs, -1, "", "", "", "", std::vector<std::string>(), std::vector<std::string>(), -1, PathTableType(), MemoryLayoutType());
+            init(name, filename, inputs, outputs, -1, "", "", "", "", std::vector<std::string>(), std::vector<std::string>(), -1, PathTableType(), MemoryLayoutType(), InstComplexity());
         }
 
         JSONUIReal(int inputs, int outputs)
         {
-            init("", "", inputs, outputs, -1, "", "","", "", std::vector<std::string>(), std::vector<std::string>(), -1, PathTableType(), MemoryLayoutType());
+            init("", "", inputs, outputs, -1, "", "","", "", std::vector<std::string>(), std::vector<std::string>(), -1, PathTableType(), MemoryLayoutType(), InstComplexity());
         }
         
         JSONUIReal()
         {
-            init("", "", -1, -1, -1, "", "", "", "", std::vector<std::string>(), std::vector<std::string>(), -1, PathTableType(), MemoryLayoutType());
+            init("", "", -1, -1, -1, "", "", "", "", std::vector<std::string>(), std::vector<std::string>(), -1, PathTableType(), MemoryLayoutType(), InstComplexity());
         }
  
         virtual ~JSONUIReal() {}
@@ -3549,6 +3756,7 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
                   int size,
                   const PathTableType& path_table,
                   MemoryLayoutType memory_layout,
+                  InstComplexity inst_comp,
                   bool extended = false)
         {
             fTab = 1;
@@ -3557,6 +3765,8 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
                 fUI << std::setprecision(std::numeric_limits<REAL>::max_digits10);
                 fMeta << std::setprecision(std::numeric_limits<REAL>::max_digits10);
             }
+        
+            fIComp = inst_comp;
             
             // Start Meta generation
             fMeta.str("");
@@ -3587,7 +3797,7 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
    
         // -- widget's layouts
     
-        virtual void openGenericGroup(const char* label, const char* name)
+        virtual void openGenericBox(const char* label, const char* name)
         {
             pushLabel(label);
             fUI << fCloseUIPar;
@@ -3603,17 +3813,17 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
 
         virtual void openTabBox(const char* label)
         {
-            openGenericGroup(label, "tgroup");
+            openGenericBox(label, "tgroup");
         }
     
         virtual void openHorizontalBox(const char* label)
         {
-            openGenericGroup(label, "hgroup");
+            openGenericBox(label, "hgroup");
         }
     
         virtual void openVerticalBox(const char* label)
         {
-            openGenericGroup(label, "vgroup");
+            openGenericBox(label, "vgroup");
         }
     
         virtual void closeBox()
@@ -3671,7 +3881,7 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
             addGenericButton(label, "checkbox");
         }
 
-        virtual void addGenericEntry(const char* label, const char* name, REAL init, REAL min, REAL max, REAL step)
+        virtual void addGenericRange(const char* label, const char* name, REAL init, REAL min, REAL max, REAL step)
         {
             std::string path = buildPath(label);
             fFullPaths.push_back(path);
@@ -3705,17 +3915,17 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
     
         virtual void addVerticalSlider(const char* label, REAL* zone, REAL init, REAL min, REAL max, REAL step)
         {
-            addGenericEntry(label, "vslider", init, min, max, step);
+            addGenericRange(label, "vslider", init, min, max, step);
         }
     
         virtual void addHorizontalSlider(const char* label, REAL* zone, REAL init, REAL min, REAL max, REAL step)
         {
-            addGenericEntry(label, "hslider", init, min, max, step);
+            addGenericRange(label, "hslider", init, min, max, step);
         }
     
         virtual void addNumEntry(const char* label, REAL* zone, REAL init, REAL min, REAL max, REAL step)
         {
-            addGenericEntry(label, "nentry", init, min, max, step);
+            addGenericRange(label, "nentry", init, min, max, step);
         }
 
         // -- passive widgets
@@ -3830,22 +4040,73 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
                     }
                     JSON << "],";
                 }
+                if (fDSPSize != -1) { tab(fTab, JSON); JSON << "\"size\": " << fDSPSize << ","; }
                 if (fMemoryLayout.size() > 0) {
                     tab(fTab, JSON);
                     JSON << "\"memory_layout\": [";
                     for (size_t i = 0; i < fMemoryLayout.size(); i++) {
-                        // DSP or field name, type, size, sizeBytes, reads, writes
-                        std::tuple<std::string, int, int, int, int, int> item = fMemoryLayout[i];
+                        // DSP or field name, type, size, size-in-bytes, reads, writes
+                        MemoryLayoutItem item = fMemoryLayout[i];
                         tab(fTab + 1, JSON);
-                        JSON << "{\"size\": " << std::get<3>(item) << ", ";
-                        JSON << "\"reads\": " << std::get<4>(item) << ", ";
-                        JSON << "\"writes\": " << std::get<5>(item) << "}";
+                        JSON << "{ \"name\": \"" << std::get<0>(item) << "\", ";
+                        JSON << "\"type\": \"" << std::get<1>(item) << "\", ";
+                        JSON << "\"size\": " << std::get<2>(item) << ", ";
+                        JSON << "\"size_bytes\": " << std::get<3>(item) << ", ";
+                        JSON << "\"read\": " << std::get<4>(item) << ", ";
+                        JSON << "\"write\": " << std::get<5>(item) << " }";
                         if (i < (fMemoryLayout.size() - 1)) JSON << ",";
                     }
                     tab(fTab, JSON);
                     JSON << "],";
+                    
+                    // Compute statistics
+                    tab(fTab, JSON);
+                    JSON << "\"compute_cost\": [{";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"load\": " << fIComp.fLoad << ", ";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"store\": " << fIComp.fStore << ", ";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"declare\": " << fIComp.fDeclare << ", ";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"number\": " << fIComp.fNumbers << ", ";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"cast\": " << fIComp.fCast << ", ";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"select\": " << fIComp.fSelect << ", ";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"loop\": " << fIComp.fLoop << ", ";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"binop\": [{ ";
+                    JSON << "\"total\": " << fIComp.fBinop;
+                    int size1 = (int)fIComp.fBinopSymbolTable.size();
+                    if (size1 > 0) {
+                        JSON << ", ";
+                        for (const auto& it : fIComp.fBinopSymbolTable) {
+                            JSON << "\"" << it.first << "\": " << it.second;
+                            JSON << ((--size1 == 0) ? " }" : ", ");
+                        }
+                    } else {
+                        JSON << " }";
+                    }
+                    JSON << "], ";
+                    tab(fTab + 1, JSON);
+                    JSON << "\"mathop\": [{ ";
+                    JSON << "\"total\": " << fIComp.fMathop;
+                    int size2 = (int)fIComp.fFunctionSymbolTable.size();
+                    if (size2 > 0) {
+                        JSON << ", ";
+                        for (const auto& it : fIComp.fFunctionSymbolTable) {
+                            JSON << "\"" << it.first << "\": " << it.second;
+                            JSON << ((--size2 == 0) ? " }" : ", ");
+                        }
+                    } else {
+                        JSON << " }";
+                    }
+                    JSON << "]";
+                    tab(fTab, JSON);
+                    JSON << "}],";
                 }
-                if (fDSPSize != -1) { tab(fTab, JSON); JSON << "\"size\": " << fDSPSize << ","; }
                 if (fSHAKey != "") { tab(fTab, JSON); JSON << "\"sha_key\": \"" << fSHAKey << "\","; }
                 if (fExpandedCode != "") { tab(fTab, JSON); JSON << "\"code\": \"" << fExpandedCode << "\","; }
                 tab(fTab, JSON); JSON << "\"inputs\": " << fInputs << ",";
@@ -3885,8 +4146,7 @@ class JSONUIReal : public PathBuilder, public Meta, public UIReal<REAL>
 
 // Externally available class using FAUSTFLOAT
 
-struct JSONUI : public JSONUIReal<FAUSTFLOAT>, public UI
-{
+struct FAUST_API JSONUI : public JSONUIReal<FAUSTFLOAT>, public UI {
     
     JSONUI(const std::string& name,
            const std::string& filename,
@@ -3901,14 +4161,16 @@ struct JSONUI : public JSONUIReal<FAUSTFLOAT>, public UI
            const std::vector<std::string>& include_pathnames,
            int size,
            const PathTableType& path_table,
-           MemoryLayoutType memory_layout):
+           MemoryLayoutType memory_layout,
+           InstComplexity inst_comp):
     JSONUIReal<FAUSTFLOAT>(name, filename,
                           inputs, outputs,
                           sr_index,
                           sha_key, dsp_code,
                           version, compile_options,
                           library_list, include_pathnames,
-                          size, path_table, memory_layout)
+                          size, path_table,
+                          memory_layout, inst_comp)
     {}
     
     JSONUI(const std::string& name, const std::string& filename, int inputs, int outputs):
@@ -4026,10 +4288,12 @@ architecture section is not modified.
 
 #include <vector>
 #include <string>
+#include <string.h>
 #include <algorithm>
 #include <assert.h>
 
-class MapUI;
+
+class FAUST_API MapUI;
 
 /**
  * A timestamped short MIDI message used with SOUL.
@@ -4045,7 +4309,7 @@ struct MIDIMessage
 #pragma pack (pop)
 
 /**
- * For timestamped MIDI messages.
+ * For timestamped MIDI messages (in usec).
  */
 struct DatedMessage {
     
@@ -4465,6 +4729,8 @@ class midi_handler : public midi, public midi_interface {
   
 };
 
+#define ucast(v) static_cast<unsigned char>(v)
+
 #endif // __midi__
 /**************************  END  midi.h **************************/
 
@@ -4774,13 +5040,14 @@ class uiMidiChanPress : public uiMidiTimedItem, public uiConverter {
         {
             FAUSTFLOAT v = *fZone;
             fCache = v;
+            int conv = std::round(fConverter->faust2ui(v));
             if (fChan == 0) {
                 // Send on [0..15] channels on the MIDI layer
                 for (int chan = 0; chan < 16; chan++) {
-                    fMidiOut->chanPress(chan, fConverter->faust2ui(v));
+                    fMidiOut->chanPress(chan, conv);
                 }
             } else {
-                fMidiOut->chanPress(fChan - 1, fConverter->faust2ui(v));
+                fMidiOut->chanPress(fChan - 1, conv);
             }
         }
     
@@ -4826,13 +5093,14 @@ class uiMidiCtrlChange : public uiMidiTimedItem, public uiConverter {
         {
             FAUSTFLOAT v = *fZone;
             fCache = v;
+            int conv = std::round(fConverter->faust2ui(v));
             if (fChan == 0) {
                 // Send on [0..15] channels on the MIDI layer
                 for (int chan = 0; chan < 16; chan++) {
-                    fMidiOut->ctrlChange(chan, fCtrl, fConverter->faust2ui(v));
+                    fMidiOut->ctrlChange(chan, fCtrl, conv);
                 }
             } else {
-                fMidiOut->ctrlChange(fChan - 1, fCtrl, fConverter->faust2ui(v));
+                fMidiOut->ctrlChange(fChan - 1, fCtrl, conv);
             }
         }
         
@@ -4851,6 +5119,7 @@ class uiMidiCtrlChange : public uiMidiTimedItem, public uiConverter {
         }
 };
 
+// Use a two segments linear converter
 class uiMidiPitchWheel : public uiMidiTimedItem {
 
     private:
@@ -4879,13 +5148,14 @@ class uiMidiPitchWheel : public uiMidiTimedItem {
         {
             FAUSTFLOAT v = *fZone;
             fCache = v;
+            int conv = std::round(fConverter.faust2ui(v));
             if (fChan == 0) {
                 // Send on [0..15] channels on the MIDI layer
                 for (int chan = 0; chan < 16; chan++) {
-                    fMidiOut->pitchWheel(chan, fConverter.faust2ui(v));
+                    fMidiOut->pitchWheel(chan, conv);
                 }
             } else {
-                fMidiOut->pitchWheel(fChan - 1, fConverter.faust2ui(v));
+                fMidiOut->pitchWheel(fChan - 1, conv);
             }
         }
         
@@ -4937,13 +5207,14 @@ class uiMidiKeyOn : public uiMidiTimedItem, public uiConverter {
         {
             FAUSTFLOAT v = *fZone;
             fCache = v;
+            int conv = std::round(fConverter->faust2ui(v));
             if (fChan == 0) {
                 // Send on [0..15] channels on the MIDI layer
                 for (int chan = 0; chan < 16; chan++) {
-                    fMidiOut->keyOn(chan, fKeyOn, fConverter->faust2ui(v));
+                    fMidiOut->keyOn(chan, fKeyOn, conv);
                 }
             } else {
-                fMidiOut->keyOn(fChan - 1, fKeyOn, fConverter->faust2ui(v));
+                fMidiOut->keyOn(fChan - 1, fKeyOn, conv);
             }
         }
         
@@ -4989,13 +5260,14 @@ class uiMidiKeyOff : public uiMidiTimedItem, public uiConverter {
         {
             FAUSTFLOAT v = *fZone;
             fCache = v;
+            int conv = std::round(fConverter->faust2ui(v));
             if (fChan == 0) {
                 // Send on [0..15] channels on the MIDI layer
                 for (int chan = 0; chan < 16; chan++) {
-                    fMidiOut->keyOn(chan, fKeyOff, fConverter->faust2ui(v));
+                    fMidiOut->keyOff(chan, fKeyOff, conv);
                 }
             } else {
-                fMidiOut->keyOn(fChan - 1, fKeyOff, fConverter->faust2ui(v));
+                fMidiOut->keyOff(fChan - 1, fKeyOff, conv);
             }
         }
         
@@ -5041,13 +5313,14 @@ class uiMidiKeyPress : public uiMidiTimedItem, public uiConverter {
         {
             FAUSTFLOAT v = *fZone;
             fCache = v;
+            int conv = std::round(fConverter->faust2ui(v));
             if (fChan == 0) {
                 // Send on [0..15] channels on the MIDI layer
                 for (int chan = 0; chan < 16; chan++) {
-                    fMidiOut->keyOn(chan, fKey, fConverter->faust2ui(v));
+                    fMidiOut->keyPress(chan, fKey, conv);
                 }
             } else {
-                fMidiOut->keyOn(fChan - 1, fKey, fConverter->faust2ui(v));
+                fMidiOut->keyPress(fChan - 1, fKey, conv);
             }
         }
         
@@ -5533,10 +5806,24 @@ architecture section is not modified.
 #include <sstream>
 
 
-// Base class and common code for binary combiners
+/**
+ * @file dsp-combiner.h
+ * @brief DSP Combiner Library
+ *
+ * This library provides classes for combining DSP modules.
+ * It includes classes for sequencing, parallelizing, splitting, merging, recursing, and crossfading DSP modules.
+ *
+ */
 
 enum Layout { kVerticalGroup, kHorizontalGroup, kTabGroup };
 
+/**
+ * @class dsp_binary_combiner
+ * @brief Base class and common code for binary combiners
+ *
+ * This class serves as the base class for various DSP combiners that work with two DSP modules.
+ * It provides common methods for building user interfaces, allocating and deleting channels, and more.
+ */
 class dsp_binary_combiner : public dsp {
 
     protected:
@@ -5645,8 +5932,13 @@ class dsp_binary_combiner : public dsp {
 
 };
 
-// Combine two 'compatible' DSP in sequence
-
+/**
+ * @class dsp_sequencer
+ * @brief Combine two 'compatible' DSP modules in sequence
+ *
+ * This class allows you to combine two DSP modules in sequence.
+ * It computes the first DSP module's outputs and uses them as inputs for the second DSP module.
+ */
 class dsp_sequencer : public dsp_binary_combiner {
 
     private:
@@ -5692,8 +5984,13 @@ class dsp_sequencer : public dsp_binary_combiner {
 
 };
 
-// Combine two DSP in parallel
-
+/**
+ * @class dsp_parallelizer
+ * @brief Combine two DSP modules in parallel
+ *
+ * This class combines two DSP modules in parallel.
+ * It computes both DSP modules separately and combines their outputs.
+ */
 class dsp_parallelizer : public dsp_binary_combiner {
 
     private:
@@ -5751,8 +6048,13 @@ class dsp_parallelizer : public dsp_binary_combiner {
 
 };
 
-// Combine two 'compatible' DSP in splitter
-
+/**
+ * @class dsp_splitter
+ * @brief Combine two 'compatible' DSP modules in a splitter
+ *
+ * This class combines two DSP modules in a splitter configuration.
+ * The outputs of the first DSP module are connected to the inputs of the second DSP module.
+ */
 class dsp_splitter : public dsp_binary_combiner {
 
     private:
@@ -5803,8 +6105,13 @@ class dsp_splitter : public dsp_binary_combiner {
         }
 };
 
-// Combine two 'compatible' DSP in merger
-
+/**
+ * @class dsp_merger
+ * @brief Combine two 'compatible' DSP modules in a merger
+ *
+ * This class combines two DSP modules in a merger configuration.
+ * The outputs of the first DSP module are combined with the inputs of the second DSP module.
+ */
 class dsp_merger : public dsp_binary_combiner {
 
     private:
@@ -5872,8 +6179,13 @@ class dsp_merger : public dsp_binary_combiner {
         }
 };
 
-// Combine two 'compatible' DSP in a recursive way
-
+/**
+ * @class dsp_recursiver
+ * @brief Combine two 'compatible' DSP modules in a recursive way
+ *
+ * This class recursively combines two DSP modules.
+ * The outputs of each module are fed as inputs to the other module in a recursive manner.
+ */
 class dsp_recursiver : public dsp_binary_combiner {
 
     private:
@@ -5948,12 +6260,15 @@ class dsp_recursiver : public dsp_binary_combiner {
 
 };
 
-/*
- Crossfade between two DSP.
- When fCrossfade = 1, the first DSP only is computed, when fCrossfade = 0,
- the second DSP only is computed, otherwise both DSPs are computed and mixed.
-*/
-
+/**
+ * @class dsp_crossfader
+ * @brief Crossfade between two DSP modules
+ *
+ * This class allows you to crossfade between two DSP modules.
+ * The crossfade parameter (as a slider) controls the mix between the two modules' outputs.
+ * When Crossfade = 1, the first DSP only is computed, when Crossfade = 0,
+ * the second DSP only is computed, otherwise both DSPs are computed and mixed.
+ */
 class dsp_crossfader: public dsp_binary_combiner {
 
     private:
@@ -6047,11 +6362,29 @@ class dsp_crossfader: public dsp_binary_combiner {
 #ifndef __dsp_algebra_api__
 #define __dsp_algebra_api__
 
-// DSP algebra API
-/*
- Each operation takes two DSP and a optional Layout and Label parameters, returns the combined DSPs, or null if failure with an error message.
+/**
+ * DSP algebra API allowing to combine DSPs using the 5 operators Faust block algebra and an additional crossfader combiner.
+ * The two arguments GUI are composed in a group, either kVerticalGroup, kHorizontalGroup or kTabGroup with a label.
+ *
+ * Each operation takes two DSP and a optional layout and label parameters, returns the combined DSPs,
+ * or null if failure with an error message.
+ * 
+ * It includes methods to create sequencers, parallelizers, splitters, mergers, recursivers, and crossfaders.
  */
 
+/**
+ * Create a DSP Sequencer
+ *
+ * This method creates a DSP Sequencer, which combines two DSP modules in a sequencer configuration.
+ * The outputs of the first DSP module are connected to the inputs of the second DSP module.
+ *
+ * @param dsp1 The first DSP module to combine
+ * @param dsp2 The second DSP module to combine
+ * @param error A reference to a string to store error messages (if any)
+ * @param layout The layout for the combined user interface (default: kTabGroup)
+ * @param label The label for the combiner (default: "Sequencer")
+ * @return A pointer to the created DSP Sequencer, or nullptr if an error occurs
+ */
 static dsp* createDSPSequencer(dsp* dsp1, dsp* dsp2,
                                std::string& error,
                                Layout layout = Layout::kTabGroup,
@@ -6069,6 +6402,19 @@ static dsp* createDSPSequencer(dsp* dsp1, dsp* dsp2,
     }
 }
 
+/**
+ * Create a DSP Parallelizer
+ *
+ * This method creates a DSP Parallelizer, which combines two DSP modules in parallel.
+ * The resulting DSP module computes both input modules separately and combines their outputs.
+ *
+ * @param dsp1 The first DSP module to combine
+ * @param dsp2 The second DSP module to combine
+ * @param error A reference to a string to store error messages (if any)
+ * @param layout The layout for the combined user interface (default: kTabGroup)
+ * @param label The label for the combiner (default: "Parallelizer")
+ * @return A pointer to the created DSP Parallelizer, or nullptr if an error occurs
+ */
 static dsp* createDSPParallelizer(dsp* dsp1, dsp* dsp2,
                                   std::string& error,
                                   Layout layout = Layout::kTabGroup,
@@ -6077,6 +6423,19 @@ static dsp* createDSPParallelizer(dsp* dsp1, dsp* dsp2,
     return new dsp_parallelizer(dsp1, dsp2, 4096, layout, label);
 }
 
+/**
+ * Create a DSP Splitter
+ *
+ * This method creates a DSP Splitter, which combines two 'compatible' DSP modules in a splitter configuration.
+ * The outputs of the first DSP module are connected to the inputs of the second DSP module.
+ *
+ * @param dsp1 The first DSP module to combine
+ * @param dsp2 The second DSP module to combine
+ * @param error A reference to a string to store error messages (if any)
+ * @param layout The layout for the combined user interface (default: kTabGroup)
+ * @param label The label for the combiner (default: "Splitter")
+ * @return A pointer to the created DSP Splitter, or nullptr if an error occurs
+ */
 static dsp* createDSPSplitter(dsp* dsp1, dsp* dsp2, std::string& error, Layout layout = Layout::kTabGroup, const std::string& label = "Splitter")
 {
     if (dsp1->getNumOutputs() == 0) {
@@ -6100,6 +6459,19 @@ static dsp* createDSPSplitter(dsp* dsp1, dsp* dsp2, std::string& error, Layout l
     }
 }
 
+/**
+ * Create a DSP Merger
+ *
+ * This method creates a DSP Merger, which combines two 'compatible' DSP modules in a merger configuration.
+ * The outputs of the first DSP module are combined with the inputs of the second DSP module.
+ *
+ * @param dsp1 The first DSP module to combine
+ * @param dsp2 The second DSP module to combine
+ * @param error A reference to a string to store error messages (if any)
+ * @param layout The layout for the combined user interface (default: kTabGroup)
+ * @param label The label for the combiner (default: "Merger")
+ * @return A pointer to the created DSP Merger, or nullptr if an error occurs
+ */
 static dsp* createDSPMerger(dsp* dsp1, dsp* dsp2,
                             std::string& error,
                             Layout layout = Layout::kTabGroup,
@@ -6126,6 +6498,19 @@ static dsp* createDSPMerger(dsp* dsp1, dsp* dsp2,
     }
 }
 
+/**
+ * Create a DSP Recursiver
+ *
+ * This method creates a DSP Recursiver, which combines two 'compatible' DSP modules in a recursive way.
+ * The outputs of each module are fed as inputs to the other module in a recursive manner.
+ *
+ * @param dsp1 The first DSP module to combine
+ * @param dsp2 The second DSP module to combine
+ * @param error A reference to a string to store error messages (if any)
+ * @param layout The layout for the combined user interface (default: kTabGroup)
+ * @param label The label for the combiner (default: "Recursiver")
+ * @return A pointer to the created DSP Recursiver, or nullptr if an error occurs
+ */
 static dsp* createDSPRecursiver(dsp* dsp1, dsp* dsp2,
                                 std::string& error,
                                 Layout layout = Layout::kTabGroup,
@@ -6153,21 +6538,36 @@ static dsp* createDSPRecursiver(dsp* dsp1, dsp* dsp2,
     }
 }
 
+/**
+ * Create a DSP Crossfader
+ *
+ * This method creates a DSP Crossfader, which allows you to crossfade between two DSP modules.
+ * The crossfade parameter (as a slider) controls the mix between the two modules' outputs.
+ * When Crossfade = 1, the first DSP only is computed, when Crossfade = 0,
+ * the second DSP only is computed, otherwise both DSPs are computed and mixed.
+ *
+ * @param dsp1 The first DSP module to combine
+ * @param dsp2 The second DSP module to combine
+ * @param error A reference to a string to store error messages (if any)
+ * @param layout The layout for the combined user interface (default: kTabGroup)
+ * @param label The label for the crossfade slider (default: "Crossfade")
+ * @return A pointer to the created DSP Crossfader, or nullptr if an error occurs
+ */
 static dsp* createDSPCrossfader(dsp* dsp1, dsp* dsp2,
-                                 std::string& error,
-                                 Layout layout = Layout::kTabGroup,
-                                 const std::string& label = "Crossfade")
+                                std::string& error,
+                                Layout layout = Layout::kTabGroup,
+                                const std::string& label = "Crossfade")
 {
     if (dsp1->getNumInputs() != dsp2->getNumInputs()) {
         std::stringstream error_aux;
-        error_aux << "Connection error in dsp_crossfader : the number of inputs ("
+        error_aux << "Error in dsp_crossfader : the number of inputs ("
         << dsp1->getNumInputs() << ") of A "
         << "must be equal to the number of inputs (" << dsp2->getNumInputs() << ") of B" << std::endl;
         error = error_aux.str();
         return nullptr;
     } else if (dsp1->getNumOutputs() != dsp2->getNumOutputs()) {
         std::stringstream error_aux;
-        error_aux << "Connection error in dsp_crossfader : the number of outputs ("
+        error_aux << "Error in dsp_crossfader : the number of outputs ("
         << dsp1->getNumOutputs() << ") of A "
         << "must be equal to the number of outputs (" << dsp2->getNumOutputs() << ") of B" << std::endl;
         error = error_aux.str();
@@ -7143,7 +7543,6 @@ architecture section is not modified.
  architecture section is not modified.
  *************************************************************************/
 
-
 #ifndef CINTERFACE_H
 #define CINTERFACE_H
 
@@ -7538,31 +7937,95 @@ static void buildUIGlue(UIGlue* glue, UI* ui_interface, bool is_double)
     }
 }
     
-struct UITemplate
-{
+// Base class
     
+struct UIInterface
+{
+    virtual ~UIInterface() {}
+    
+    virtual int sizeOfFAUSTFLOAT() = 0;
+    
+    // -- widget's layouts
+    
+    virtual void openTabBox(const char* label) = 0;
+    virtual void openHorizontalBox(const char* label) = 0;
+    virtual void openVerticalBox(const char* label) = 0;
+    virtual void closeBox() = 0;
+    
+    // float version
+    
+    // -- active widgets
+    
+    virtual void addButton(const char* label, float* zone) = 0;
+    virtual void addCheckButton(const char* label, float* zone) = 0;
+    
+    virtual void addVerticalSlider(const char* label, float* zone, float init, float min, float max, float step) = 0;
+    virtual void addHorizontalSlider(const char* label, float* zone, float init, float min, float max, float step) = 0;
+    virtual void addNumEntry(const char* label, float* zone, float init, float min, float max, float step) = 0;
+    
+    // -- passive widgets
+    
+    virtual void addHorizontalBargraph(const char* label, float* zone, float min, float max) = 0;
+    virtual void addVerticalBargraph(const char* label, float* zone, float min, float max) = 0;
+    
+    // -- metadata declarations
+    
+    virtual void declare(float* zone, const char* key, const char* val) = 0;
+    
+    // double version
+    
+    virtual void addButton(const char* label, double* zone) = 0;
+    virtual void addCheckButton(const char* label, double* zone) = 0;
+  
+    virtual void addVerticalSlider(const char* label, double* zone, double init, double min, double max, double step) = 0;
+    virtual void addHorizontalSlider(const char* label, double* zone, double init, double min, double max, double step) = 0;
+    
+    virtual void addNumEntry(const char* label, double* zone, double init, double min, double max, double step) = 0;
+    
+    // -- soundfiles
+    
+    virtual void addSoundfile(const char* label, const char* url, Soundfile** sf_zone) = 0;
+    
+    // -- passive widgets
+    
+    virtual void addHorizontalBargraph(const char* label, double* zone, double min, double max) = 0;
+    virtual void addVerticalBargraph(const char* label, double* zone, double min, double max) = 0;
+     
+    // -- metadata declarations
+    
+    virtual void declare(double* zone, const char* key, const char* val) = 0;
+    
+};
+    
+struct UITemplate : public UIInterface
+{
+ 
     void* fCPPInterface;
 
     UITemplate(void* cpp_interface):fCPPInterface(cpp_interface)
     {}
-    
     virtual ~UITemplate() {}
+    
+    int sizeOfFAUSTFLOAT()
+    {
+        return reinterpret_cast<UI*>(fCPPInterface)->sizeOfFAUSTFLOAT();
+    }
     
     // -- widget's layouts
     
-    virtual void openTabBox(const char* label)
+    void openTabBox(const char* label)
     {
         openTabBoxGlueFloat(fCPPInterface, label);
     }
-    virtual void openHorizontalBox(const char* label)
+    void openHorizontalBox(const char* label)
     {
         openHorizontalBoxGlueFloat(fCPPInterface, label);
     }
-    virtual void openVerticalBox(const char* label)
+    void openVerticalBox(const char* label)
     {
         openVerticalBoxGlueFloat(fCPPInterface, label);
     }
-    virtual void closeBox()
+    void closeBox()
     {
         closeBoxGlueFloat(fCPPInterface);
     }
@@ -7571,101 +8034,222 @@ struct UITemplate
     
     // -- active widgets
     
-    virtual void addButton(const char* label, float* zone)
+    void addButton(const char* label, float* zone)
     {
         addButtonGlueFloat(fCPPInterface, label, zone);
     }
-    virtual void addCheckButton(const char* label, float* zone)
+    void addCheckButton(const char* label, float* zone)
     {
         addCheckButtonGlueFloat(fCPPInterface, label, zone);
     }
     
-    virtual void addVerticalSlider(const char* label, float* zone, float init, float min, float max, float step)
+    void addVerticalSlider(const char* label, float* zone, float init, float min, float max, float step)
     {
         addVerticalSliderGlueFloat(fCPPInterface, label, zone, init, min, max, step);
     }
     
-    virtual void addHorizontalSlider(const char* label, float* zone, float init, float min, float max, float step)
+    void addHorizontalSlider(const char* label, float* zone, float init, float min, float max, float step)
     {
         addHorizontalSliderGlueFloat(fCPPInterface, label, zone, init, min, max, step);
     }
     
-    virtual void addNumEntry(const char* label, float* zone, float init, float min, float max, float step)
+    void addNumEntry(const char* label, float* zone, float init, float min, float max, float step)
     {
         addNumEntryGlueFloat(fCPPInterface, label, zone, init, min, max, step);
     }
     
     // -- passive widgets
     
-    virtual void addHorizontalBargraph(const char* label, float* zone, float min, float max)
+    void addHorizontalBargraph(const char* label, float* zone, float min, float max)
     {
         addHorizontalBargraphGlueFloat(fCPPInterface, label, zone, min, max);
     }
     
-    virtual void addVerticalBargraph(const char* label, float* zone, float min, float max)
+    void addVerticalBargraph(const char* label, float* zone, float min, float max)
     {
         addVerticalBargraphGlueFloat(fCPPInterface, label, zone, min, max);
     }
 
     // -- metadata declarations
     
-    virtual void declare(float* zone, const char* key, const char* val)
+    void declare(float* zone, const char* key, const char* val)
     {
         declareGlueFloat(fCPPInterface, zone, key, val);
     }
     
     // double version
     
-    virtual void addButton(const char* label, double* zone)
+    void addButton(const char* label, double* zone)
     {
         addButtonGlueDouble(fCPPInterface, label, zone);
     }
-    virtual void addCheckButton(const char* label, double* zone)
+    void addCheckButton(const char* label, double* zone)
     {
         addCheckButtonGlueDouble(fCPPInterface, label, zone);
     }
     
-    virtual void addVerticalSlider(const char* label, double* zone, double init, double min, double max, double step)
+    void addVerticalSlider(const char* label, double* zone, double init, double min, double max, double step)
     {
         addVerticalSliderGlueDouble(fCPPInterface, label, zone, init, min, max, step);
     }
     
-    virtual void addHorizontalSlider(const char* label, double* zone, double init, double min, double max, double step)
+    void addHorizontalSlider(const char* label, double* zone, double init, double min, double max, double step)
     {
         addHorizontalSliderGlueDouble(fCPPInterface, label, zone, init, min, max, step);
     }
     
-    virtual void addNumEntry(const char* label, double* zone, double init, double min, double max, double step)
+    void addNumEntry(const char* label, double* zone, double init, double min, double max, double step)
     {
         addNumEntryGlueDouble(fCPPInterface, label, zone, init, min, max, step);
     }
 
     // -- soundfiles
     
-    virtual void addSoundfile(const char* label, const char* url, Soundfile** sf_zone)
+    void addSoundfile(const char* label, const char* url, Soundfile** sf_zone)
     {
         addSoundfileGlueFloat(fCPPInterface, label, url, sf_zone);
     }
 
     // -- passive widgets
     
-    virtual void addHorizontalBargraph(const char* label, double* zone, double min, double max)
+    void addHorizontalBargraph(const char* label, double* zone, double min, double max)
     {
         addHorizontalBargraphGlueDouble(fCPPInterface, label, zone, min, max);
     }
     
-    virtual void addVerticalBargraph(const char* label, double* zone, double min, double max)
+    void addVerticalBargraph(const char* label, double* zone, double min, double max)
     {
         addVerticalBargraphGlueDouble(fCPPInterface, label, zone, min, max);
     }
 
     // -- metadata declarations
     
-    virtual void declare(double* zone, const char* key, const char* val)
+    void declare(double* zone, const char* key, const char* val)
     {
         declareGlueDouble(fCPPInterface, zone, key, val);
     }
 
+};
+    
+struct UIGlueTemplate : public UIInterface
+{
+    
+    UIGlue* fGlue;
+    
+    UIGlueTemplate(UIGlue* glue):fGlue(glue)
+    {}
+    virtual ~UIGlueTemplate() {}
+    
+    virtual int sizeOfFAUSTFLOAT() { return sizeof(FAUSTFLOAT); }
+    
+    // -- widget's layouts
+    
+    void openTabBox(const char* label)
+    {
+        fGlue->openTabBox(fGlue->uiInterface, label);
+    }
+    void openHorizontalBox(const char* label)
+    {
+        fGlue->openHorizontalBox(fGlue->uiInterface, label);
+    }
+    void openVerticalBox(const char* label)
+    {
+        fGlue->openVerticalBox(fGlue->uiInterface, label);
+    }
+    void closeBox()
+    {
+        fGlue->closeBox(fGlue->uiInterface);
+    }
+
+    // float version
+    
+    // -- active widgets
+    
+    void addButton(const char* label, float* zone)
+    {
+        fGlue->addButton(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone));
+    }
+    void addCheckButton(const char* label, float* zone)
+    {
+        fGlue->addCheckButton(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone));
+    }
+    
+    void addVerticalSlider(const char* label, float* zone, float init, float min, float max, float step)
+    {
+        fGlue->addVerticalSlider(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), init, min, max, step);
+    }
+    void addHorizontalSlider(const char* label, float* zone, float init, float min, float max, float step)
+    {
+        fGlue->addHorizontalSlider(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), init, min, max, step);
+    }
+    void addNumEntry(const char* label, float* zone, float init, float min, float max, float step)
+    {
+        fGlue->addNumEntry(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), init, min, max, step);
+    }
+    
+    // -- passive widgets
+    
+    void addHorizontalBargraph(const char* label, float* zone, float min, float max)
+    {
+        fGlue->addHorizontalBargraph(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), min, max);
+    }
+    void addVerticalBargraph(const char* label, float* zone, float min, float max)
+    {
+        fGlue->addVerticalBargraph(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), min, max);
+    }
+    
+    // -- metadata declarations
+    
+    void declare(float* zone, const char* key, const char* val)
+    {
+        fGlue->declare(fGlue->uiInterface, reinterpret_cast<FAUSTFLOAT*>(zone), key, val);
+    }
+    
+    // double version
+    
+    void addButton(const char* label, double* zone)
+    {
+        fGlue->addButton(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone));
+    }
+    void addCheckButton(const char* label, double* zone)
+    {
+        fGlue->addCheckButton(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone));
+    }
+    
+    void addVerticalSlider(const char* label, double* zone, double init, double min, double max, double step)
+    {
+        fGlue->addVerticalSlider(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), init, min, max, step);
+    }
+    void addHorizontalSlider(const char* label, double* zone, double init, double min, double max, double step)
+    {
+        fGlue->addHorizontalSlider(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), init, min, max, step);
+    }
+    void addNumEntry(const char* label, double* zone, double init, double min, double max, double step)
+    {
+        fGlue->addNumEntry(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), init, min, max, step);
+    }
+    // -- soundfiles
+    
+    void addSoundfile(const char* label, const char* url, Soundfile** sf_zone) {}
+    
+    // -- passive widgets
+    
+    void addHorizontalBargraph(const char* label, double* zone, double min, double max)
+    {
+        fGlue->addHorizontalBargraph(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), min, max);
+    }
+    void addVerticalBargraph(const char* label, double* zone, double min, double max)
+    {
+        fGlue->addVerticalBargraph(fGlue->uiInterface, label, reinterpret_cast<FAUSTFLOAT*>(zone), min, max);
+    }
+    
+    // -- metadata declarations
+    
+    void declare(double* zone, const char* key, const char* val)
+    {
+        fGlue->declare(fGlue->uiInterface, reinterpret_cast<FAUSTFLOAT*>(zone), key, val);
+    }
+    
 };
 
 /*******************************************************************************
@@ -7717,6 +8301,9 @@ static void buildManagerGlue(MemoryManagerGlue* glue, dsp_memory_manager* manage
 #ifdef _WIN32
 #include <windows.h>
 #define snprintf _snprintf
+#define STRDUP _strdup
+#else
+#define STRDUP strdup
 #endif
 
 //------------------------------------------------------------------------------------------
@@ -7731,7 +8318,7 @@ static void buildManagerGlue(MemoryManagerGlue* glue, dsp_memory_manager* manage
 typedef std::function<void(FAUSTFLOAT)> ReflectFunction;
 typedef std::function<FAUSTFLOAT()> ModifyFunction;
 
-struct ExtZoneParam {
+struct FAUST_API ExtZoneParam {
 
     virtual void reflectZone() = 0;
     virtual void modifyZone() = 0;
@@ -7746,7 +8333,7 @@ struct ExtZoneParam {
 
 // Templated decoder
 
-struct JSONUIDecoderBase
+struct FAUST_API JSONUIDecoderBase
 {
     virtual ~JSONUIDecoderBase()
     {}
@@ -7777,7 +8364,7 @@ struct JSONUIDecoderBase
 };
 
 template <typename REAL>
-struct JSONUIDecoderReal : public JSONUIDecoderBase {
+struct FAUST_API JSONUIDecoderReal : public JSONUIDecoderBase {
     
     struct ZoneParam : public ExtZoneParam {
         
@@ -7994,7 +8581,7 @@ struct JSONUIDecoderReal : public JSONUIDecoderBase {
         // MANDATORY: to be sure floats or double are correctly parsed
         char* tmp_local = setlocale(LC_ALL, nullptr);
         if (tmp_local != NULL) {
-            tmp_local = strdup(tmp_local);
+            tmp_local = STRDUP(tmp_local);
         }
         setlocale(LC_ALL, "C");
         
@@ -8075,7 +8662,7 @@ struct JSONUIDecoderReal : public JSONUIDecoderBase {
         // MANDATORY: to be sure floats or double are correctly parsed
         char* tmp_local = setlocale(LC_ALL, nullptr);
         if (tmp_local != NULL) {
-            tmp_local = strdup(tmp_local);
+            tmp_local = STRDUP(tmp_local);
         }
         setlocale(LC_ALL, "C");
         
@@ -8145,7 +8732,7 @@ struct JSONUIDecoderReal : public JSONUIDecoderBase {
         // MANDATORY: to be sure floats or double are correctly parsed
         char* tmp_local = setlocale(LC_ALL, nullptr);
         if (tmp_local != NULL) {
-            tmp_local = strdup(tmp_local);
+            tmp_local = STRDUP(tmp_local);
         }
         setlocale(LC_ALL, "C");
         
@@ -8242,7 +8829,7 @@ struct JSONUIDecoderReal : public JSONUIDecoderBase {
 
 // FAUSTFLOAT templated decoder
 
-struct JSONUIDecoder : public JSONUIDecoderReal<FAUSTFLOAT>
+struct FAUST_API JSONUIDecoder : public JSONUIDecoderReal<FAUSTFLOAT>
 {
     JSONUIDecoder(const std::string& json):JSONUIDecoderReal<FAUSTFLOAT>(json)
     {}
@@ -8370,7 +8957,7 @@ architecture section is not modified.
 //  Generic UI empty implementation
 //----------------------------------------------------------------
 
-class GenericUI : public UI
+class FAUST_API GenericUI : public UI
 {
     
     public:
@@ -8406,7 +8993,7 @@ class GenericUI : public UI
 //  Generic UI decorator
 //----------------------------------------------------------------
 
-class DecoratorUI : public UI
+class FAUST_API DecoratorUI : public UI
 {
     
     protected:
@@ -8448,7 +9035,7 @@ class DecoratorUI : public UI
 };
 
 // Defined here to simplify header #include inclusion 
-class SoundUIInterface : public GenericUI {};
+class FAUST_API SoundUIInterface : public GenericUI {};
 
 #endif
 /**************************  END  DecoratorUI.h **************************/
@@ -8485,7 +9072,7 @@ class SoundUIInterface : public GenericUI {};
 #define FAUSTFLOAT float
 #endif
 
-struct JSONControl {
+struct FAUST_API JSONControl {
     
     virtual std::string getJSON() { return ""; }
 
@@ -8507,7 +9094,7 @@ struct JSONControl {
 #define kLegatoVoice   -3
 #define kNoVoice       -4
 
-#define VOICE_STOP_LEVEL  0.001    // -70 db
+#define VOICE_STOP_LEVEL  0.0005    // -70 db
 #define MIX_BUFFER_SIZE   4096
 
 /**
@@ -8517,8 +9104,10 @@ class GroupUI : public GUI, public PathBuilder {
 
     private:
 
+        // Map to associate labels with UI group items
         std::map<std::string, uiGroupItem*> fLabelZoneMap;
 
+        // Insert a zone into the map based on the label folloing the freq/gain/gate polyphonic convention
         void insertMap(std::string label, FAUSTFLOAT* zone)
         {
             if (!MapUI::endsWith(label, "/gate")
@@ -8610,12 +9199,14 @@ struct dsp_voice : public MapUI, public decorator_dsp {
     
     typedef std::function<double(int)> TransformFunction;
   
+    // Convert MIDI note to frequency
     static double midiToFreq(double note)
     {
         return 440.0 * std::pow(2.0, (note-69.0)/12.0);
     }
     
-    int fCurNote;                       // Playing note pitch
+    // Voice state and properties
+    int fCurNote;                       // Current playing note pitch
     int fNextNote;                      // In kLegatoVoice state, next note to play
     int fNextVel;                       // In kLegatoVoice state, next velocity to play
     int fDate;                          // KeyOn date
@@ -8633,7 +9224,7 @@ struct dsp_voice : public MapUI, public decorator_dsp {
  
     dsp_voice(dsp* dsp):decorator_dsp(dsp)
     {
-        // Default versions
+        // Default conversion functions
         fVelFun = [](int velocity) { return double(velocity)/127.0; };
         fKeyFun = [](int pitch) { return midiToFreq(pitch); };
         dsp->buildUserInterface(this);
@@ -8647,6 +9238,7 @@ struct dsp_voice : public MapUI, public decorator_dsp {
     virtual ~dsp_voice()
     {}
     
+    // Compute a slice of audio
     void computeSlice(int offset, int slice, FAUSTFLOAT** inputs, FAUSTFLOAT** outputs)
     {
         FAUSTFLOAT** inputsSlice = static_cast<FAUSTFLOAT**>(alloca(sizeof(FAUSTFLOAT*) * getNumInputs()));
@@ -8660,6 +9252,7 @@ struct dsp_voice : public MapUI, public decorator_dsp {
         compute(slice, inputsSlice, outputsSlice);
     }
     
+    // Compute audio in legato mode
     void computeLegato(int count, FAUSTFLOAT** inputs, FAUSTFLOAT** outputs)
     {
         int slice = count/2;
@@ -8679,6 +9272,7 @@ struct dsp_voice : public MapUI, public decorator_dsp {
         computeSlice(slice, slice, inputs, outputs);
     }
 
+    // Extract control paths from fullpath map
     void extractPaths(std::vector<std::string>& gate, std::vector<std::string>& freq, std::vector<std::string>& gain)
     {
         // Keep gain/vel|velocity, freq/key and gate labels
@@ -8702,11 +9296,13 @@ struct dsp_voice : public MapUI, public decorator_dsp {
         }
     }
     
+    // Reset voice
     void reset()
     {
         init(getSampleRate());
     }
  
+    // Clear instance state
     void instanceClear()
     {
         decorator_dsp::instanceClear();
@@ -8727,7 +9323,7 @@ struct dsp_voice : public MapUI, public decorator_dsp {
         }
     }
 
-    // Normalized MIDI velocity [0..1]
+    // KeyOn with normalized MIDI velocity [0..1]
     void keyOn(int pitch, double velocity)
     {
         for (size_t i = 0; i < fFreqPath.size(); i++) {
@@ -8773,15 +9369,16 @@ struct dsp_voice : public MapUI, public decorator_dsp {
  */
 struct dsp_voice_group {
 
+    // GUI group for controlling voice parameters
     GroupUI fGroups;
 
     std::vector<dsp_voice*> fVoiceTable; // Individual voices
     dsp* fVoiceGroup;                    // Voices group to be used for GUI grouped control
 
-    FAUSTFLOAT fPanic;
+    FAUSTFLOAT fPanic;  // Panic button value
 
-    bool fVoiceControl;
-    bool fGroupControl;
+    bool fVoiceControl; // Voice control mode
+    bool fGroupControl; // Group control mode
 
     dsp_voice_group(uiCallback cb, void* arg, bool control, bool group)
         :fGroups(&fPanic, cb, arg),
@@ -8797,16 +9394,19 @@ struct dsp_voice_group {
         delete fVoiceGroup;
     }
 
+    // Add a voice to the group
     void addVoice(dsp_voice* voice)
     {
         fVoiceTable.push_back(voice);
     }
-
+        
+    // Clear all voices from the group
     void clearVoices()
     {
         fVoiceTable.clear();
     }
 
+    // Initialize the voice group
     void init()
     {
         // Groups all uiItem for a given path
@@ -8817,6 +9417,7 @@ struct dsp_voice_group {
         }
     }
     
+    // Reset the user interface for each voice instance
     void instanceResetUserInterface()
     {
         for (size_t i = 0; i < fVoiceTable.size(); i++) {
@@ -8824,6 +9425,7 @@ struct dsp_voice_group {
         }
     }
 
+    // Build the user interface for the voice group
     void buildUserInterface(UI* ui_interface)
     {
         if (fVoiceTable.size() > 1) {
@@ -8836,7 +9438,7 @@ struct dsp_voice_group {
             ui_interface->closeBox();
 
             // If not grouped, also add individual voices UI
-            if (!fGroupControl /*||dynamic_cast<SoundUIInterface*>(ui_interface)*/) {
+            if (!fGroupControl || dynamic_cast<SoundUIInterface*>(ui_interface)) {
                 for (size_t i = 0; i < fVoiceTable.size(); i++) {
                     char buffer[32];
                     snprintf(buffer, 32, ((fVoiceTable.size() < 8) ? "Voice%ld" : "V%ld"), long(i+1));
@@ -8865,10 +9467,10 @@ class dsp_poly : public decorator_dsp, public midi, public JSONControl {
     protected:
     
     #ifdef EMCC
-        MapUI fMapUI;
-        std::string fJSON;
-        midi_handler fMidiHandler;
-        MidiUI fMIDIUI;
+        MapUI fMapUI;               // Map for UI control
+        std::string fJSON;          // JSON representation of the UI
+        midi_handler fMidiHandler;  // MIDI handler for the UI
+        MidiUI fMIDIUI;             // MIDI UI for the DSP
     #endif
     
     public:
@@ -8977,11 +9579,12 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
 
     private:
 
-        FAUSTFLOAT** fMixBuffer;
-        FAUSTFLOAT** fOutBuffer;
-        midi_interface* fMidiHandler; // The midi_interface the DSP is connected to
-        int fDate;
+        FAUSTFLOAT** fMixBuffer;        // Intermediate buffer for mixing voices
+        FAUSTFLOAT** fOutBuffer;        // Intermediate buffer for output
+        midi_interface* fMidiHandler;   // The midi_interface the DSP is connected to
+        int fDate;                      // Current date for managing voices
     
+        // Fade out the audio in the buffer
         void fadeOut(int count, FAUSTFLOAT** outBuffer)
         {
             // FadeOut on half buffer
@@ -8994,6 +9597,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             }
         }
     
+        // Mix the audio from the mix buffer to the output buffer, and also calculate the maximum level on the buffer
         FAUSTFLOAT mixCheckVoice(int count, FAUSTFLOAT** mixBuffer, FAUSTFLOAT** outBuffer)
         {
             FAUSTFLOAT level = 0;
@@ -9008,6 +9612,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             return level;
         }
     
+        // Mix the audio from the mix buffer to the output buffer
         void mixVoice(int count, FAUSTFLOAT** mixBuffer, FAUSTFLOAT** outBuffer)
         {
             for (int chan = 0; chan < getNumOutputs(); chan++) {
@@ -9019,6 +9624,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             }
         }
     
+        // Copy the audio from one buffer to another
         void copy(int count, FAUSTFLOAT** mixBuffer, FAUSTFLOAT** outBuffer)
         {
             for (int chan = 0; chan < getNumOutputs(); chan++) {
@@ -9026,6 +9632,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             }
         }
 
+        // Clear the audio buffer
         void clear(int count, FAUSTFLOAT** outBuffer)
         {
             for (int chan = 0; chan < getNumOutputs(); chan++) {
@@ -9033,6 +9640,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             }
         }
     
+        // Get the index of a voice currently playing a specific pitch
         int getPlayingVoice(int pitch)
         {
             int voice_playing = kNoVoice;
@@ -9051,6 +9659,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             return voice_playing;
         }
     
+        // Allocate a voice with a given type
         int allocVoice(int voice, int type)
         {
             fVoiceTable[voice]->fDate++;
@@ -9058,7 +9667,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             return voice;
         }
     
-        // Always returns a voice
+        // Get a free voice for allocation, always returns a voice
         int getFreeVoice()
         {
             // Looks for the first available voice
@@ -9110,6 +9719,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             }
         }
 
+        // Callback for panic button
         static void panic(FAUSTFLOAT val, void* arg)
         {
             if (val == FAUSTFLOAT(1)) {
@@ -9117,6 +9727,7 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
             }
         }
 
+        // Check if the DSP is polyphonic
         bool checkPolyphony()
         {
             if (fVoiceTable.size() > 0) {
@@ -9184,10 +9795,10 @@ class mydsp_poly : public dsp_voice_group, public dsp_poly {
         void buildUserInterface(UI* ui_interface)
         {
             // MidiUI ui_interface contains the midi_handler connected to the MIDI driver
-            // if (dynamic_cast<midi_interface*>(ui_interface)) {
-            //     fMidiHandler = dynamic_cast<midi_interface*>(ui_interface);
-            //     fMidiHandler->addMidiIn(this);
-            // }
+            if (dynamic_cast<midi_interface*>(ui_interface)) {
+                fMidiHandler = dynamic_cast<midi_interface*>(ui_interface);
+                fMidiHandler->addMidiIn(this);
+            }
             dsp_voice_group::buildUserInterface(ui_interface);
         }
 
@@ -9448,13 +10059,14 @@ struct dsp_poly_factory : public dsp_factory {
     virtual ~dsp_poly_factory()
     {}
 
-    virtual std::string getName() { return fProcessFactory->getName(); }
-    virtual std::string getSHAKey() { return fProcessFactory->getSHAKey(); }
-    virtual std::string getDSPCode() { return fProcessFactory->getDSPCode(); }
-    virtual std::string getCompileOptions() { return fProcessFactory->getCompileOptions(); }
-    virtual std::vector<std::string> getLibraryList() { return fProcessFactory->getLibraryList(); }
-    virtual std::vector<std::string> getIncludePathnames() { return fProcessFactory->getIncludePathnames(); }
-
+    std::string getName() { return fProcessFactory->getName(); }
+    std::string getSHAKey() { return fProcessFactory->getSHAKey(); }
+    std::string getDSPCode() { return fProcessFactory->getDSPCode(); }
+    std::string getCompileOptions() { return fProcessFactory->getCompileOptions(); }
+    std::vector<std::string> getLibraryList() { return fProcessFactory->getLibraryList(); }
+    std::vector<std::string> getIncludePathnames() { return fProcessFactory->getIncludePathnames(); }
+    std::vector<std::string> getWarningMessages() { return fProcessFactory->getWarningMessages(); }
+   
     std::string getEffectCode(const std::string& dsp_content)
     {
         std::stringstream effect_code;
@@ -9587,13 +10199,13 @@ class mydsp : public dsp {
 	float fRec29[2];
 	float fConst5;
 	float fConst6;
-	float fConst7;
+	float fConst8;
 	float fConst9;
-	float fConst10;
 	float fRec33[2];
 	float fRec34[2];
 	int iRec35[2];
 	float fRec32[2];
+	float fConst10;
 	float fRec31[2];
 	float fConst11;
 	float fConst12;
@@ -9616,34 +10228,32 @@ class mydsp : public dsp {
 	float fVec9[4096];
 	float fRec37[2];
 	float fConst13;
-	float fConst14;
-	float fVec10[2048];
-	float fRec54[2];
-	float fVec11[2048];
-	float fRec52[2];
-	float fVec12[4096];
-	float fRec50[2];
-	float fVec13[4096];
-	float fRec48[2];
 	float fConst15;
-	float fConst16;
+	float fVec10[2048];
+	float fRec53[2];
+	float fVec11[2048];
+	float fRec51[2];
+	float fVec12[4096];
+	float fRec49[2];
+	float fVec13[4096];
 	float fRec47[2];
+	float fConst16;
+	float fConst17;
 	float fRec46[2];
 	float fRec45[2];
-	float fConst17;
-	FAUSTFLOAT fHslider8;
-	float fRec56[2];
-	float fRec18[3];
-	float fRec57[3];
 	float fConst18;
+	FAUSTFLOAT fHslider8;
+	float fRec55[2];
+	float fRec18[3];
+	float fRec56[3];
 	float fConst19;
 	float fConst20;
-	float fRec60[2];
-	float fRec59[2];
+	float fConst21;
 	float fRec58[2];
+	float fRec57[2];
 	float fVec14[4096];
 	FAUSTFLOAT fHslider9;
-	float fRec61[2];
+	float fRec59[2];
 	float fRec16[2];
 	float fVec15[8192];
 	float fRec14[3];
@@ -9653,46 +10263,48 @@ class mydsp : public dsp {
 	float fRec3[2];
 	float fVec18[32768];
 	float fVec19[2048];
-	float fRec76[2];
-	float fVec20[1024];
 	float fRec74[2];
-	float fVec21[4096];
+	float fVec20[1024];
 	float fRec72[2];
-	float fVec22[4096];
+	float fVec21[4096];
 	float fRec70[2];
-	float fRec69[3];
-	float fRec78[3];
-	float fRec81[2];
-	float fRec80[2];
-	float fRec79[2];
+	float fVec22[4096];
+	float fRec68[2];
+	float fRec67[3];
+	float fRec76[3];
+	float fConst22;
+	float fRec78[2];
+	float fRec77[2];
 	float fVec23[8192];
-	float fRec67[2];
+	float fRec65[2];
 	float fVec24[8192];
-	float fRec66[3];
+	float fRec64[3];
 	float fVec25[16384];
-	float fRec62[2];
+	float fRec60[2];
 	float fVec26[4096];
 	float fRec4[2];
 	float fVec27[2];
 	float fRec0[2];
-	float fConst21;
-	float fConst22;
-	float fVec28[2];
-	float fRec85[2];
 	float fConst23;
-	float fRec84[2];
-	float fRec83[2];
-	float fRec82[2];
+	float fConst24;
+	float fVec28[2];
+	float fRec81[2];
+	float fConst25;
+	float fRec80[2];
+	float fRec79[2];
 	
  public:
-	
+	mydsp() {}
+
 	void metadata(Meta* m) { 
+		m->declare("analyzers.lib/amp_follower_ar:author", "Jonatan Liljedahl, revised by Romain Michon");
 		m->declare("analyzers.lib/name", "Faust Analyzer Library");
-		m->declare("analyzers.lib/version", "0.1");
+		m->declare("analyzers.lib/version", "1.2.0");
 		m->declare("author", "Arev Imer (arev.imer@students.fhnw.ch)");
 		m->declare("basics.lib/name", "Faust Basic Element Library");
-		m->declare("basics.lib/version", "0.6");
-		m->declare("compile_options", "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -es 1 -mcd 16 -uim -single -ftz 0");
+		m->declare("basics.lib/tabulateNd", "Copyright (C) 2023 Bart Brouns <bart@magnetophon.nl>");
+		m->declare("basics.lib/version", "1.11.1");
+		m->declare("compile_options", "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -ct 1 -es 1 -mcd 16 -uim -single -ftz 0");
 		m->declare("compressors.lib/compression_gain_mono:author", "Julius O. Smith III");
 		m->declare("compressors.lib/compression_gain_mono:copyright", "Copyright (C) 2014-2020 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("compressors.lib/compression_gain_mono:license", "MIT-style STK-4.3 license");
@@ -9706,10 +10318,10 @@ class mydsp : public dsp {
 		m->declare("compressors.lib/compressor_stereo:copyright", "Copyright (C) 2014-2020 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("compressors.lib/compressor_stereo:license", "MIT-style STK-4.3 license");
 		m->declare("compressors.lib/name", "Faust Compressor Effect Library");
-		m->declare("compressors.lib/version", "0.2");
+		m->declare("compressors.lib/version", "1.5.0");
 		m->declare("copyright", "Arev");
 		m->declare("delays.lib/name", "Faust Delay Library");
-		m->declare("delays.lib/version", "0.1");
+		m->declare("delays.lib/version", "1.1.0");
 		m->declare("description", "variable space reverberation audio effect");
 		m->declare("filename", "mooSpace.dsp");
 		m->declare("filters.lib/dcblocker:author", "Julius O. Smith III");
@@ -9751,7 +10363,7 @@ class mydsp : public dsp {
 		m->declare("filters.lib/tf2s:author", "Julius O. Smith III");
 		m->declare("filters.lib/tf2s:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("filters.lib/tf2s:license", "MIT-style STK-4.3 license");
-		m->declare("filters.lib/version", "0.3");
+		m->declare("filters.lib/version", "1.3.0");
 		m->declare("filters.lib/zero:author", "Julius O. Smith III");
 		m->declare("filters.lib/zero:copyright", "Copyright (C) 2003-2019 by Julius O. Smith III <jos@ccrma.stanford.edu>");
 		m->declare("filters.lib/zero:license", "MIT-style STK-4.3 license");
@@ -9759,16 +10371,18 @@ class mydsp : public dsp {
 		m->declare("maths.lib/copyright", "GRAME");
 		m->declare("maths.lib/license", "LGPL with exception");
 		m->declare("maths.lib/name", "Faust Math Library");
-		m->declare("maths.lib/version", "2.5");
+		m->declare("maths.lib/version", "2.7.0");
 		m->declare("name", "mooSpace");
 		m->declare("noises.lib/name", "Faust Noise Generator Library");
-		m->declare("noises.lib/version", "0.3");
+		m->declare("noises.lib/version", "1.4.0");
 		m->declare("oscillators.lib/name", "Faust Oscillator Library");
-		m->declare("oscillators.lib/version", "0.3");
+		m->declare("oscillators.lib/version", "1.4.0");
 		m->declare("platform.lib/name", "Generic Platform Library");
-		m->declare("platform.lib/version", "0.2");
+		m->declare("platform.lib/version", "1.3.0");
 		m->declare("signals.lib/name", "Faust Signal Routing Library");
-		m->declare("signals.lib/version", "0.1");
+		m->declare("signals.lib/onePoleSwitching:author", "Jonatan Liljedahl, revised by Dario Sanfilippo");
+		m->declare("signals.lib/onePoleSwitching:licence", "STK-4.3");
+		m->declare("signals.lib/version", "1.5.0");
 		m->declare("version", "0.2");
 	}
 
@@ -9784,37 +10398,39 @@ class mydsp : public dsp {
 	
 	virtual void instanceConstants(int sample_rate) {
 		fSampleRate = sample_rate;
-		float fConst0 = std::min<float>(192000.0f, std::max<float>(1.0f, float(fSampleRate)));
-		fConst1 = 44.0999985f / fConst0;
+		float fConst0 = std::min<float>(1.92e+05f, std::max<float>(1.0f, float(fSampleRate)));
+		fConst1 = 44.1f / fConst0;
 		fConst2 = 1.0f - fConst1;
 		float fConst3 = std::tan(15.707963f / fConst0);
 		float fConst4 = 1.0f / fConst3;
 		fConst5 = 1.0f / ((fConst4 + 1.0f) / fConst3 + 1.0f);
 		fConst6 = 1.0f / (fConst4 + 1.0f);
-		fConst7 = 1.0f - fConst4;
-		float fConst8 = 31.415926f / fConst0;
-		fConst9 = std::sin(fConst8);
-		fConst10 = std::cos(fConst8);
+		float fConst7 = 31.415926f / fConst0;
+		fConst8 = std::sin(fConst7);
+		fConst9 = std::cos(fConst7);
+		fConst10 = 1.0f - fConst4;
 		fConst11 = (fConst4 + -1.0f) / fConst3 + 1.0f;
 		fConst12 = 2.0f * (1.0f - 1.0f / mydsp_faustpower2_f(fConst3));
-		fConst13 = std::exp(0.0f - 20.0f / fConst0);
-		fConst14 = 1.0f - fConst13;
-		fConst15 = std::exp(0.0f - 10.0f / fConst0);
-		fConst16 = std::exp(0.0f - 2.0f / fConst0);
-		fConst17 = 3.14159274f / fConst0;
-		fConst18 = std::exp(0.0f - 4.0f / fConst0);
-		fConst19 = 1.0f - fConst18;
-		fConst20 = std::exp(0.0f - 1.0f / fConst0);
-		fConst21 = std::exp(0.0f - 2500.0f / fConst0);
-		fConst22 = 1.0f - fConst21;
-		fConst23 = std::exp(0.0f - 1250.0f / fConst0);
+		fConst13 = std::exp(-(2e+01f / fConst0));
+		float fConst14 = 1.0f - fConst13;
+		fConst15 = 0.8333333f * fConst14;
+		fConst16 = std::exp(-(2.0f / fConst0));
+		fConst17 = std::exp(-(1e+01f / fConst0));
+		fConst18 = 3.1415927f / fConst0;
+		fConst19 = std::exp(-(4.0f / fConst0));
+		fConst20 = 0.875f * (1.0f - fConst19);
+		fConst21 = std::exp(-(1.0f / fConst0));
+		fConst22 = 0.875f * fConst14;
+		fConst23 = std::exp(-(2.5e+03f / fConst0));
+		fConst24 = 0.975f * (1.0f - fConst23);
+		fConst25 = std::exp(-(1.25e+03f / fConst0));
 	}
 	
 	virtual void instanceResetUserInterface() {
 		fHslider0 = FAUSTFLOAT(0.5f);
 		fHslider1 = FAUSTFLOAT(0.0f);
-		fHslider2 = FAUSTFLOAT(0.29999999999999999f);
-		fHslider3 = FAUSTFLOAT(0.10000000000000001f);
+		fHslider2 = FAUSTFLOAT(0.3f);
+		fHslider3 = FAUSTFLOAT(0.1f);
 		fHslider4 = FAUSTFLOAT(0.0f);
 		fHslider5 = FAUSTFLOAT(0.5f);
 		fHslider6 = FAUSTFLOAT(0.02f);
@@ -9925,166 +10541,154 @@ class mydsp : public dsp {
 			fVec10[l32] = 0.0f;
 		}
 		for (int l33 = 0; l33 < 2; l33 = l33 + 1) {
-			fRec54[l33] = 0.0f;
+			fRec53[l33] = 0.0f;
 		}
 		for (int l34 = 0; l34 < 2048; l34 = l34 + 1) {
 			fVec11[l34] = 0.0f;
 		}
 		for (int l35 = 0; l35 < 2; l35 = l35 + 1) {
-			fRec52[l35] = 0.0f;
+			fRec51[l35] = 0.0f;
 		}
 		for (int l36 = 0; l36 < 4096; l36 = l36 + 1) {
 			fVec12[l36] = 0.0f;
 		}
 		for (int l37 = 0; l37 < 2; l37 = l37 + 1) {
-			fRec50[l37] = 0.0f;
+			fRec49[l37] = 0.0f;
 		}
 		for (int l38 = 0; l38 < 4096; l38 = l38 + 1) {
 			fVec13[l38] = 0.0f;
 		}
 		for (int l39 = 0; l39 < 2; l39 = l39 + 1) {
-			fRec48[l39] = 0.0f;
+			fRec47[l39] = 0.0f;
 		}
 		for (int l40 = 0; l40 < 2; l40 = l40 + 1) {
-			fRec47[l40] = 0.0f;
+			fRec46[l40] = 0.0f;
 		}
 		for (int l41 = 0; l41 < 2; l41 = l41 + 1) {
-			fRec46[l41] = 0.0f;
+			fRec45[l41] = 0.0f;
 		}
 		for (int l42 = 0; l42 < 2; l42 = l42 + 1) {
-			fRec45[l42] = 0.0f;
+			fRec55[l42] = 0.0f;
 		}
-		for (int l43 = 0; l43 < 2; l43 = l43 + 1) {
-			fRec56[l43] = 0.0f;
+		for (int l43 = 0; l43 < 3; l43 = l43 + 1) {
+			fRec18[l43] = 0.0f;
 		}
 		for (int l44 = 0; l44 < 3; l44 = l44 + 1) {
-			fRec18[l44] = 0.0f;
+			fRec56[l44] = 0.0f;
 		}
-		for (int l45 = 0; l45 < 3; l45 = l45 + 1) {
-			fRec57[l45] = 0.0f;
+		for (int l45 = 0; l45 < 2; l45 = l45 + 1) {
+			fRec58[l45] = 0.0f;
 		}
 		for (int l46 = 0; l46 < 2; l46 = l46 + 1) {
-			fRec60[l46] = 0.0f;
+			fRec57[l46] = 0.0f;
 		}
-		for (int l47 = 0; l47 < 2; l47 = l47 + 1) {
-			fRec59[l47] = 0.0f;
+		for (int l47 = 0; l47 < 4096; l47 = l47 + 1) {
+			fVec14[l47] = 0.0f;
 		}
 		for (int l48 = 0; l48 < 2; l48 = l48 + 1) {
-			fRec58[l48] = 0.0f;
+			fRec59[l48] = 0.0f;
 		}
-		for (int l49 = 0; l49 < 4096; l49 = l49 + 1) {
-			fVec14[l49] = 0.0f;
+		for (int l49 = 0; l49 < 2; l49 = l49 + 1) {
+			fRec16[l49] = 0.0f;
 		}
-		for (int l50 = 0; l50 < 2; l50 = l50 + 1) {
-			fRec61[l50] = 0.0f;
+		for (int l50 = 0; l50 < 8192; l50 = l50 + 1) {
+			fVec15[l50] = 0.0f;
 		}
-		for (int l51 = 0; l51 < 2; l51 = l51 + 1) {
-			fRec16[l51] = 0.0f;
+		for (int l51 = 0; l51 < 3; l51 = l51 + 1) {
+			fRec14[l51] = 0.0f;
 		}
-		for (int l52 = 0; l52 < 8192; l52 = l52 + 1) {
-			fVec15[l52] = 0.0f;
+		for (int l52 = 0; l52 < 16384; l52 = l52 + 1) {
+			fVec16[l52] = 0.0f;
 		}
-		for (int l53 = 0; l53 < 3; l53 = l53 + 1) {
-			fRec14[l53] = 0.0f;
+		for (int l53 = 0; l53 < 2; l53 = l53 + 1) {
+			fRec10[l53] = 0.0f;
 		}
-		for (int l54 = 0; l54 < 16384; l54 = l54 + 1) {
-			fVec16[l54] = 0.0f;
+		for (int l54 = 0; l54 < 4096; l54 = l54 + 1) {
+			fVec17[l54] = 0.0f;
 		}
 		for (int l55 = 0; l55 < 2; l55 = l55 + 1) {
-			fRec10[l55] = 0.0f;
+			fRec3[l55] = 0.0f;
 		}
-		for (int l56 = 0; l56 < 4096; l56 = l56 + 1) {
-			fVec17[l56] = 0.0f;
+		for (int l56 = 0; l56 < 32768; l56 = l56 + 1) {
+			fVec18[l56] = 0.0f;
 		}
-		for (int l57 = 0; l57 < 2; l57 = l57 + 1) {
-			fRec3[l57] = 0.0f;
+		for (int l57 = 0; l57 < 2048; l57 = l57 + 1) {
+			fVec19[l57] = 0.0f;
 		}
-		for (int l58 = 0; l58 < 32768; l58 = l58 + 1) {
-			fVec18[l58] = 0.0f;
+		for (int l58 = 0; l58 < 2; l58 = l58 + 1) {
+			fRec74[l58] = 0.0f;
 		}
-		for (int l59 = 0; l59 < 2048; l59 = l59 + 1) {
-			fVec19[l59] = 0.0f;
+		for (int l59 = 0; l59 < 1024; l59 = l59 + 1) {
+			fVec20[l59] = 0.0f;
 		}
 		for (int l60 = 0; l60 < 2; l60 = l60 + 1) {
-			fRec76[l60] = 0.0f;
+			fRec72[l60] = 0.0f;
 		}
-		for (int l61 = 0; l61 < 1024; l61 = l61 + 1) {
-			fVec20[l61] = 0.0f;
+		for (int l61 = 0; l61 < 4096; l61 = l61 + 1) {
+			fVec21[l61] = 0.0f;
 		}
 		for (int l62 = 0; l62 < 2; l62 = l62 + 1) {
-			fRec74[l62] = 0.0f;
+			fRec70[l62] = 0.0f;
 		}
 		for (int l63 = 0; l63 < 4096; l63 = l63 + 1) {
-			fVec21[l63] = 0.0f;
+			fVec22[l63] = 0.0f;
 		}
 		for (int l64 = 0; l64 < 2; l64 = l64 + 1) {
-			fRec72[l64] = 0.0f;
+			fRec68[l64] = 0.0f;
 		}
-		for (int l65 = 0; l65 < 4096; l65 = l65 + 1) {
-			fVec22[l65] = 0.0f;
+		for (int l65 = 0; l65 < 3; l65 = l65 + 1) {
+			fRec67[l65] = 0.0f;
 		}
-		for (int l66 = 0; l66 < 2; l66 = l66 + 1) {
-			fRec70[l66] = 0.0f;
+		for (int l66 = 0; l66 < 3; l66 = l66 + 1) {
+			fRec76[l66] = 0.0f;
 		}
-		for (int l67 = 0; l67 < 3; l67 = l67 + 1) {
-			fRec69[l67] = 0.0f;
+		for (int l67 = 0; l67 < 2; l67 = l67 + 1) {
+			fRec78[l67] = 0.0f;
 		}
-		for (int l68 = 0; l68 < 3; l68 = l68 + 1) {
-			fRec78[l68] = 0.0f;
+		for (int l68 = 0; l68 < 2; l68 = l68 + 1) {
+			fRec77[l68] = 0.0f;
 		}
-		for (int l69 = 0; l69 < 2; l69 = l69 + 1) {
-			fRec81[l69] = 0.0f;
+		for (int l69 = 0; l69 < 8192; l69 = l69 + 1) {
+			fVec23[l69] = 0.0f;
 		}
 		for (int l70 = 0; l70 < 2; l70 = l70 + 1) {
-			fRec80[l70] = 0.0f;
+			fRec65[l70] = 0.0f;
 		}
-		for (int l71 = 0; l71 < 2; l71 = l71 + 1) {
-			fRec79[l71] = 0.0f;
+		for (int l71 = 0; l71 < 8192; l71 = l71 + 1) {
+			fVec24[l71] = 0.0f;
 		}
-		for (int l72 = 0; l72 < 8192; l72 = l72 + 1) {
-			fVec23[l72] = 0.0f;
+		for (int l72 = 0; l72 < 3; l72 = l72 + 1) {
+			fRec64[l72] = 0.0f;
 		}
-		for (int l73 = 0; l73 < 2; l73 = l73 + 1) {
-			fRec67[l73] = 0.0f;
+		for (int l73 = 0; l73 < 16384; l73 = l73 + 1) {
+			fVec25[l73] = 0.0f;
 		}
-		for (int l74 = 0; l74 < 8192; l74 = l74 + 1) {
-			fVec24[l74] = 0.0f;
+		for (int l74 = 0; l74 < 2; l74 = l74 + 1) {
+			fRec60[l74] = 0.0f;
 		}
-		for (int l75 = 0; l75 < 3; l75 = l75 + 1) {
-			fRec66[l75] = 0.0f;
+		for (int l75 = 0; l75 < 4096; l75 = l75 + 1) {
+			fVec26[l75] = 0.0f;
 		}
-		for (int l76 = 0; l76 < 16384; l76 = l76 + 1) {
-			fVec25[l76] = 0.0f;
+		for (int l76 = 0; l76 < 2; l76 = l76 + 1) {
+			fRec4[l76] = 0.0f;
 		}
 		for (int l77 = 0; l77 < 2; l77 = l77 + 1) {
-			fRec62[l77] = 0.0f;
+			fVec27[l77] = 0.0f;
 		}
-		for (int l78 = 0; l78 < 4096; l78 = l78 + 1) {
-			fVec26[l78] = 0.0f;
+		for (int l78 = 0; l78 < 2; l78 = l78 + 1) {
+			fRec0[l78] = 0.0f;
 		}
 		for (int l79 = 0; l79 < 2; l79 = l79 + 1) {
-			fRec4[l79] = 0.0f;
+			fVec28[l79] = 0.0f;
 		}
 		for (int l80 = 0; l80 < 2; l80 = l80 + 1) {
-			fVec27[l80] = 0.0f;
+			fRec81[l80] = 0.0f;
 		}
 		for (int l81 = 0; l81 < 2; l81 = l81 + 1) {
-			fRec0[l81] = 0.0f;
+			fRec80[l81] = 0.0f;
 		}
 		for (int l82 = 0; l82 < 2; l82 = l82 + 1) {
-			fVec28[l82] = 0.0f;
-		}
-		for (int l83 = 0; l83 < 2; l83 = l83 + 1) {
-			fRec85[l83] = 0.0f;
-		}
-		for (int l84 = 0; l84 < 2; l84 = l84 + 1) {
-			fRec84[l84] = 0.0f;
-		}
-		for (int l85 = 0; l85 < 2; l85 = l85 + 1) {
-			fRec83[l85] = 0.0f;
-		}
-		for (int l86 = 0; l86 < 2; l86 = l86 + 1) {
-			fRec82[l86] = 0.0f;
+			fRec79[l82] = 0.0f;
 		}
 	}
 	
@@ -10092,6 +10696,7 @@ class mydsp : public dsp {
 		classInit(sample_rate);
 		instanceInit(sample_rate);
 	}
+	
 	virtual void instanceInit(int sample_rate) {
 		instanceConstants(sample_rate);
 		instanceResetUserInterface();
@@ -10108,16 +10713,16 @@ class mydsp : public dsp {
 	
 	virtual void buildUserInterface(UI* ui_interface) {
 		ui_interface->openVerticalBox("mooSpace");
-		ui_interface->addHorizontalSlider("Filter", &fHslider8, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
-		ui_interface->addHorizontalSlider("colour", &fHslider3, FAUSTFLOAT(0.100000001f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
-		ui_interface->addHorizontalSlider("decay", &fHslider2, FAUSTFLOAT(0.300000012f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
-		ui_interface->addHorizontalSlider("drag", &fHslider9, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
-		ui_interface->addHorizontalSlider("input diffusion", &fHslider5, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
-		ui_interface->addHorizontalSlider("lag", &fHslider4, FAUSTFLOAT(0.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
-		ui_interface->addHorizontalSlider("mix", &fHslider0, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
-		ui_interface->addHorizontalSlider("modulate", &fHslider6, FAUSTFLOAT(0.0199999996f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
-		ui_interface->addHorizontalSlider("push", &fHslider1, FAUSTFLOAT(0.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00999999978f));
-		ui_interface->addHorizontalSlider("smear", &fHslider7, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.00100000005f));
+		ui_interface->addHorizontalSlider("Filter", &fHslider8, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
+		ui_interface->addHorizontalSlider("colour", &fHslider3, FAUSTFLOAT(0.1f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
+		ui_interface->addHorizontalSlider("decay", &fHslider2, FAUSTFLOAT(0.3f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.001f));
+		ui_interface->addHorizontalSlider("drag", &fHslider9, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.001f));
+		ui_interface->addHorizontalSlider("input diffusion", &fHslider5, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
+		ui_interface->addHorizontalSlider("lag", &fHslider4, FAUSTFLOAT(0.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.001f));
+		ui_interface->addHorizontalSlider("mix", &fHslider0, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
+		ui_interface->addHorizontalSlider("modulate", &fHslider6, FAUSTFLOAT(0.02f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.001f));
+		ui_interface->addHorizontalSlider("push", &fHslider1, FAUSTFLOAT(0.0f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.01f));
+		ui_interface->addHorizontalSlider("smear", &fHslider7, FAUSTFLOAT(0.5f), FAUSTFLOAT(0.0f), FAUSTFLOAT(1.0f), FAUSTFLOAT(0.001f));
 		ui_interface->closeBox();
 	}
 	
@@ -10141,15 +10746,15 @@ class mydsp : public dsp {
 			fRec1[0] = fSlow0 + fConst2 * fRec1[1];
 			float fTemp0 = 1.0f - fRec1[0];
 			fRec2[0] = fSlow1 + fConst2 * fRec2[1];
-			float fTemp1 = std::pow(10.0f, 2.0f * fRec2[0]);
+			float fTemp1 = std::pow(1e+01f, 2.0f * fRec2[0]);
 			float fTemp2 = std::max<float>(-1.0f, std::min<float>(1.0f, float(input0[i0]) * fTemp1));
-			float fTemp3 = 1.0f - 0.333333343f * mydsp_faustpower2_f(fTemp2);
+			float fTemp3 = 1.0f - 0.33333334f * mydsp_faustpower2_f(fTemp2);
 			float fTemp4 = fTemp0 * fTemp2 * fTemp3;
 			fRec9[0] = fSlow2 + fConst2 * fRec9[1];
 			fRec15[0] = fSlow3 + fConst2 * fRec15[1];
 			float fTemp5 = 1.0f - fRec15[0];
 			float fTemp6 = std::max<float>(-1.0f, std::min<float>(1.0f, float(input1[i0]) * fTemp1));
-			float fTemp7 = 1.0f - 0.333333343f * mydsp_faustpower2_f(fTemp6);
+			float fTemp7 = 1.0f - 0.33333334f * mydsp_faustpower2_f(fTemp6);
 			float fTemp8 = fTemp6 * fTemp7;
 			fVec1[IOTA0 & 32767] = fTemp8;
 			fRec27[0] = fSlow4 + fConst2 * fRec27[1];
@@ -10157,66 +10762,66 @@ class mydsp : public dsp {
 			int iTemp10 = int(fTemp9);
 			int iTemp11 = std::min<int>(32767, std::max<int>(0, iTemp10));
 			float fTemp12 = std::floor(fTemp9);
-			float fTemp13 = fTemp12 + 1.0f - fTemp9;
+			float fTemp13 = fTemp12 + (1.0f - fTemp9);
 			float fTemp14 = fTemp9 - fTemp12;
 			int iTemp15 = std::min<int>(32767, std::max<int>(0, iTemp10 + 1));
 			fRec28[0] = fSlow5 + fConst2 * fRec28[1];
-			float fTemp16 = (fVec1[(IOTA0 - iTemp11) & 32767] * fTemp13 + fTemp14 * fVec1[(IOTA0 - iTemp15) & 32767]) - 0.975000024f * fRec28[0] * fRec25[1];
+			float fTemp16 = fVec1[(IOTA0 - iTemp11) & 32767] * fTemp13 + fTemp14 * fVec1[(IOTA0 - iTemp15) & 32767] - 0.975f * fRec28[0] * fRec25[1];
 			fVec2[IOTA0 & 2047] = fTemp16;
 			fRec29[0] = fSlow6 + fConst2 * fRec29[1];
-			fRec33[0] = fConst9 * fRec34[1] + fConst10 * fRec33[1];
-			fRec34[0] = (float(1 - iVec0[1]) + fConst10 * fRec34[1]) - fConst9 * fRec33[1];
+			fRec33[0] = fConst8 * fRec34[1] + fConst9 * fRec33[1];
+			fRec34[0] = float(1 - iVec0[1]) + fConst9 * fRec34[1] - fConst8 * fRec33[1];
 			int iTemp17 = (fRec33[1] <= 0.0f) & (fRec33[0] > 0.0f);
 			iRec35[0] = 1103515245 * iRec35[1] + 12345;
-			fRec32[0] = fRec32[1] * float(1 - iTemp17) + 4.65661287e-10f * float(iRec35[0]) * float(iTemp17);
-			fRec31[0] = 0.0f - fConst6 * (fConst7 * fRec31[1] - (fRec32[0] + fRec32[1]));
+			fRec32[0] = fRec32[1] * float(1 - iTemp17) + 4.656613e-10f * float(iRec35[0]) * float(iTemp17);
+			fRec31[0] = fConst6 * (fRec32[0] + fRec32[1] - fConst10 * fRec31[1]);
 			fRec30[0] = fRec31[0] - fConst5 * (fConst11 * fRec30[2] + fConst12 * fRec30[1]);
 			float fTemp18 = 75.0f * fRec29[0] * (fConst5 * (fRec30[2] + fRec30[0] + 2.0f * fRec30[1]) + 1.0f);
 			fRec36[0] = fSlow7 + fConst2 * fRec36[1];
 			float fTemp19 = fTemp18 + 1349.0f * fRec36[0];
 			float fTemp20 = fTemp19 + -1.0f;
 			int iTemp21 = int(fTemp20);
-			int iTemp22 = int(std::min<float>(1350.0f, float(std::max<int>(0, int(iTemp21)))));
+			int iTemp22 = int(std::min<float>(1.35e+03f, float(std::max<int>(0, iTemp21))));
 			float fTemp23 = std::floor(fTemp20);
-			float fTemp24 = fTemp23 + 2.0f - fTemp19;
-			float fTemp25 = fTemp19 + -1.0f - fTemp23;
-			int iTemp26 = int(std::min<float>(1350.0f, float(std::max<int>(0, int(iTemp21 + 1)))));
+			float fTemp24 = fTemp23 + (2.0f - fTemp19);
+			float fTemp25 = fTemp19 + (-1.0f - fTemp23);
+			int iTemp26 = int(std::min<float>(1.35e+03f, float(std::max<int>(0, iTemp21 + 1))));
 			fRec25[0] = fVec2[(IOTA0 - iTemp22) & 2047] * fTemp24 + fTemp25 * fVec2[(IOTA0 - iTemp26) & 2047];
-			float fRec26 = 0.975000024f * fRec28[0] * fTemp16;
-			float fTemp27 = (fRec26 + fRec25[1]) - 0.975000024f * fRec28[0] * fRec23[1];
+			float fRec26 = 0.975f * fRec28[0] * fTemp16;
+			float fTemp27 = fRec26 + fRec25[1] - 0.975f * fRec28[0] * fRec23[1];
 			fVec3[IOTA0 & 1023] = fTemp27;
 			float fTemp28 = fTemp18 + 1016.5f * fRec36[0];
 			float fTemp29 = fTemp28 + -1.0f;
 			int iTemp30 = int(fTemp29);
-			int iTemp31 = int(std::min<float>(1017.5f, float(std::max<int>(0, int(iTemp30)))));
+			int iTemp31 = int(std::min<float>(1017.5f, float(std::max<int>(0, iTemp30))));
 			float fTemp32 = std::floor(fTemp29);
-			float fTemp33 = fTemp32 + 2.0f - fTemp28;
-			float fTemp34 = fTemp28 + -1.0f - fTemp32;
-			int iTemp35 = int(std::min<float>(1017.5f, float(std::max<int>(0, int(iTemp30 + 1)))));
+			float fTemp33 = fTemp32 + (2.0f - fTemp28);
+			float fTemp34 = fTemp28 + (-1.0f - fTemp32);
+			int iTemp35 = int(std::min<float>(1017.5f, float(std::max<int>(0, iTemp30 + 1))));
 			fRec23[0] = fVec3[(IOTA0 - iTemp31) & 1023] * fTemp33 + fTemp34 * fVec3[(IOTA0 - iTemp35) & 1023];
-			float fRec24 = 0.975000024f * fRec28[0] * fTemp27;
-			float fTemp36 = (fRec24 + fRec23[1]) - 0.8125f * fRec28[0] * fRec21[1];
+			float fRec24 = 0.975f * fRec28[0] * fTemp27;
+			float fTemp36 = fRec24 + fRec23[1] - 0.8125f * fRec28[0] * fRec21[1];
 			fVec4[IOTA0 & 4095] = fTemp36;
 			float fTemp37 = fTemp18 + 3600.5f * fRec36[0];
 			float fTemp38 = fTemp37 + -1.0f;
 			int iTemp39 = int(fTemp38);
-			int iTemp40 = int(std::min<float>(3601.5f, float(std::max<int>(0, int(iTemp39)))));
+			int iTemp40 = int(std::min<float>(3601.5f, float(std::max<int>(0, iTemp39))));
 			float fTemp41 = std::floor(fTemp38);
-			float fTemp42 = fTemp41 + 2.0f - fTemp37;
-			float fTemp43 = fTemp37 + -1.0f - fTemp41;
-			int iTemp44 = int(std::min<float>(3601.5f, float(std::max<int>(0, int(iTemp39 + 1)))));
+			float fTemp42 = fTemp41 + (2.0f - fTemp37);
+			float fTemp43 = fTemp37 + (-1.0f - fTemp41);
+			int iTemp44 = int(std::min<float>(3601.5f, float(std::max<int>(0, iTemp39 + 1))));
 			fRec21[0] = fVec4[(IOTA0 - iTemp40) & 4095] * fTemp42 + fTemp43 * fVec4[(IOTA0 - iTemp44) & 4095];
 			float fRec22 = 0.8125f * fRec28[0] * fTemp36;
-			float fTemp45 = (fRec22 + fRec21[1]) - 0.8125f * fRec28[0] * fRec19[1];
+			float fTemp45 = fRec22 + fRec21[1] - 0.8125f * fRec28[0] * fRec19[1];
 			fVec5[IOTA0 & 4095] = fTemp45;
 			float fTemp46 = fTemp18 + 2631.5f * fRec36[0];
 			float fTemp47 = fTemp46 + -1.0f;
 			int iTemp48 = int(fTemp47);
-			int iTemp49 = int(std::min<float>(2632.5f, float(std::max<int>(0, int(iTemp48)))));
+			int iTemp49 = int(std::min<float>(2632.5f, float(std::max<int>(0, iTemp48))));
 			float fTemp50 = std::floor(fTemp47);
-			float fTemp51 = fTemp50 + 2.0f - fTemp46;
-			float fTemp52 = fTemp46 + -1.0f - fTemp50;
-			int iTemp53 = int(std::min<float>(2632.5f, float(std::max<int>(0, int(iTemp48 + 1)))));
+			float fTemp51 = fTemp50 + (2.0f - fTemp46);
+			float fTemp52 = fTemp46 + (-1.0f - fTemp50);
+			int iTemp53 = int(std::min<float>(2632.5f, float(std::max<int>(0, iTemp48 + 1))));
 			fRec19[0] = fVec5[(IOTA0 - iTemp49) & 4095] * fTemp51 + fTemp52 * fVec5[(IOTA0 - iTemp53) & 4095];
 			float fRec20 = 0.8125f * fRec28[0] * fTemp45;
 			float fTemp54 = fRec4[1] - 0.75f * fRec43[1];
@@ -10225,209 +10830,205 @@ class mydsp : public dsp {
 			float fTemp56 = fTemp55 + -1.0f;
 			int iTemp57 = int(fTemp56);
 			float fTemp58 = std::floor(fTemp56);
-			fRec43[0] = fVec6[(IOTA0 - int(std::min<float>(1435.5f, float(std::max<int>(0, int(iTemp57)))))) & 2047] * (fTemp58 + 2.0f - fTemp55) + (fTemp55 + -1.0f - fTemp58) * fVec6[(IOTA0 - int(std::min<float>(1435.5f, float(std::max<int>(0, int(iTemp57 + 1)))))) & 2047];
+			fRec43[0] = fVec6[(IOTA0 - int(std::min<float>(1435.5f, float(std::max<int>(0, iTemp57))))) & 2047] * (fTemp58 + (2.0f - fTemp55)) + (fTemp55 + (-1.0f - fTemp58)) * fVec6[(IOTA0 - int(std::min<float>(1435.5f, float(std::max<int>(0, iTemp57 + 1))))) & 2047];
 			float fRec44 = 0.75f * fTemp54;
-			float fTemp59 = (fRec44 + fRec43[1]) - 0.75f * fRec41[1];
+			float fTemp59 = fRec44 + fRec43[1] - 0.75f * fRec41[1];
 			fVec7[IOTA0 & 1023] = fTemp59;
 			float fTemp60 = fTemp18 + 959.5f * fRec36[0];
 			float fTemp61 = fTemp60 + -1.0f;
 			int iTemp62 = int(fTemp61);
 			float fTemp63 = std::floor(fTemp61);
-			fRec41[0] = fVec7[(IOTA0 - int(std::min<float>(960.5f, float(std::max<int>(0, int(iTemp62)))))) & 1023] * (fTemp63 + 2.0f - fTemp60) + (fTemp60 + -1.0f - fTemp63) * fVec7[(IOTA0 - int(std::min<float>(960.5f, float(std::max<int>(0, int(iTemp62 + 1)))))) & 1023];
+			fRec41[0] = fVec7[(IOTA0 - int(std::min<float>(960.5f, float(std::max<int>(0, iTemp62))))) & 1023] * (fTemp63 + (2.0f - fTemp60)) + (fTemp60 + (-1.0f - fTemp63)) * fVec7[(IOTA0 - int(std::min<float>(960.5f, float(std::max<int>(0, iTemp62 + 1))))) & 1023];
 			float fRec42 = 0.75f * fTemp59;
-			float fTemp64 = (fRec42 + fRec41[1]) - 0.625f * fRec39[1];
+			float fTemp64 = fRec42 + fRec41[1] - 0.625f * fRec39[1];
 			fVec8[IOTA0 & 4095] = fTemp64;
 			float fTemp65 = fTemp18 + 3486.5f * fRec36[0];
 			float fTemp66 = fTemp65 + -1.0f;
 			int iTemp67 = int(fTemp66);
 			float fTemp68 = std::floor(fTemp66);
-			fRec39[0] = fVec8[(IOTA0 - int(std::min<float>(3487.5f, float(std::max<int>(0, int(iTemp67)))))) & 4095] * (fTemp68 + 2.0f - fTemp65) + (fTemp65 + -1.0f - fTemp68) * fVec8[(IOTA0 - int(std::min<float>(3487.5f, float(std::max<int>(0, int(iTemp67 + 1)))))) & 4095];
+			fRec39[0] = fVec8[(IOTA0 - int(std::min<float>(3487.5f, float(std::max<int>(0, iTemp67))))) & 4095] * (fTemp68 + (2.0f - fTemp65)) + (fTemp65 + (-1.0f - fTemp68)) * fVec8[(IOTA0 - int(std::min<float>(3487.5f, float(std::max<int>(0, iTemp67 + 1))))) & 4095];
 			float fRec40 = 0.625f * fTemp64;
-			float fTemp69 = (fRec40 + fRec39[1]) - 0.625f * fRec37[1];
+			float fTemp69 = fRec40 + fRec39[1] - 0.625f * fRec37[1];
 			fVec9[IOTA0 & 4095] = fTemp69;
 			float fTemp70 = fTemp18 + 2669.5f * fRec36[0];
 			float fTemp71 = fTemp70 + -1.0f;
 			int iTemp72 = int(fTemp71);
 			float fTemp73 = std::floor(fTemp71);
-			fRec37[0] = fVec9[(IOTA0 - int(std::min<float>(2670.5f, float(std::max<int>(0, int(iTemp72)))))) & 4095] * (fTemp73 + 2.0f - fTemp70) + (fTemp70 + -1.0f - fTemp73) * fVec9[(IOTA0 - int(std::min<float>(2670.5f, float(std::max<int>(0, int(iTemp72 + 1)))))) & 4095];
+			fRec37[0] = fVec9[(IOTA0 - int(std::min<float>(2670.5f, float(std::max<int>(0, iTemp72))))) & 4095] * (fTemp73 + (2.0f - fTemp70)) + (fTemp70 + (-1.0f - fTemp73)) * fVec9[(IOTA0 - int(std::min<float>(2670.5f, float(std::max<int>(0, iTemp72 + 1))))) & 4095];
 			float fRec38 = 0.625f * fTemp69;
 			float fTemp74 = fRec38 + fRec37[1];
-			float fTemp75 = fRec3[1] - 0.75f * fRec54[1];
+			float fTemp75 = fRec3[1] - 0.75f * fRec53[1];
 			fVec10[IOTA0 & 2047] = fTemp75;
 			float fTemp76 = fTemp18 + 1415.5f * fRec36[0];
 			float fTemp77 = fTemp76 + -1.0f;
 			int iTemp78 = int(fTemp77);
 			float fTemp79 = std::floor(fTemp77);
-			fRec54[0] = fVec10[(IOTA0 - int(std::min<float>(1416.5f, float(std::max<int>(0, int(iTemp78)))))) & 2047] * (fTemp79 + 2.0f - fTemp76) + (fTemp76 + -1.0f - fTemp79) * fVec10[(IOTA0 - int(std::min<float>(1416.5f, float(std::max<int>(0, int(iTemp78 + 1)))))) & 2047];
-			float fRec55 = 0.75f * fTemp75;
-			float fTemp80 = (fRec55 + fRec54[1]) - 0.75f * fRec52[1];
+			fRec53[0] = fVec10[(IOTA0 - int(std::min<float>(1416.5f, float(std::max<int>(0, iTemp78))))) & 2047] * (fTemp79 + (2.0f - fTemp76)) + (fTemp76 + (-1.0f - fTemp79)) * fVec10[(IOTA0 - int(std::min<float>(1416.5f, float(std::max<int>(0, iTemp78 + 1))))) & 2047];
+			float fRec54 = 0.75f * fTemp75;
+			float fTemp80 = fRec54 + fRec53[1] - 0.75f * fRec51[1];
 			fVec11[IOTA0 & 2047] = fTemp80;
 			float fTemp81 = fTemp18 + 1073.5f * fRec36[0];
 			float fTemp82 = fTemp81 + -1.0f;
 			int iTemp83 = int(fTemp82);
 			float fTemp84 = std::floor(fTemp82);
-			fRec52[0] = fVec11[(IOTA0 - int(std::min<float>(1074.5f, float(std::max<int>(0, int(iTemp83)))))) & 2047] * (fTemp84 + 2.0f - fTemp81) + (fTemp81 + -1.0f - fTemp84) * fVec11[(IOTA0 - int(std::min<float>(1074.5f, float(std::max<int>(0, int(iTemp83 + 1)))))) & 2047];
-			float fRec53 = 0.75f * fTemp80;
-			float fTemp85 = (fRec53 + fRec52[1]) - 0.625f * fRec50[1];
+			fRec51[0] = fVec11[(IOTA0 - int(std::min<float>(1074.5f, float(std::max<int>(0, iTemp83))))) & 2047] * (fTemp84 + (2.0f - fTemp81)) + (fTemp81 + (-1.0f - fTemp84)) * fVec11[(IOTA0 - int(std::min<float>(1074.5f, float(std::max<int>(0, iTemp83 + 1))))) & 2047];
+			float fRec52 = 0.75f * fTemp80;
+			float fTemp85 = fRec52 + fRec51[1] - 0.625f * fRec49[1];
 			fVec12[IOTA0 & 4095] = fTemp85;
 			float fTemp86 = fTemp18 + 3771.5f * fRec36[0];
 			float fTemp87 = fTemp86 + -1.0f;
 			int iTemp88 = int(fTemp87);
 			float fTemp89 = std::floor(fTemp87);
-			fRec50[0] = fVec12[(IOTA0 - int(std::min<float>(3772.5f, float(std::max<int>(0, int(iTemp88)))))) & 4095] * (fTemp89 + 2.0f - fTemp86) + (fTemp86 + -1.0f - fTemp89) * fVec12[(IOTA0 - int(std::min<float>(3772.5f, float(std::max<int>(0, int(iTemp88 + 1)))))) & 4095];
-			float fRec51 = 0.625f * fTemp85;
-			float fTemp90 = (fRec51 + fRec50[1]) - 0.625f * fRec48[1];
+			fRec49[0] = fVec12[(IOTA0 - int(std::min<float>(3772.5f, float(std::max<int>(0, iTemp88))))) & 4095] * (fTemp89 + (2.0f - fTemp86)) + (fTemp86 + (-1.0f - fTemp89)) * fVec12[(IOTA0 - int(std::min<float>(3772.5f, float(std::max<int>(0, iTemp88 + 1))))) & 4095];
+			float fRec50 = 0.625f * fTemp85;
+			float fTemp90 = fRec50 + fRec49[1] - 0.625f * fRec47[1];
 			fVec13[IOTA0 & 4095] = fTemp90;
 			float fTemp91 = fTemp18 + 2688.5f * fRec36[0];
 			float fTemp92 = fTemp91 + -1.0f;
 			int iTemp93 = int(fTemp92);
 			float fTemp94 = std::floor(fTemp92);
-			fRec48[0] = fVec13[(IOTA0 - int(std::min<float>(2689.5f, float(std::max<int>(0, int(iTemp93)))))) & 4095] * (fTemp94 + 2.0f - fTemp91) + (fTemp91 + -1.0f - fTemp94) * fVec13[(IOTA0 - int(std::min<float>(2689.5f, float(std::max<int>(0, int(iTemp93 + 1)))))) & 4095];
-			float fRec49 = 0.625f * fTemp90;
-			float fTemp95 = fRec49 + fRec48[1];
+			fRec47[0] = fVec13[(IOTA0 - int(std::min<float>(2689.5f, float(std::max<int>(0, iTemp93))))) & 4095] * (fTemp94 + (2.0f - fTemp91)) + (fTemp91 + (-1.0f - fTemp94)) * fVec13[(IOTA0 - int(std::min<float>(2689.5f, float(std::max<int>(0, iTemp93 + 1))))) & 4095];
+			float fRec48 = 0.625f * fTemp90;
+			float fTemp95 = fRec48 + fRec47[1];
 			float fTemp96 = std::fabs(std::fabs(fTemp74) + std::fabs(fTemp95));
-			float fTemp97 = ((fRec46[1] > fTemp96) ? fConst16 : fConst15);
-			fRec47[0] = fTemp96 * (1.0f - fTemp97) + fTemp97 * fRec47[1];
-			fRec46[0] = fRec47[0];
-			fRec45[0] = fConst14 * (0.0f - 0.833333313f * std::max<float>(20.0f * std::log10(std::max<float>(1.17549435e-38f, fRec46[0])) + 6.0f, 0.0f)) + fConst13 * fRec45[1];
-			float fTemp98 = std::pow(10.0f, 0.0500000007f * fRec45[0]);
-			fRec56[0] = fSlow8 + fConst2 * fRec56[1];
-			float fTemp99 = std::tan(fConst17 * (68988.3359f * mydsp_faustpower2_f(std::max<float>(0.0f, std::min<float>(0.479999989f, fRec56[0]))) + 100.0f));
+			float fTemp97 = ((fTemp96 > fRec46[1]) ? fConst17 : fConst16);
+			fRec46[0] = fTemp96 * (1.0f - fTemp97) + fRec46[1] * fTemp97;
+			fRec45[0] = fConst13 * fRec45[1] - fConst15 * std::max<float>(2e+01f * std::log10(std::max<float>(1.1754944e-38f, fRec46[0])) + 6.0f, 0.0f);
+			float fTemp98 = std::pow(1e+01f, 0.05f * fRec45[0]);
+			fRec55[0] = fSlow8 + fConst2 * fRec55[1];
+			float fTemp99 = std::tan(fConst18 * (68988.336f * mydsp_faustpower2_f(std::max<float>(0.0f, std::min<float>(0.48f, fRec55[0]))) + 1e+02f));
 			float fTemp100 = 1.0f / fTemp99;
-			float fTemp101 = 2.0f / std::max<float>(0.100000001f, (3.0f - 2.0f * fRec9[0]) * std::fabs(10.0f * (std::max<float>(0.400000006f, std::min<float>(0.600000024f, fRec56[0])) + -0.400000006f) + -1.0f));
+			float fTemp101 = 2.0f / std::max<float>(0.1f, (3.0f - 2.0f * fRec9[0]) * std::fabs(1e+01f * (std::max<float>(0.4f, std::min<float>(0.6f, fRec55[0])) + -0.4f) + -1.0f));
 			float fTemp102 = (fTemp100 - fTemp101) / fTemp99 + 1.0f;
 			float fTemp103 = 1.0f - 1.0f / mydsp_faustpower2_f(fTemp99);
 			float fTemp104 = (fTemp100 + fTemp101) / fTemp99 + 1.0f;
-			fRec18[0] = (fRec19[1] + fRec20 + 2.0f * fRec9[0] * fTemp74 * fTemp98) - (fRec18[2] * fTemp102 + 2.0f * fRec18[1] * fTemp103) / fTemp104;
+			fRec18[0] = fRec19[1] + fRec20 + 2.0f * fRec9[0] * fTemp74 * fTemp98 - (fRec18[2] * fTemp102 + 2.0f * fRec18[1] * fTemp103) / fTemp104;
 			float fTemp105 = (fRec18[2] + fRec18[0] + 2.0f * fRec18[1]) / fTemp104;
-			float fTemp106 = std::tan(fConst17 * (21607.668f * mydsp_faustpower2_f(std::max<float>(0.519999981f, std::min<float>(1.0f, fRec56[0])) + -0.519999981f) + 20.0f));
+			float fTemp106 = std::tan(fConst18 * (21607.668f * mydsp_faustpower2_f(std::max<float>(0.52f, std::min<float>(1.0f, fRec55[0])) + -0.52f) + 2e+01f));
 			float fTemp107 = 1.0f / fTemp106;
 			float fTemp108 = (fTemp107 - fTemp101) / fTemp106 + 1.0f;
 			float fTemp109 = 1.0f - 1.0f / mydsp_faustpower2_f(fTemp106);
 			float fTemp110 = (fTemp101 + fTemp107) / fTemp106 + 1.0f;
-			fRec57[0] = fTemp105 - (fRec57[2] * fTemp108 + 2.0f * fRec57[1] * fTemp109) / fTemp110;
-			float fTemp111 = fTemp105 - (fRec57[2] + fRec57[0] + 2.0f * fRec57[1]) / fTemp110;
+			fRec56[0] = fTemp105 - (fRec56[2] * fTemp108 + 2.0f * fRec56[1] * fTemp109) / fTemp110;
+			float fTemp111 = fTemp105 - (fRec56[2] + fRec56[0] + 2.0f * fRec56[1]) / fTemp110;
 			float fTemp112 = std::fabs(fTemp111);
-			float fTemp113 = ((fRec59[1] > fTemp112) ? fConst20 : fConst16);
-			fRec60[0] = fTemp112 * (1.0f - fTemp113) + fTemp113 * fRec60[1];
-			fRec59[0] = fRec60[0];
-			fRec58[0] = fConst19 * (0.0f - 0.875f * std::max<float>(20.0f * std::log10(std::max<float>(1.17549435e-38f, fRec59[0])) + 3.0f, 0.0f)) + fConst18 * fRec58[1];
-			float fTemp114 = 0.699999988f * fRec16[1] + fTemp111 * std::pow(10.0f, 0.0500000007f * fRec58[0]);
+			float fTemp113 = ((fTemp112 > fRec58[1]) ? fConst16 : fConst21);
+			fRec58[0] = fTemp112 * (1.0f - fTemp113) + fRec58[1] * fTemp113;
+			fRec57[0] = fConst19 * fRec57[1] - fConst20 * std::max<float>(2e+01f * std::log10(std::max<float>(1.1754944e-38f, fRec58[0])) + 3.0f, 0.0f);
+			float fTemp114 = 0.7f * fRec16[1] + fTemp111 * std::pow(1e+01f, 0.05f * fRec57[0]);
 			fVec14[IOTA0 & 4095] = fTemp114;
-			fRec61[0] = fSlow9 + fConst2 * fRec61[1];
-			float fTemp115 = fTemp18 + 3360.0f * fRec61[0];
+			fRec59[0] = fSlow9 + fConst2 * fRec59[1];
+			float fTemp115 = fTemp18 + 3.36e+03f * fRec59[0];
 			float fTemp116 = fTemp115 + -1.0f;
 			int iTemp117 = int(fTemp116);
 			float fTemp118 = std::floor(fTemp116);
-			fRec16[0] = fVec14[(IOTA0 - std::min<int>(3511, int(std::max<int>(0, int(iTemp117))))) & 4095] * (fTemp118 + 2.0f - fTemp115) + (fTemp115 + -1.0f - fTemp118) * fVec14[(IOTA0 - std::min<int>(3511, int(std::max<int>(0, int(iTemp117 + 1))))) & 4095];
-			float fRec17 = 0.0f - 0.699999988f * fTemp114;
+			fRec16[0] = fVec14[(IOTA0 - std::min<int>(3511, std::max<int>(0, iTemp117))) & 4095] * (fTemp118 + (2.0f - fTemp115)) + (fTemp115 + (-1.0f - fTemp118)) * fVec14[(IOTA0 - std::min<int>(3511, std::max<int>(0, iTemp117 + 1))) & 4095];
+			float fRec17 = -(0.7f * fTemp114);
 			float fTemp119 = fRec17 + fRec16[1];
 			fVec15[IOTA0 & 8191] = fTemp119;
 			fRec14[0] = fRec15[0] * fRec14[2] + fTemp5 * fVec15[(IOTA0 - 4453) & 8191];
 			float fTemp120 = 1.5f * fRec9[0] * fRec14[0] - 0.5f * fRec10[1];
 			fVec16[IOTA0 & 16383] = fTemp120;
-			float fTemp121 = fTemp18 + 9000.0f * fRec61[0];
+			float fTemp121 = fTemp18 + 9e+03f * fRec59[0];
 			float fTemp122 = fTemp121 + -1.0f;
 			int iTemp123 = int(fTemp122);
 			float fTemp124 = std::floor(fTemp122);
-			fRec10[0] = fVec16[(IOTA0 - std::min<int>(9151, int(std::max<int>(0, int(iTemp123))))) & 16383] * (fTemp124 + 2.0f - fTemp121) + (fTemp121 + -1.0f - fTemp124) * fVec16[(IOTA0 - std::min<int>(9151, int(std::max<int>(0, int(iTemp123 + 1))))) & 16383];
+			fRec10[0] = fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp123))) & 16383] * (fTemp124 + (2.0f - fTemp121)) + (fTemp121 + (-1.0f - fTemp124)) * fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp123 + 1))) & 16383];
 			float fRec11 = 0.5f * fTemp120;
-			float fTemp125 = 934.579468f * fRec61[0];
+			float fTemp125 = 934.57947f * fRec59[0];
 			int iTemp126 = int(fTemp125);
 			float fTemp127 = std::floor(fTemp125);
-			float fRec12 = fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp126))) & 16383] * (fTemp127 + 1.0f - fTemp125) + (fTemp125 - fTemp127) * fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp126 + 1))) & 16383];
-			float fTemp128 = 6164.38379f * fRec61[0];
+			float fRec12 = fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp126))) & 16383] * (fTemp127 + (1.0f - fTemp125)) + (fTemp125 - fTemp127) * fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp126 + 1))) & 16383];
+			float fTemp128 = 6164.384f * fRec59[0];
 			int iTemp129 = int(fTemp128);
 			float fTemp130 = std::floor(fTemp128);
-			float fRec13 = fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp129))) & 16383] * (fTemp130 + 1.0f - fTemp128) + (fTemp128 - fTemp130) * fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp129 + 1))) & 16383];
+			float fRec13 = fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp129))) & 16383] * (fTemp130 + (1.0f - fTemp128)) + (fTemp128 - fTemp130) * fVec16[(IOTA0 - std::min<int>(9151, std::max<int>(0, iTemp129 + 1))) & 16383];
 			float fTemp131 = fRec11 + fRec10[1];
 			fVec17[IOTA0 & 4095] = fTemp131;
 			fRec3[0] = 1.5f * fRec9[0] * fVec17[(IOTA0 - 3720) & 4095];
 			float fTemp132 = fTemp2 * fTemp3;
 			fVec18[IOTA0 & 32767] = fTemp132;
-			float fTemp133 = (fTemp13 * fVec18[(IOTA0 - iTemp11) & 32767] + fTemp14 * fVec18[(IOTA0 - iTemp15) & 32767]) - 0.975000024f * fRec28[0] * fRec76[1];
+			float fTemp133 = fTemp13 * fVec18[(IOTA0 - iTemp11) & 32767] + fTemp14 * fVec18[(IOTA0 - iTemp15) & 32767] - 0.975f * fRec28[0] * fRec74[1];
 			fVec19[IOTA0 & 2047] = fTemp133;
-			fRec76[0] = fTemp24 * fVec19[(IOTA0 - iTemp22) & 2047] + fTemp25 * fVec19[(IOTA0 - iTemp26) & 2047];
-			float fRec77 = 0.975000024f * fRec28[0] * fTemp133;
-			float fTemp134 = (fRec77 + fRec76[1]) - 0.975000024f * fRec28[0] * fRec74[1];
+			fRec74[0] = fTemp24 * fVec19[(IOTA0 - iTemp22) & 2047] + fTemp25 * fVec19[(IOTA0 - iTemp26) & 2047];
+			float fRec75 = 0.975f * fRec28[0] * fTemp133;
+			float fTemp134 = fRec75 + fRec74[1] - 0.975f * fRec28[0] * fRec72[1];
 			fVec20[IOTA0 & 1023] = fTemp134;
-			fRec74[0] = fTemp33 * fVec20[(IOTA0 - iTemp31) & 1023] + fTemp34 * fVec20[(IOTA0 - iTemp35) & 1023];
-			float fRec75 = 0.975000024f * fRec28[0] * fTemp134;
-			float fTemp135 = (fRec75 + fRec74[1]) - 0.8125f * fRec28[0] * fRec72[1];
+			fRec72[0] = fTemp33 * fVec20[(IOTA0 - iTemp31) & 1023] + fTemp34 * fVec20[(IOTA0 - iTemp35) & 1023];
+			float fRec73 = 0.975f * fRec28[0] * fTemp134;
+			float fTemp135 = fRec73 + fRec72[1] - 0.8125f * fRec28[0] * fRec70[1];
 			fVec21[IOTA0 & 4095] = fTemp135;
-			fRec72[0] = fTemp42 * fVec21[(IOTA0 - iTemp40) & 4095] + fTemp43 * fVec21[(IOTA0 - iTemp44) & 4095];
-			float fRec73 = 0.8125f * fRec28[0] * fTemp135;
-			float fTemp136 = (fRec73 + fRec72[1]) - 0.8125f * fRec28[0] * fRec70[1];
+			fRec70[0] = fTemp42 * fVec21[(IOTA0 - iTemp40) & 4095] + fTemp43 * fVec21[(IOTA0 - iTemp44) & 4095];
+			float fRec71 = 0.8125f * fRec28[0] * fTemp135;
+			float fTemp136 = fRec71 + fRec70[1] - 0.8125f * fRec28[0] * fRec68[1];
 			fVec22[IOTA0 & 4095] = fTemp136;
-			fRec70[0] = fTemp51 * fVec22[(IOTA0 - iTemp49) & 4095] + fTemp52 * fVec22[(IOTA0 - iTemp53) & 4095];
-			float fRec71 = 0.8125f * fRec28[0] * fTemp136;
-			fRec69[0] = (fRec70[1] + fRec71 + 2.0f * fRec9[0] * fTemp95 * fTemp98) - (fTemp102 * fRec69[2] + 2.0f * fTemp103 * fRec69[1]) / fTemp104;
-			float fTemp137 = (fRec69[2] + fRec69[0] + 2.0f * fRec69[1]) / fTemp104;
-			fRec78[0] = fTemp137 - (fTemp108 * fRec78[2] + 2.0f * fTemp109 * fRec78[1]) / fTemp110;
-			float fTemp138 = fTemp137 - (fRec78[2] + fRec78[0] + 2.0f * fRec78[1]) / fTemp110;
+			fRec68[0] = fTemp51 * fVec22[(IOTA0 - iTemp49) & 4095] + fTemp52 * fVec22[(IOTA0 - iTemp53) & 4095];
+			float fRec69 = 0.8125f * fRec28[0] * fTemp136;
+			fRec67[0] = fRec68[1] + fRec69 + 2.0f * fRec9[0] * fTemp95 * fTemp98 - (fTemp102 * fRec67[2] + 2.0f * fTemp103 * fRec67[1]) / fTemp104;
+			float fTemp137 = (fRec67[2] + fRec67[0] + 2.0f * fRec67[1]) / fTemp104;
+			fRec76[0] = fTemp137 - (fTemp108 * fRec76[2] + 2.0f * fTemp109 * fRec76[1]) / fTemp110;
+			float fTemp138 = fTemp137 - (fRec76[2] + fRec76[0] + 2.0f * fRec76[1]) / fTemp110;
 			float fTemp139 = std::fabs(fTemp138);
-			float fTemp140 = ((fRec80[1] > fTemp139) ? fConst20 : fConst15);
-			fRec81[0] = fTemp139 * (1.0f - fTemp140) + fTemp140 * fRec81[1];
-			fRec80[0] = fRec81[0];
-			fRec79[0] = fConst14 * (0.0f - 0.875f * std::max<float>(20.0f * std::log10(std::max<float>(1.17549435e-38f, fRec80[0])) + 3.0f, 0.0f)) + fConst13 * fRec79[1];
-			float fTemp141 = 0.699999988f * fRec67[1] + fTemp138 * std::pow(10.0f, 0.0500000007f * fRec79[0]);
+			float fTemp140 = ((fTemp139 > fRec78[1]) ? fConst17 : fConst21);
+			fRec78[0] = fTemp139 * (1.0f - fTemp140) + fRec78[1] * fTemp140;
+			fRec77[0] = fConst13 * fRec77[1] - fConst22 * std::max<float>(2e+01f * std::log10(std::max<float>(1.1754944e-38f, fRec78[0])) + 3.0f, 0.0f);
+			float fTemp141 = 0.7f * fRec65[1] + fTemp138 * std::pow(1e+01f, 0.05f * fRec77[0]);
 			fVec23[IOTA0 & 8191] = fTemp141;
-			float fTemp142 = fTemp18 + 4540.0f * fRec61[0];
+			float fTemp142 = fTemp18 + 4.54e+03f * fRec59[0];
 			float fTemp143 = fTemp142 + -1.0f;
 			int iTemp144 = int(fTemp143);
 			float fTemp145 = std::floor(fTemp143);
-			fRec67[0] = fVec23[(IOTA0 - std::min<int>(4691, int(std::max<int>(0, int(iTemp144))))) & 8191] * (fTemp145 + 2.0f - fTemp142) + (fTemp142 + -1.0f - fTemp145) * fVec23[(IOTA0 - std::min<int>(4691, int(std::max<int>(0, int(iTemp144 + 1))))) & 8191];
-			float fRec68 = 0.0f - 0.699999988f * fTemp141;
-			float fTemp146 = fRec68 + fRec67[1];
+			fRec65[0] = fVec23[(IOTA0 - std::min<int>(4691, std::max<int>(0, iTemp144))) & 8191] * (fTemp145 + (2.0f - fTemp142)) + (fTemp142 + (-1.0f - fTemp145)) * fVec23[(IOTA0 - std::min<int>(4691, std::max<int>(0, iTemp144 + 1))) & 8191];
+			float fRec66 = -(0.7f * fTemp141);
+			float fTemp146 = fRec66 + fRec65[1];
 			fVec24[IOTA0 & 8191] = fTemp146;
-			fRec66[0] = fRec15[0] * fRec66[2] + fTemp5 * fVec24[(IOTA0 - 4217) & 8191];
-			float fTemp147 = 1.5f * fRec9[0] * fRec66[0] - 0.5f * fRec62[1];
+			fRec64[0] = fRec15[0] * fRec64[2] + fTemp5 * fVec24[(IOTA0 - 4217) & 8191];
+			float fTemp147 = 1.5f * fRec9[0] * fRec64[0] - 0.5f * fRec60[1];
 			fVec25[IOTA0 & 16383] = fTemp147;
-			float fTemp148 = fTemp18 + 13280.0f * fRec61[0];
+			float fTemp148 = fTemp18 + 1.328e+04f * fRec59[0];
 			float fTemp149 = fTemp148 + -1.0f;
 			int iTemp150 = int(fTemp149);
 			float fTemp151 = std::floor(fTemp149);
-			fRec62[0] = fVec25[(IOTA0 - std::min<int>(13431, int(std::max<int>(0, int(iTemp150))))) & 16383] * (fTemp151 + 2.0f - fTemp148) + (fTemp148 + -1.0f - fTemp151) * fVec25[(IOTA0 - std::min<int>(13431, int(std::max<int>(0, int(iTemp150 + 1))))) & 16383];
-			float fRec63 = 0.5f * fTemp147;
-			float fTemp152 = 1674.6532f * fRec61[0];
+			fRec60[0] = fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp150))) & 16383] * (fTemp151 + (2.0f - fTemp148)) + (fTemp148 + (-1.0f - fTemp151)) * fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp150 + 1))) & 16383];
+			float fRec61 = 0.5f * fTemp147;
+			float fTemp152 = 1674.6532f * fRec59[0];
 			int iTemp153 = int(fTemp152);
 			float fTemp154 = std::floor(fTemp152);
-			float fRec64 = fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp153))) & 16383] * (fTemp154 + 1.0f - fTemp152) + (fTemp152 - fTemp154) * fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp153 + 1))) & 16383];
-			float fTemp155 = 9553.95703f * fRec61[0];
+			float fRec62 = fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp153))) & 16383] * (fTemp154 + (1.0f - fTemp152)) + (fTemp152 - fTemp154) * fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp153 + 1))) & 16383];
+			float fTemp155 = 9553.957f * fRec59[0];
 			int iTemp156 = int(fTemp155);
 			float fTemp157 = std::floor(fTemp155);
-			float fRec65 = fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp156))) & 16383] * (fTemp157 + 1.0f - fTemp155) + (fTemp155 - fTemp157) * fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp156 + 1))) & 16383];
-			float fTemp158 = fRec63 + fRec62[1];
+			float fRec63 = fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp156))) & 16383] * (fTemp157 + (1.0f - fTemp155)) + (fTemp155 - fTemp157) * fVec25[(IOTA0 - std::min<int>(13431, std::max<int>(0, iTemp156 + 1))) & 16383];
+			float fTemp158 = fRec61 + fRec60[1];
 			fVec26[IOTA0 & 4095] = fTemp158;
 			fRec4[0] = 1.5f * fRec9[0] * fVec26[(IOTA0 - 3163) & 4095];
-			float fRec5 = 0.600000024f * (0.0f - (0.902578771f * fVec17[(IOTA0 - 1066) & 4095] + 0.860986531f * fVec15[(IOTA0 - 1997) & 8191] + fRec12 + 0.139013454f * fVec15[(IOTA0 - 1996) & 8191] + 0.0974212065f * fVec17[(IOTA0 - 1065) & 4095]));
-			float fTemp159 = 1765.66223f * fRec61[0];
+			float fRec5 = -0.6f * (0.9025788f * fVec17[(IOTA0 - 1066) & 4095] + 0.86098653f * fVec15[(IOTA0 - 1997) & 8191] + fRec12 + 0.13901345f * fVec15[(IOTA0 - 1996) & 8191] + 0.09742121f * fVec17[(IOTA0 - 1065) & 4095]);
+			float fTemp159 = 1765.6622f * fRec59[0];
 			int iTemp160 = int(fTemp159);
 			float fTemp161 = std::floor(fTemp159);
-			float fRec6 = 0.600000024f * ((0.258992791f * fVec17[(IOTA0 - 2677) & 4095] + 0.32520324f * fVec15[(IOTA0 - 3621) & 8191] + fVec15[(IOTA0 - std::min<int>(4454, std::max<int>(0, iTemp160))) & 8191] * (fTemp161 + 1.0f - fTemp159) + (fTemp159 - fTemp161) * fVec15[(IOTA0 - std::min<int>(4454, std::max<int>(0, iTemp160 + 1))) & 8191] + 0.67479676f * fVec15[(IOTA0 - 3620) & 8191] + 0.741007209f * fVec17[(IOTA0 - 2676) & 4095]) - fRec13);
-			float fTemp162 = 1330.28394f * fRec61[0];
+			float fRec6 = 0.6f * (0.2589928f * fVec17[(IOTA0 - 2677) & 4095] + 0.32520324f * fVec15[(IOTA0 - 3621) & 8191] + fVec15[(IOTA0 - std::min<int>(4454, std::max<int>(0, iTemp160))) & 8191] * (fTemp161 + (1.0f - fTemp159)) + (fTemp159 - fTemp161) * fVec15[(IOTA0 - std::min<int>(4454, std::max<int>(0, iTemp160 + 1))) & 8191] + 0.67479676f * fVec15[(IOTA0 - 3620) & 8191] + 0.7410072f * fVec17[(IOTA0 - 2676) & 4095] - fRec13);
+			float fTemp162 = 1330.2839f * fRec59[0];
 			int iTemp163 = int(fTemp162);
 			float fTemp164 = std::floor(fTemp162);
-			float fTemp165 = 605.011475f * fRec61[0];
+			float fTemp165 = 605.0115f * fRec59[0];
 			float fTemp166 = std::floor(fTemp165);
 			int iTemp167 = int(fTemp165);
-			float fRec7 = 0.600000024f * ((0.718309879f * fVec24[(IOTA0 - 2970) & 8191] + fVec24[(IOTA0 - std::min<int>(4218, std::max<int>(0, iTemp163))) & 8191] * (fTemp164 + 1.0f - fTemp162) + (fTemp162 - fTemp164) * fVec24[(IOTA0 - std::min<int>(4218, std::max<int>(0, iTemp163 + 1))) & 8191] + 0.28169015f * fVec24[(IOTA0 - 2969) & 8191]) - ((fTemp165 - fTemp166) * fVec26[(IOTA0 - std::min<int>(3164, std::max<int>(0, iTemp167 + 1))) & 4095] + fRec65 + fVec26[(IOTA0 - std::min<int>(3164, std::max<int>(0, iTemp167))) & 4095] * (fTemp166 + 1.0f - fTemp165)));
-			float fRec8 = 0.600000024f * ((0.101265825f * fVec26[(IOTA0 - 2001) & 4095] + 0.898734152f * fVec26[(IOTA0 - 2002) & 4095]) - (fRec64 + 0.5f * (fVec24[(IOTA0 - 2108) & 8191] + fVec24[(IOTA0 - 2109) & 8191])));
+			float fRec7 = 0.6f * (0.7183099f * fVec24[(IOTA0 - 2970) & 8191] + fVec24[(IOTA0 - std::min<int>(4218, std::max<int>(0, iTemp163))) & 8191] * (fTemp164 + (1.0f - fTemp162)) + (fTemp162 - fTemp164) * fVec24[(IOTA0 - std::min<int>(4218, std::max<int>(0, iTemp163 + 1))) & 8191] + 0.28169015f * fVec24[(IOTA0 - 2969) & 8191] - ((fTemp165 - fTemp166) * fVec26[(IOTA0 - std::min<int>(3164, std::max<int>(0, iTemp167 + 1))) & 4095] + fRec63 + fVec26[(IOTA0 - std::min<int>(3164, std::max<int>(0, iTemp167))) & 4095] * (fTemp166 + (1.0f - fTemp165))));
+			float fRec8 = 0.6f * (0.101265825f * fVec26[(IOTA0 - 2001) & 4095] + 0.89873415f * fVec26[(IOTA0 - 2002) & 4095] - (fRec62 + 0.5f * (fVec24[(IOTA0 - 2108) & 8191] + fVec24[(IOTA0 - 2109) & 8191])));
 			float fTemp168 = fRec1[0] * (fRec5 + fRec7);
 			fVec27[0] = fTemp168 + fTemp4;
-			fRec0[0] = (fTemp4 + fTemp168 + 0.995000005f * fRec0[1]) - fVec27[1];
+			fRec0[0] = fTemp4 + fTemp168 + 0.995f * fRec0[1] - fVec27[1];
 			float fTemp169 = fTemp0 * fTemp6 * fTemp7;
 			float fTemp170 = fRec1[0] * (fRec6 + fRec8);
 			fVec28[0] = fTemp170 + fTemp169;
-			fRec85[0] = (fTemp169 + fTemp170 + 0.995000005f * fRec85[1]) - fVec28[1];
-			float fTemp171 = std::fabs(std::fabs(fRec0[0]) + std::fabs(fRec85[0]));
-			float fTemp172 = ((fRec83[1] > fTemp171) ? fConst15 : fConst23);
-			fRec84[0] = fTemp171 * (1.0f - fTemp172) + fTemp172 * fRec84[1];
-			fRec83[0] = fRec84[0];
-			fRec82[0] = fConst22 * (0.0f - 0.975000024f * std::max<float>(20.0f * std::log10(std::max<float>(1.17549435e-38f, fRec83[0])) + 1.5f, 0.0f)) + fConst21 * fRec82[1];
-			float fTemp173 = std::pow(10.0f, 0.0500000007f * fRec82[0]);
+			fRec81[0] = fTemp169 + fTemp170 + 0.995f * fRec81[1] - fVec28[1];
+			float fTemp171 = std::fabs(std::fabs(fRec0[0]) + std::fabs(fRec81[0]));
+			float fTemp172 = ((fTemp171 > fRec80[1]) ? fConst25 : fConst17);
+			fRec80[0] = fTemp171 * (1.0f - fTemp172) + fRec80[1] * fTemp172;
+			fRec79[0] = fConst23 * fRec79[1] - fConst24 * std::max<float>(2e+01f * std::log10(std::max<float>(1.1754944e-38f, fRec80[0])) + 1.5f, 0.0f);
+			float fTemp173 = std::pow(1e+01f, 0.05f * fRec79[0]);
 			output0[i0] = FAUSTFLOAT(fRec0[0] * fTemp173);
-			output1[i0] = FAUSTFLOAT(fRec85[0] * fTemp173);
+			output1[i0] = FAUSTFLOAT(fRec81[0] * fTemp173);
 			iVec0[1] = iVec0[0];
 			fRec1[1] = fRec1[0];
 			fRec2[1] = fRec2[0];
@@ -10453,50 +11054,46 @@ class mydsp : public dsp {
 			fRec41[1] = fRec41[0];
 			fRec39[1] = fRec39[0];
 			fRec37[1] = fRec37[0];
-			fRec54[1] = fRec54[0];
-			fRec52[1] = fRec52[0];
-			fRec50[1] = fRec50[0];
-			fRec48[1] = fRec48[0];
+			fRec53[1] = fRec53[0];
+			fRec51[1] = fRec51[0];
+			fRec49[1] = fRec49[0];
 			fRec47[1] = fRec47[0];
 			fRec46[1] = fRec46[0];
 			fRec45[1] = fRec45[0];
-			fRec56[1] = fRec56[0];
+			fRec55[1] = fRec55[0];
 			fRec18[2] = fRec18[1];
 			fRec18[1] = fRec18[0];
-			fRec57[2] = fRec57[1];
-			fRec57[1] = fRec57[0];
-			fRec60[1] = fRec60[0];
-			fRec59[1] = fRec59[0];
+			fRec56[2] = fRec56[1];
+			fRec56[1] = fRec56[0];
 			fRec58[1] = fRec58[0];
-			fRec61[1] = fRec61[0];
+			fRec57[1] = fRec57[0];
+			fRec59[1] = fRec59[0];
 			fRec16[1] = fRec16[0];
 			fRec14[2] = fRec14[1];
 			fRec14[1] = fRec14[0];
 			fRec10[1] = fRec10[0];
 			fRec3[1] = fRec3[0];
-			fRec76[1] = fRec76[0];
 			fRec74[1] = fRec74[0];
 			fRec72[1] = fRec72[0];
 			fRec70[1] = fRec70[0];
-			fRec69[2] = fRec69[1];
-			fRec69[1] = fRec69[0];
-			fRec78[2] = fRec78[1];
-			fRec78[1] = fRec78[0];
-			fRec81[1] = fRec81[0];
-			fRec80[1] = fRec80[0];
-			fRec79[1] = fRec79[0];
+			fRec68[1] = fRec68[0];
+			fRec67[2] = fRec67[1];
 			fRec67[1] = fRec67[0];
-			fRec66[2] = fRec66[1];
-			fRec66[1] = fRec66[0];
-			fRec62[1] = fRec62[0];
+			fRec76[2] = fRec76[1];
+			fRec76[1] = fRec76[0];
+			fRec78[1] = fRec78[0];
+			fRec77[1] = fRec77[0];
+			fRec65[1] = fRec65[0];
+			fRec64[2] = fRec64[1];
+			fRec64[1] = fRec64[0];
+			fRec60[1] = fRec60[0];
 			fRec4[1] = fRec4[0];
 			fVec27[1] = fVec27[0];
 			fRec0[1] = fRec0[0];
 			fVec28[1] = fVec28[0];
-			fRec85[1] = fRec85[0];
-			fRec84[1] = fRec84[0];
-			fRec83[1] = fRec83[0];
-			fRec82[1] = fRec82[0];
+			fRec81[1] = fRec81[0];
+			fRec80[1] = fRec80[0];
+			fRec79[1] = fRec79[0];
 		}
 	}
 
@@ -10506,15 +11103,15 @@ class mydsp : public dsp {
 	
 	#define FAUST_FILE_NAME "mooSpace.dsp"
 	#define FAUST_CLASS_NAME "mydsp"
-	#define FAUST_COMPILATION_OPIONS "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -es 1 -mcd 16 -uim -single -ftz 0"
+	#define FAUST_COMPILATION_OPIONS "-a /usr/local/share/faust/nemesis/nemesis.cpp -lang cpp -i -ct 1 -es 1 -mcd 16 -uim -single -ftz 0"
 	#define FAUST_INPUTS 2
 	#define FAUST_OUTPUTS 2
 	#define FAUST_ACTIVES 10
 	#define FAUST_PASSIVES 0
 
 	FAUST_ADDHORIZONTALSLIDER("Filter", fHslider8, 0.5f, 0.0f, 1.0f, 0.01f);
-	FAUST_ADDHORIZONTALSLIDER("colour", fHslider3, 0.10000000000000001f, 0.0f, 1.0f, 0.01f);
-	FAUST_ADDHORIZONTALSLIDER("decay", fHslider2, 0.29999999999999999f, 0.0f, 1.0f, 0.001f);
+	FAUST_ADDHORIZONTALSLIDER("colour", fHslider3, 0.1f, 0.0f, 1.0f, 0.01f);
+	FAUST_ADDHORIZONTALSLIDER("decay", fHslider2, 0.3f, 0.0f, 1.0f, 0.001f);
 	FAUST_ADDHORIZONTALSLIDER("drag", fHslider9, 0.5f, 0.0f, 1.0f, 0.001f);
 	FAUST_ADDHORIZONTALSLIDER("input diffusion", fHslider5, 0.5f, 0.0f, 1.0f, 0.01f);
 	FAUST_ADDHORIZONTALSLIDER("lag", fHslider4, 0.0f, 0.0f, 1.0f, 0.001f);
@@ -10525,8 +11122,8 @@ class mydsp : public dsp {
 
 	#define FAUST_LIST_ACTIVES(p) \
 		p(HORIZONTALSLIDER, Filter, "Filter", fHslider8, 0.5f, 0.0f, 1.0f, 0.01f) \
-		p(HORIZONTALSLIDER, colour, "colour", fHslider3, 0.10000000000000001f, 0.0f, 1.0f, 0.01f) \
-		p(HORIZONTALSLIDER, decay, "decay", fHslider2, 0.29999999999999999f, 0.0f, 1.0f, 0.001f) \
+		p(HORIZONTALSLIDER, colour, "colour", fHslider3, 0.1f, 0.0f, 1.0f, 0.01f) \
+		p(HORIZONTALSLIDER, decay, "decay", fHslider2, 0.3f, 0.0f, 1.0f, 0.001f) \
 		p(HORIZONTALSLIDER, drag, "drag", fHslider9, 0.5f, 0.0f, 1.0f, 0.001f) \
 		p(HORIZONTALSLIDER, input_diffusion, "input diffusion", fHslider5, 0.5f, 0.0f, 1.0f, 0.01f) \
 		p(HORIZONTALSLIDER, lag, "lag", fHslider4, 0.0f, 0.0f, 1.0f, 0.001f) \

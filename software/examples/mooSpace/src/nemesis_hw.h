@@ -67,6 +67,10 @@ public:
    // AudioControlCS42448 from the Audiolibrary
    static AudioControlCS42448 codec;
 
+   // AudioControlCS42448::write() is private in the stock Teensy Audio library,
+   // so custom codec registers are written directly over I2C
+   static bool codecWrite(uint8_t reg, uint8_t val);
+
    // Adafruit Library to control the OLED
    // static Adafruit_SSD1306 display;
 

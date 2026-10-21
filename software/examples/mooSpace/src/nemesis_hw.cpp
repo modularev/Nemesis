@@ -11,6 +11,15 @@
 #include <utility/imxrt_hw.h>
 
 AudioControlCS42448 nemesis::codec;
+
+bool nemesis::codecWrite(uint8_t reg, uint8_t val)
+{
+   Wire.beginTransmission(0x48);
+   Wire.write(reg);
+   Wire.write(val);
+   return Wire.endTransmission() == 0;
+}
+
 Adafruit_SSD1306 display(128, 32, &Wire, -1);
 
 SmoothADC pot_adc[4];
@@ -69,8 +78,8 @@ bool nemesis::init(void)
    digitalWrite(9, HIGH);
    AudioMemory(100); // 832 max
    codec.enable();
-   codec.write(0x03, 0xF4 | 0x01);
-   codec.write(0x05, 0x00);
+   codecWrite(0x03, 0xF4 | 0x01);
+   codecWrite(0x05, 0x00);
 
    pinMode(led_pin[1], OUTPUT);
    digitalWrite(led_pin[1], HIGH);

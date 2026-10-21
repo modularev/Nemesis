@@ -1,4 +1,3 @@
-#define MIDICTRL
 #define USEPSRAM
 #define HIGHRES
 /************************************************************************

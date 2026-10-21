@@ -5,24 +5,48 @@
 //#include <elapsedMillis.h>
 #include "nemesis_hw.h"
 #include <utility/imxrt_hw.h>
-#include "mono_voice.h"
+#include "superosc.h"
 #include <typeinfo>
 
 // Audio Connections
 //
-// AudioInputTDM audio_in;
-AudioOutputTDM audio_out;
-mono_voice faustObj;
+AudioInputTDM ADC;
+AudioOutputTDM DAC;
+superosc faustObj;
 
 #ifdef HIGHRES
-// AudioConnection Lin_MSB(audio_in, 0, faustObj, 0);
-// AudioConnection Lin_LSB(audio_in, 1, faustObj, 1);
-// AudioConnection Rin_MSB(audio_in, 2, faustObj, 2);
-// AudioConnection Rin_LSB(audio_in, 3, faustObj, 3);
-AudioConnection Lout_MSB(faustObj, 0, audio_out, 0);
-AudioConnection Lout_LSB(faustObj, 1, audio_out, 1);
-AudioConnection Rout_MSB(faustObj, 2, audio_out, 2);
-AudioConnection Rout_LSB(faustObj, 3, audio_out, 3);
+// AudioConnection In1(ADC, 0, faustObj, 0);
+// AudioConnection In2(ADC, 1, faustObj, 1);
+// AudioConnection In3(ADC, 2, faustObj, 2);
+// AudioConnection In4(ADC, 3, faustObj, 3);
+// AudioConnection In5(ADC, 4, faustObj, 4);
+// AudioConnection In6(ADC, 5, faustObj, 5);
+// AudioConnection In7(ADC, 6, faustObj, 6);
+// AudioConnection In8(ADC, 7, faustObj, 7);
+// AudioConnection In9(ADC, 8, faustObj, 8);
+// AudioConnection In10(ADC, 9, faustObj, 9);
+// AudioConnection In11(ADC, 10, faustObj, 10);
+// AudioConnection In12(ADC, 11, faustObj, 11);
+// AudioConnection In13(ADC, 12, faustObj, 12);
+// AudioConnection In14(ADC, 13, faustObj, 13);
+// AudioConnection In15(ADC, 14, faustObj, 14);
+// AudioConnection In16(ADC, 15, faustObj, 15);
+AudioConnection Out1(faustObj, 0, DAC, 0);
+AudioConnection Out2(faustObj, 1, DAC, 1);
+AudioConnection Out3(faustObj, 2, DAC, 2);
+AudioConnection Out4(faustObj, 3, DAC, 3);
+// AudioConnection Out5(faustObj, 4, DAC, 4);
+// AudioConnection Out6(faustObj, 5, DAC, 5);
+// AudioConnection Out7(faustObj, 6, DAC, 6);
+// AudioConnection Out8(faustObj, 7, DAC, 7);
+// AudioConnection Out9(faustObj, 8, DAC, 8);
+// AudioConnection Out10(faustObj, 9, DAC, 9);
+// AudioConnection Out11(faustObj, 10, DAC, 10);
+// AudioConnection Out12(faustObj, 11, DAC, 11);
+// AudioConnection Out13(faustObj, 12, DAC, 12);
+// AudioConnection Out14(faustObj, 13, DAC, 13);
+// AudioConnection Out15(faustObj, 14, DAC, 14);
+// AudioConnection Out16(faustObj, 15, DAC, 15);
 // AudioConnection ch3out_MSB(faustObj, 4, audio_out, 4);
 // AudioConnection ch3out_LSB(faustObj, 5, audio_out, 5);
 // AudioConnection ch4out_MSB(faustObj, 6, audio_out, 6);
@@ -197,8 +221,8 @@ void setup()
    digitalWrite(9, HIGH);
    AudioMemory(64); // 832 max
    codec.enable();
-   codec.write(0x03, 0xF4 | 0x01);
-   codec.write(0x05, 0x00);
+   codecWrite(0x03, 0xF4 | 0x01);
+   codecWrite(0x05, 0x00);
    //codec.filterFreeze();
    codec.volume(1.);
    // init_POT();

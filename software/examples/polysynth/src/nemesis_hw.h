@@ -79,6 +79,16 @@ namespace nemesis
    // setup AudioControlCS42448 as the main codec
    static AudioControlCS42448 codec;
 
+   // AudioControlCS42448::write() is private in the stock Teensy Audio library,
+   // so custom codec registers are written directly over I2C
+   inline bool codecWrite(uint8_t reg, uint8_t val)
+   {
+      Wire.beginTransmission(0x48);
+      Wire.write(reg);
+      Wire.write(val);
+      return Wire.endTransmission() == 0;
+   }
+
 
    // get 16 bit ADC value from last adc_command, send adc_command for next reading
    uint16_t getADC_raw(int next_chan)
@@ -113,8 +123,8 @@ namespace nemesis
    }
 
    
-   #define LTC_SMOO 0.5f
-   SPISettings LTC_SPI(8000000, MSBFIRST, SPI_MODE0);
+   #define LTC_SMOO 0.2f
+   SPISettings LTC_SPI(24000000, MSBFIRST, SPI_MODE1);
    int next_cv_index = 0;
    uint16_t _raw_cv[CV_NUM];
    float cv_val[7];
