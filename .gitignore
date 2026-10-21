@@ -1,11 +1,9 @@
-# ignore all . files and . folders
-.*
+# OS, editor and build tool files
+.DS_Store
+.vscode/
+.pio/
+*.dxvk-cache
+~*~
 
-# Dont ignore .gitignore (this file)
-# This is just for verbosity, you can leave it out if
-# .gitignore is already tracked or if you use -f to
-# force-add it if you just created it
-!/.gitignore
-software/examples/mooSpace/lib/mooSpace/mooSpace.cpp
-.ai
-.dxvk-cache
+# FAUST code generated at build time by software/faust/faust_build.py
+software/**/lib/faust_programs/
