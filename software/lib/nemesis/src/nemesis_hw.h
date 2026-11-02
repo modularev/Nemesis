@@ -29,6 +29,7 @@ namespace nemesis
       void service(const Program &program);
 
       float input(int index);
+      float rawInput(int index);
       // revision specific alternative input names, -1 if none matches
       int aliasIndex(const char *name);
 

@@ -208,6 +208,9 @@ namespace nemesis
 
       float input(int index) { return value[index]; }
 
+      // rev1 calibrates while scaling the readings, there is no separate raw value
+      float rawInput(int index) { return value[index]; }
+
       // POT_X .. POT_F name the same knob+CV input as CV_X .. CV_F
       FLASHMEM int aliasIndex(const char *name)
       {

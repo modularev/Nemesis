@@ -35,6 +35,9 @@
 
 #if NEMESIS_HW_REV == 2
 #include <Adafruit_SSD1306.h>
+#ifndef NEMESIS_ENCODER_COUNTS_PER_STEP
+#define NEMESIS_ENCODER_COUNTS_PER_STEP 4
+#endif
 #endif
 
 namespace nemesis
@@ -60,6 +63,8 @@ namespace nemesis
 
    // current value of a hardware input, 0..1
    float input(int index);
+   // the same without calibration, e.g. to measure CV input voltages
+   float rawInput(int index);
    const char *inputName(int index);
    // index of an input name like "CV_X" on this revision, -1 if it doesn't exist
    int inputIndex(const char *name);
@@ -77,6 +82,10 @@ namespace nemesis
    extern Adafruit_SSD1306 display;
    // the library redraws an input monitor on the display, disable it to draw your own
    void showMonitor(bool enable);
+
+   // encoder position in detents (counted in interrupts) and its push switch
+   int32_t encoderPosition();
+   bool encoderPressed();
 #endif
 }
 

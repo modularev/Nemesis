@@ -11,6 +11,7 @@ during the PlatformIO build.
 | `template` | starting point for your own program |
 | `examples/mooSpace` | stereo reverb |
 | `examples/polysynth` | oscillator experiments, parked programs are `.bdsp` files |
+| `tests` | hardware test firmware and measurement tools, see `tests/README.md` |
 
 ## requirements
 
@@ -44,14 +45,23 @@ architecture files or the options change.
 
 | | rev1 | rev2 |
 | --- | --- | --- |
-| controls | 9 knobs, each summed with its CV jack, on Teensy analog pins | 7 CV jacks on an LTC1867 SPI ADC, 4 knobs on Teensy analog pins |
+| controls | 9 knobs, each summed with its CV jack, on Teensy analog pins | CV X/Y/Z: main knob summed with the CV through an attenuverter, CV A–D, all on an LTC1867 SPI ADC; 4 knobs (POT A–D) on Teensy analog pins |
 | input names | `CV_X CV_Y CV_Z CV_A`..`CV_F` (`POT_X`..`POT_F` also work) | `CV_X CV_Y CV_Z CV_A CV_B CV_C CV_D`, `POT_A POT_B POT_C POT_D` |
-| LEDs / buttons | 3 / 3 | 2 / 2 |
+| CV range (0..1) | – | X/Y/Z about −4.2…+4.2 V, A–D about 0…8.4 V, linear to ~5 mV |
+| outputs | – | 8, DC coupled, ±5 V |
+| LEDs / buttons | 3 / 3 | 2 push buttons with LEDs, encoder with push switch |
 | display | – | 128x32 OLED, shows an input monitor |
-| calibration | knob min/max in EEPROM, hold button 3 at power up | – |
+| calibration | knob min/max in EEPROM, hold button 3 at power up | knob min/max in EEPROM, hold both buttons for 2 s (or button 1 at power up) |
 
 Both use the CS42448 codec in TDM mode. Every FAUST channel is a 24 bit
 sample carried in two 16 bit TDM slots, up to 8 channels in and out.
+
+On rev2 the pots are converted in the background (ADC interrupt, 32x
+hardware averaging) and smoothed adaptively: still when resting, no lag
+while turning. `nemesis::encoderPosition()` and `nemesis::encoderPressed()`
+read the encoder, `nemesis::rawInput()` an input without calibration.
+
+The rev2 values above were measured on hardware with the tools in `tests/`.
 
 ## writing a program
 

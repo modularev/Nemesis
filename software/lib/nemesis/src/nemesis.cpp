@@ -78,6 +78,11 @@ namespace nemesis
       return (index >= 0 && index < NUM_INPUTS) ? hw::input(index) : 0.0f;
    }
 
+   float rawInput(int index)
+   {
+      return (index >= 0 && index < NUM_INPUTS) ? hw::rawInput(index) : 0.0f;
+   }
+
    const char *inputName(int index)
    {
       return (index >= 0 && index < NUM_INPUTS) ? hw::inputNames[index] : "";

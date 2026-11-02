@@ -4,7 +4,13 @@
 // nemesis_rev2.cpp
 //
 // Hardware revision 2: CV X Y Z A B C D on an LTC1867 SPI ADC, pots A-D on
-// Teensy analog pins and a 128x32 SSD1306 OLED.
+// Teensy analog pins, a 128x32 SSD1306 OLED, two push buttons with LEDs and
+// an encoder with push switch.
+//
+// Calibration: hold both buttons for 2 seconds while running (or button 1
+// while powering up), turn every knob you want calibrated through its full
+// range, then press button 2 to store (button 1 cancels). Inputs that weren't moved keep the uncalibrated 0..1 range, so
+// leave CV inputs alone if they should keep their volt scaling.
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
 // released under GNU GPL v3
@@ -16,6 +22,8 @@
 
 #include "nemesis_hw.h"
 #include <ADC.h>
+#include <EEPROM.h>
+#include <Encoder.h>
 #include <SPI.h>
 #include <Wire.h>
 #include "fonts/SourceCodePro6.h"
@@ -48,17 +56,28 @@ namespace nemesis
          constexpr float LTC_SMOO = 0.2f;
          constexpr float INT14_DIV = 1.0f / 16383.0f;
 
+         // Pots are converted in the background: the ADC conversion complete
+         // interrupt reads a pot, filters it and starts the next one. Measured on
+         // rev2 with codec and display running (12 bit, pots centred): a single
+         // reading has 24-33 LSB noise (sd), 32x averaging at medium speed 1.0-1.3
+         // LSB in 66us, the best noise per time of all tested settings.
          constexpr int pot_pin[POT_NUM] = {A14, A15, A16, A17};
-         constexpr int ADC_AVERAGING = 16;
+         constexpr int ADC_AVERAGING = 32;
          constexpr int ADC_RES = 12;
-         constexpr float INT12_DIV = 1.0f / 4095.0f;
-         constexpr int POT_THRESHOLD = 20;
-         constexpr int WINDOW_SIZE = 16;
-         constexpr float SMOO_FACTOR = 0.8f;
+         constexpr float ADC_MAX = 4095.0f;
+         constexpr uint8_t ADC_ISR_PRIORITY = 192; // below audio
+
+         // adaptive one pole filter: slow while a knob rests (removes the
+         // remaining noise), fast while it is turned (no lag)
+         constexpr float POT_TAU_REST = 0.02f; // seconds
+         constexpr float POT_SNAP_LSB = 24.0f; // difference for full speed, ~20x the noise
 
          constexpr int led_pin[NUM_LEDS] = {33, 34};
          constexpr int switch_pin[NUM_BUTTONS] = {35, 36};
          constexpr int CODEC_ENABLE_PIN = 9;
+         constexpr int ENC_A_PIN = 4;
+         constexpr int ENC_B_PIN = 5;
+         constexpr int ENC_SW_PIN = 6;
 
          constexpr uint32_t DISPLAY_INTERVAL_MS = 100;
 
@@ -68,14 +87,63 @@ namespace nemesis
          int next_cv = 0;
          elapsedMicros since_conversion;
 
-         float pot_val[POT_NUM];
-         int pot_readings[POT_NUM][WINDOW_SIZE];
-         int pot_sum[POT_NUM];
-         int pot_index[POT_NUM];
-         int current_pot = 0;
+         volatile float pot_val[POT_NUM]; // 0..1, written in the ADC interrupts
+
+         // pots handled by one ADC module, converted round robin
+         struct PotScanner
+         {
+            ADC_Module *module = nullptr;
+            int pots[POT_NUM];
+            int count = 0;
+            int current = 0;
+            float filtered[POT_NUM]; // in LSB
+            float rest_coeff = 0.0f;
+            elapsedMicros since_start;
+         };
+         PotScanner scanners[2];
+
+         void potConverted(PotScanner &s)
+         {
+            int pot = s.pots[s.current];
+            float x = s.module->readSingle();
+            float d = x - s.filtered[s.current];
+            float snap = min(fabsf(d) / POT_SNAP_LSB, 1.0f);
+            float a = s.rest_coeff + (1.0f - s.rest_coeff) * snap * snap;
+            s.filtered[s.current] += a * d;
+            pot_val[pot] = s.filtered[s.current] / ADC_MAX;
+
+            s.current = (s.current + 1) % s.count;
+            s.module->startSingleRead(pot_pin[s.pots[s.current]]);
+         }
+
+         void adc0Isr() { potConverted(scanners[0]); }
+         void adc1Isr() { potConverted(scanners[1]); }
 
          bool monitor = true;
          elapsedMillis since_display;
+
+         constexpr uint32_t CALIBRATION_HOLD_MS = 2000;
+         elapsedMillis both_buttons_held;
+
+         Encoder encoder(ENC_A_PIN, ENC_B_PIN);
+
+         // knob range per input, stored in EEPROM
+         struct Calibration
+         {
+            uint32_t magic;
+            float lo[NUM_INPUTS];
+            float hi[NUM_INPUTS];
+         };
+         constexpr uint32_t CALIBRATION_MAGIC = 0x4E43A202; // "NC", rev2, version 2
+         constexpr int CALIBRATION_ADDRESS = 0;
+         constexpr float MIN_SPAN = 0.1f; // inputs moved less than this stay uncalibrated
+         constexpr float END_MARGIN = 0.005f; // so both ends are reached despite noise
+         Calibration calibration;
+
+         float raw(int index)
+         {
+            return index < CV_NUM ? cv_val[index] : pot_val[index - CV_NUM];
+         }
 
          // read the conversion started by the previous call and start the next one
          uint16_t transferLTC(int next_chan)
@@ -104,22 +172,44 @@ namespace nemesis
             cv_val[chan] = LTC_SMOO * scaleLTC(transferLTC(next_cv)) + (1.0f - LTC_SMOO) * cv_val[chan];
          }
 
-         int readPot(int i)
+         FLASHMEM void beginPots()
          {
-            int raw = adc.analogRead(pot_pin[i]);
-            return raw > POT_THRESHOLD ? raw : 0;
-         }
+            ADC_Module *modules[2] = {adc.adc0, adc.adc1};
+            for (ADC_Module *m : modules)
+            {
+               m->setAveraging(ADC_AVERAGING);
+               m->setResolution(ADC_RES);
+               m->setConversionSpeed(ADC_CONVERSION_SPEED::MED_SPEED);
+               m->setSamplingSpeed(ADC_SAMPLING_SPEED::MED_SPEED);
+            }
 
-         void scanPot()
-         {
-            int i = current_pot;
-            int raw = readPot(i);
-            pot_sum[i] += raw - pot_readings[i][pot_index[i]];
-            pot_readings[i][pot_index[i]] = raw;
-            pot_index[i] = (pot_index[i] + 1) % WINDOW_SIZE;
+            for (int i = 0; i < POT_NUM; i++)
+            {
+               pinMode(pot_pin[i], INPUT_DISABLE);
+               int n = adc.adc0->checkPin(pot_pin[i]) ? 0 : 1;
+               PotScanner &s = scanners[n];
+               s.module = modules[n];
+               s.filtered[s.count] = s.module->analogRead(pot_pin[i]);
+               pot_val[i] = s.filtered[s.count] / ADC_MAX;
+               s.pots[s.count++] = i;
+            }
 
-            pot_val[i] = SMOO_FACTOR * ((pot_sum[i] / WINDOW_SIZE) * INT12_DIV) + (1.0f - SMOO_FACTOR) * pot_val[i];
-            current_pot = (current_pot + 1) % POT_NUM;
+            for (int n = 0; n < 2; n++)
+            {
+               PotScanner &s = scanners[n];
+               if (s.count == 0)
+                  continue;
+               // one conversion takes ~66us, every pot of this module is sampled
+               // count times slower; measured below to set the filter coefficient
+               s.since_start = 0;
+               for (int i = 0; i < 20 * s.count; i++)
+                  s.module->analogRead(pot_pin[s.pots[i % s.count]]);
+               float sample_period = s.since_start * 1e-6f / 20.0f;
+               s.rest_coeff = 1.0f - expf(-sample_period / POT_TAU_REST);
+
+               s.module->enableInterrupts(n == 0 ? adc0Isr : adc1Isr, ADC_ISR_PRIORITY);
+               s.module->startSingleRead(pot_pin[s.pots[0]]);
+            }
          }
 
          FLASHMEM void splash(const char *programName)
@@ -148,7 +238,120 @@ namespace nemesis
             delay(1000);
          }
 
-         // raw input values: CV X Y Z / A B C / D, POT A / B C D
+         FLASHMEM void resetCalibration()
+         {
+            calibration.magic = CALIBRATION_MAGIC;
+            for (int i = 0; i < NUM_INPUTS; i++)
+            {
+               calibration.lo[i] = 0.0f;
+               calibration.hi[i] = 1.0f;
+            }
+         }
+
+         FLASHMEM void loadCalibration()
+         {
+            EEPROM.get(CALIBRATION_ADDRESS, calibration);
+            if (calibration.magic != CALIBRATION_MAGIC)
+               resetCalibration();
+         }
+
+         FLASHMEM void waitForRelease()
+         {
+            while (buttonPressed(0) || buttonPressed(1))
+               scan();
+            delay(50);
+         }
+
+         // spans of all inputs in percent: CV X Y Z A B C / CV D, POT A B C D
+         FLASHMEM void drawCalibration(const float *lo, const float *hi)
+         {
+            display.clearDisplay();
+            display.setFont(&SourceCodePro_ExtraLight6pt7b); // a sketch may have changed it
+            display.setTextColor(WHITE);
+            display.setCursor(0, 7);
+            display.print(F("CAL  B2 save  B1 cancel"));
+            for (int i = 0; i < NUM_INPUTS; i++)
+            {
+               display.setCursor((i % 7) * 18, i < 7 ? 19 : 31);
+               display.print(hi[i] > lo[i] ? (int)((hi[i] - lo[i]) * 99.0f + 0.5f) : 0);
+            }
+            display.display();
+         }
+
+         FLASHMEM void calibrate()
+         {
+            float lo[NUM_INPUTS], hi[NUM_INPUTS];
+            for (int i = 0; i < NUM_INPUTS; i++)
+            {
+               lo[i] = 1.0f;
+               hi[i] = 0.0f;
+            }
+
+            setLed(0, true);
+            Serial.println("Calibration: turn every knob through its full range, "
+                           "then press button 2 to store, button 1 to cancel");
+            waitForRelease();
+
+            elapsedMillis since_draw;
+            elapsedMillis since_start;
+            bool store = false;
+            while (true)
+            {
+               scan();
+               if (since_start > 300) // let the smoothing settle first
+               {
+                  for (int i = 0; i < NUM_INPUTS; i++)
+                  {
+                     lo[i] = min(lo[i], raw(i));
+                     hi[i] = max(hi[i], raw(i));
+                  }
+               }
+               if (buttonPressed(1))
+               {
+                  store = true;
+                  break;
+               }
+               if (buttonPressed(0))
+                  break;
+               if (since_draw >= 100)
+               {
+                  since_draw = 0;
+                  drawCalibration(lo, hi);
+               }
+            }
+
+            if (store)
+            {
+               resetCalibration();
+               for (int i = 0; i < NUM_INPUTS; i++)
+               {
+                  if (hi[i] - lo[i] >= MIN_SPAN)
+                  {
+                     calibration.lo[i] = lo[i] + END_MARGIN;
+                     calibration.hi[i] = hi[i] - END_MARGIN;
+                  }
+                  Serial.printf("%-6s %.3f .. %.3f%s\n", inputNames[i], calibration.lo[i], calibration.hi[i],
+                                hi[i] - lo[i] >= MIN_SPAN ? "" : "  (not moved, uncalibrated)");
+               }
+               EEPROM.put(CALIBRATION_ADDRESS, calibration);
+               Serial.println("Calibration stored");
+            }
+            else
+            {
+               Serial.println("Calibration cancelled");
+            }
+
+            display.clearDisplay();
+            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setCursor(0, 19);
+            display.print(store ? F("calibration stored") : F("calibration cancelled"));
+            display.display();
+            setLed(0, false);
+            waitForRelease();
+            delay(700);
+         }
+
+         // input values: CV X Y Z / A B C / D, POT A / B C D
          FLASHMEM void drawMonitor()
          {
             static const uint8_t pos[NUM_INPUTS][2] = {
@@ -182,36 +385,22 @@ namespace nemesis
          }
          for (int i = 0; i < NUM_BUTTONS; i++)
             pinMode(switch_pin[i], INPUT);
+         pinMode(ENC_SW_PIN, INPUT_PULLUP);
          pinMode(CODEC_ENABLE_PIN, OUTPUT);
 
          display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
          splash(program.name());
-
-         for (int i = 0; i < POT_NUM; i++)
-            pinMode(pot_pin[i], INPUT_DISABLE);
-         adc.adc0->setAveraging(ADC_AVERAGING);
-         adc.adc0->setResolution(ADC_RES);
-         adc.adc0->setConversionSpeed(ADC_CONVERSION_SPEED::MED_SPEED);
-         adc.adc0->setSamplingSpeed(ADC_SAMPLING_SPEED::VERY_LOW_SPEED);
-         adc.adc1->setAveraging(ADC_AVERAGING);
-         adc.adc1->setResolution(ADC_RES);
-         adc.adc1->setConversionSpeed(ADC_CONVERSION_SPEED::MED_SPEED);
-         adc.adc1->setSamplingSpeed(ADC_SAMPLING_SPEED::VERY_LOW_SPEED);
 
          pinMode(PIN_SPI_SS, OUTPUT);
          digitalWriteFast(PIN_SPI_SS, HIGH);
          SPI.begin();
          transferLTC(next_cv); // dummy transfer to start the first conversion
 
-         // prefill the moving averages so the pots start at their position
-         for (int i = 0; i < POT_NUM; i++)
-         {
-            int raw = readPot(i);
-            for (int n = 0; n < WINDOW_SIZE; n++)
-               pot_readings[i][n] = raw;
-            pot_sum[i] = raw * WINDOW_SIZE;
-            pot_val[i] = raw * INT12_DIV;
-         }
+         beginPots();
+
+         loadCalibration();
+         if (buttonPressed(0))
+            calibrate();
 
          digitalWrite(CODEC_ENABLE_PIN, HIGH);
          AudioMemory(NEMESIS_AUDIO_MEMORY);
@@ -222,14 +411,19 @@ namespace nemesis
          codec.volume(1.0);
       }
 
+      // pots are read in the ADC interrupts
       void scan()
       {
-         scanPot();
          scanCV();
       }
 
       void service(const Program &program)
       {
+         if (!(buttonPressed(0) && buttonPressed(1)))
+            both_buttons_held = 0;
+         else if (both_buttons_held >= CALIBRATION_HOLD_MS)
+            calibrate();
+
          if (monitor && since_display >= DISPLAY_INTERVAL_MS)
          {
             since_display = 0;
@@ -239,8 +433,12 @@ namespace nemesis
 
       float input(int index)
       {
-         return index < CV_NUM ? cv_val[index] : pot_val[index - CV_NUM];
+         float lo = calibration.lo[index];
+         float hi = calibration.hi[index];
+         return constrain((raw(index) - lo) / (hi - lo), 0.0f, 1.0f);
       }
+
+      float rawInput(int index) { return raw(index); }
 
       int aliasIndex(const char *name) { return -1; }
 
@@ -251,6 +449,11 @@ namespace nemesis
    }
 
    void showMonitor(bool enable) { hw::monitor = enable; }
+
+   // clockwise counts down with A on pin 4 and B on pin 5, hence the sign
+   int32_t encoderPosition() { return -hw::encoder.read() / NEMESIS_ENCODER_COUNTS_PER_STEP; }
+
+   bool encoderPressed() { return digitalRead(hw::ENC_SW_PIN) == LOW; }
 }
 
 #endif
