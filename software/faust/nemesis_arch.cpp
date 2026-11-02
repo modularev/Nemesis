@@ -264,11 +264,14 @@ void NemesisAudio::update(void)
     fDSP->compute(AUDIO_BLOCK_SAMPLES, fInChannel, fOutChannel);
 
     for (int channel = 0; channel < FAUST_OUTPUTS; channel++) {
+        // per output gain and offset calibration of the module
+        float scale, offset;
+        nemesis::outputCorrection(channel, scale, offset);
         audio_block_t* msb = allocate();
         audio_block_t* lsb = allocate();
         if (msb && lsb) {
             for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                float sample = fOutChannel[channel][i];
+                float sample = fOutChannel[channel][i] * scale + offset;
                 int32_t val = (sample >= 1.0f) ? INT32_MAX : (sample <= -1.0f) ? INT32_MIN : (int32_t)(sample * MULT_32);
                 msb->data[i] = val >> 16;
                 lsb->data[i] = val & 0xFFFF;

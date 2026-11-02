@@ -47,11 +47,11 @@ architecture files or the options change.
 | --- | --- | --- |
 | controls | 9 knobs, each summed with its CV jack, on Teensy analog pins | CV X/Y/Z: main knob summed with the CV through an attenuverter, CV A–D, all on an LTC1867 SPI ADC; 4 knobs (POT A–D) on Teensy analog pins |
 | input names | `CV_X CV_Y CV_Z CV_A`..`CV_F` (`POT_X`..`POT_F` also work) | `CV_X CV_Y CV_Z CV_A CV_B CV_C CV_D`, `POT_A POT_B POT_C POT_D` |
-| CV range (0..1) | – | X/Y/Z about −4.2…+4.2 V, A–D about 0…8.4 V, linear to ~5 mV |
-| outputs | – | 8, DC coupled, ±5 V |
+| CV range (0..1) | – | calibrated: A–D 0…8 V, X/Y/Z −4…+4 V (main knob adds an offset); hardware range A–D ~0…8.4 V, X/Y/Z ~±4.2 V, linear to ~5 mV |
+| outputs | – | 8, DC coupled, ±5 V; calibrated: 1.0 = 5 V, 0 = 0 V |
 | LEDs / buttons | 3 / 3 | 2 push buttons with LEDs, encoder with push switch |
 | display | – | 128x32 OLED, shows an input monitor |
-| calibration | knob min/max in EEPROM, hold button 3 at power up | knob min/max in EEPROM, hold both buttons for 2 s (or button 1 at power up) |
+| calibration | knob min/max in EEPROM, hold button 3 at power up | POT A–D: hold both buttons for 2 s (or button 1 at power up); CV inputs and outputs in volts with `tests/cvtest` (±2.5 mV / ±2 mV), both in EEPROM |
 
 Both use the CS42448 codec in TDM mode. Every FAUST channel is a 24 bit
 sample carried in two 16 bit TDM slots, up to 8 channels in and out.
@@ -59,7 +59,9 @@ sample carried in two 16 bit TDM slots, up to 8 channels in and out.
 On rev2 the pots are converted in the background (ADC interrupt, 32x
 hardware averaging) and smoothed adaptively: still when resting, no lag
 while turning. `nemesis::encoderPosition()` and `nemesis::encoderPressed()`
-read the encoder, `nemesis::rawInput()` an input without calibration.
+read the encoder, `nemesis::rawInput()` an input without calibration and
+`nemesis::cvVolts()` a CV input in volts. The output calibration is applied
+by the FAUST architecture file to every program.
 
 The rev2 values above were measured on hardware with the tools in `tests/`.
 

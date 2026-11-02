@@ -7,10 +7,14 @@
 // Teensy analog pins, a 128x32 SSD1306 OLED, two push buttons with LEDs and
 // an encoder with push switch.
 //
-// Calibration: hold both buttons for 2 seconds while running (or button 1
-// while powering up), turn every knob you want calibrated through its full
-// range, then press button 2 to store (button 1 cancels). Inputs that weren't moved keep the uncalibrated 0..1 range, so
-// leave CV inputs alone if they should keep their volt scaling.
+// Knob calibration (POT A-D): hold both buttons for 2 seconds while running
+// (or button 1 while powering up), turn the knobs through their full range,
+// then press button 2 to store (button 1 cancels).
+//
+// Volt calibration (CV inputs and outputs) is measured externally, e.g. with
+// tests/cvtest, and set with setCvCalibration()/setOutputCalibration().
+// Calibrated CV inputs read 0..1 = 0..8 V (A-D) and -4..+4 V (X/Y/Z, the
+// main knob adds an offset), outputs give 5 V per unit.
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
 // released under GNU GPL v3
@@ -140,6 +144,22 @@ namespace nemesis
          constexpr float END_MARGIN = 0.005f; // so both ends are reached despite noise
          Calibration calibration;
 
+         // CV inputs: raw reading at 0 V and per volt; outputs: volts per unit and at 0
+         struct VoltCalibration
+         {
+            uint32_t magic;
+            float cv_zero[CV_NUM];
+            float cv_per_volt[CV_NUM];
+            float out_per_unit[NUM_OUTPUTS];
+            float out_offset[NUM_OUTPUTS];
+         };
+         constexpr uint32_t VOLT_CALIBRATION_MAGIC = 0x4E56A201; // "NV", rev2, version 1
+         constexpr int VOLT_CALIBRATION_ADDRESS = 128;
+         constexpr int CV_BIPOLAR = 3; // CV X Y Z are bipolar
+         constexpr float CV_SPAN_VOLTS = 8.0f;
+         constexpr float OUTPUT_VOLTS = 5.0f; // per unit
+         VoltCalibration volts;
+
          float raw(int index)
          {
             return index < CV_NUM ? cv_val[index] : pot_val[index - CV_NUM];
@@ -238,6 +258,22 @@ namespace nemesis
             delay(1000);
          }
 
+         // design values: 14 bit ADC over 8.33 V, X/Y/Z centred, +-5 V outputs
+         FLASHMEM void resetVolts()
+         {
+            volts.magic = VOLT_CALIBRATION_MAGIC;
+            for (int i = 0; i < CV_NUM; i++)
+            {
+               volts.cv_zero[i] = i < CV_BIPOLAR ? 0.5f : 0.0f;
+               volts.cv_per_volt[i] = 0.12f;
+            }
+            for (int i = 0; i < NUM_OUTPUTS; i++)
+            {
+               volts.out_per_unit[i] = OUTPUT_VOLTS;
+               volts.out_offset[i] = 0.0f;
+            }
+         }
+
          FLASHMEM void resetCalibration()
          {
             calibration.magic = CALIBRATION_MAGIC;
@@ -253,6 +289,10 @@ namespace nemesis
             EEPROM.get(CALIBRATION_ADDRESS, calibration);
             if (calibration.magic != CALIBRATION_MAGIC)
                resetCalibration();
+
+            EEPROM.get(VOLT_CALIBRATION_ADDRESS, volts);
+            if (volts.magic != VOLT_CALIBRATION_MAGIC)
+               resetVoltCalibration();
          }
 
          FLASHMEM void waitForRelease()
@@ -262,7 +302,7 @@ namespace nemesis
             delay(50);
          }
 
-         // spans of all inputs in percent: CV X Y Z A B C / CV D, POT A B C D
+         // spans of the pots in percent
          FLASHMEM void drawCalibration(const float *lo, const float *hi)
          {
             display.clearDisplay();
@@ -270,10 +310,11 @@ namespace nemesis
             display.setTextColor(WHITE);
             display.setCursor(0, 7);
             display.print(F("CAL  B2 save  B1 cancel"));
-            for (int i = 0; i < NUM_INPUTS; i++)
+            for (int p = 0; p < POT_NUM; p++)
             {
-               display.setCursor((i % 7) * 18, i < 7 ? 19 : 31);
-               display.print(hi[i] > lo[i] ? (int)((hi[i] - lo[i]) * 99.0f + 0.5f) : 0);
+               int i = CV_NUM + p;
+               display.setCursor(p * 32, 25);
+               display.printf("%c %d", 'A' + p, hi[i] > lo[i] ? (int)((hi[i] - lo[i]) * 99.0f + 0.5f) : 0);
             }
             display.display();
          }
@@ -288,7 +329,7 @@ namespace nemesis
             }
 
             setLed(0, true);
-            Serial.println("Calibration: turn every knob through its full range, "
+            Serial.println("Calibration: turn POT A-D through their full range, "
                            "then press button 2 to store, button 1 to cancel");
             waitForRelease();
 
@@ -300,7 +341,7 @@ namespace nemesis
                scan();
                if (since_start > 300) // let the smoothing settle first
                {
-                  for (int i = 0; i < NUM_INPUTS; i++)
+                  for (int i = CV_NUM; i < NUM_INPUTS; i++)
                   {
                      lo[i] = min(lo[i], raw(i));
                      hi[i] = max(hi[i], raw(i));
@@ -323,7 +364,7 @@ namespace nemesis
             if (store)
             {
                resetCalibration();
-               for (int i = 0; i < NUM_INPUTS; i++)
+               for (int i = CV_NUM; i < NUM_INPUTS; i++)
                {
                   if (hi[i] - lo[i] >= MIN_SPAN)
                   {
@@ -431,12 +472,22 @@ namespace nemesis
          }
       }
 
+      float cvVolts(int index)
+      {
+         return (raw(index) - volts.cv_zero[index]) / volts.cv_per_volt[index];
+      }
+
       float input(int index)
       {
-         float lo = calibration.lo[index];
-         float hi = calibration.hi[index];
-         return constrain((raw(index) - lo) / (hi - lo), 0.0f, 1.0f);
+         float v;
+         if (index < CV_NUM)
+            v = (cvVolts(index) + (index < CV_BIPOLAR ? CV_SPAN_VOLTS / 2 : 0.0f)) / CV_SPAN_VOLTS;
+         else
+            v = (raw(index) - calibration.lo[index]) / (calibration.hi[index] - calibration.lo[index]);
+         return constrain(v, 0.0f, 1.0f);
       }
+
+      FLASHMEM void resetVoltCalibration() { resetVolts(); }
 
       float rawInput(int index) { return raw(index); }
 
@@ -449,6 +500,52 @@ namespace nemesis
    }
 
    void showMonitor(bool enable) { hw::monitor = enable; }
+
+   float cvVolts(int index)
+   {
+      return (index >= 0 && index < hw::CV_NUM) ? hw::cvVolts(index) : 0.0f;
+   }
+
+   FLASHMEM void setCvCalibration(int index, float zeroReading, float readingPerVolt)
+   {
+      if (index < 0 || index >= hw::CV_NUM || readingPerVolt <= 0.0f)
+         return;
+      hw::volts.cv_zero[index] = zeroReading;
+      hw::volts.cv_per_volt[index] = readingPerVolt;
+   }
+
+   FLASHMEM void setOutputCalibration(int output, float voltsPerUnit, float offsetVolts)
+   {
+      if (output < 0 || output >= NUM_OUTPUTS || voltsPerUnit <= 0.0f)
+         return;
+      hw::volts.out_per_unit[output] = voltsPerUnit;
+      hw::volts.out_offset[output] = offsetVolts;
+   }
+
+   FLASHMEM void storeVoltCalibration() { EEPROM.put(hw::VOLT_CALIBRATION_ADDRESS, hw::volts); }
+
+   FLASHMEM void resetVoltCalibration() { hw::resetVolts(); }
+
+   FLASHMEM void printVoltCalibration(Stream &out)
+   {
+      for (int i = 0; i < hw::CV_NUM; i++)
+         out.printf("%s zero %.5f per volt %.5f\n", hw::inputNames[i], hw::volts.cv_zero[i], hw::volts.cv_per_volt[i]);
+      for (int i = 0; i < NUM_OUTPUTS; i++)
+         out.printf("OUT%d %.4f V per unit, %+.4f V at 0\n", i + 1, hw::volts.out_per_unit[i], hw::volts.out_offset[i]);
+   }
+
+   // applied by the architecture file to every output sample: corrected = sample * scale + offset
+   void outputCorrection(int output, float &scale, float &offset)
+   {
+      if (output < 0 || output >= NUM_OUTPUTS)
+      {
+         scale = 1.0f;
+         offset = 0.0f;
+         return;
+      }
+      scale = hw::OUTPUT_VOLTS / hw::volts.out_per_unit[output];
+      offset = -hw::volts.out_offset[output] / hw::volts.out_per_unit[output];
+   }
 
    // clockwise counts down with A on pin 4 and B on pin 5, hence the sign
    int32_t encoderPosition() { return -hw::encoder.read() / NEMESIS_ENCODER_COUNTS_PER_STEP; }

@@ -42,6 +42,8 @@
 
 namespace nemesis
 {
+   constexpr int NUM_OUTPUTS = 8;
+
 #if NEMESIS_HW_REV == 1
    constexpr int NUM_INPUTS = 9;
    constexpr int NUM_LEDS = 3;
@@ -86,6 +88,17 @@ namespace nemesis
    // encoder position in detents (counted in interrupts) and its push switch
    int32_t encoderPosition();
    bool encoderPressed();
+
+   // CV input (0..6 = X Y Z A B C D) in volts; calibrated, input() reads
+   // 0..1 = 0..8 V for A-D and -4..+4 V for X/Y/Z
+   float cvVolts(int index);
+   // volt calibration, measured with tests/cvtest: raw reading at 0 V and per
+   // volt of a CV input, volts per unit and at 0 of an output
+   void setCvCalibration(int index, float zeroReading, float readingPerVolt);
+   void setOutputCalibration(int output, float voltsPerUnit, float offsetVolts);
+   void storeVoltCalibration(); // to EEPROM
+   void resetVoltCalibration(); // design values, not stored
+   void printVoltCalibration(Stream &out = Serial);
 #endif
 }
 

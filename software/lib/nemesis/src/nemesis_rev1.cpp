@@ -211,6 +211,19 @@ namespace nemesis
       // rev1 calibrates while scaling the readings, there is no separate raw value
       float rawInput(int index) { return value[index]; }
 
+      void resetVoltCalibration() {}
+   }
+
+   // rev1 outputs are not calibrated
+   void outputCorrection(int output, float &scale, float &offset)
+   {
+      scale = 1.0f;
+      offset = 0.0f;
+   }
+
+   namespace hw
+   {
+
       // POT_X .. POT_F name the same knob+CV input as CV_X .. CV_F
       FLASHMEM int aliasIndex(const char *name)
       {

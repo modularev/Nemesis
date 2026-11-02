@@ -30,6 +30,7 @@ namespace nemesis
 
       float input(int index);
       float rawInput(int index);
+      void resetVoltCalibration();
       // revision specific alternative input names, -1 if none matches
       int aliasIndex(const char *name);
 

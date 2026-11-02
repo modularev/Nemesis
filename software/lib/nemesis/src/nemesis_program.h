@@ -21,6 +21,10 @@
 
 namespace nemesis
 {
+   // output calibration, applied by the architecture file to every sample:
+   // corrected = sample * scale + offset
+   void outputCorrection(int output, float &scale, float &offset);
+
    // a FAUST parameter driven by a hardware input
    struct Control
    {
