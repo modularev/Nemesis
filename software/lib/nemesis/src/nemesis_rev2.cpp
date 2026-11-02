@@ -40,8 +40,11 @@ namespace nemesis
 #define CW(N) (0x80 + (N << 4) + 0x0C)
          constexpr uint8_t adc_chan_word[CV_NUM] = {CW(0), CW(4), CW(1), CW(5), CW(2), CW(3), CW(6)};
 #undef CW
-         const SPISettings LTC_SPI(24000000, MSBFIRST, SPI_MODE1);
-         constexpr uint32_t LTC_CONVERSION_US = 5; // LTC1867L: 4.5us conversion time
+         // LTC1867L datasheet: SCK max 10 MHz when SDO is captured on the rising
+         // edge (mode 0, which also meets the SDI hold time), conversion up to
+         // 3.7us plus at least 2.01us acquisition before the next conversion
+         const SPISettings LTC_SPI(10000000, MSBFIRST, SPI_MODE0);
+         constexpr uint32_t LTC_CYCLE_US = 8;
          constexpr float LTC_SMOO = 0.2f;
          constexpr float INT14_DIV = 1.0f / 16383.0f;
 
@@ -94,7 +97,7 @@ namespace nemesis
 
          void scanCV()
          {
-            if (since_conversion < LTC_CONVERSION_US)
+            if (since_conversion < LTC_CYCLE_US)
                return;
             int chan = next_cv;
             next_cv = (next_cv + 1) % CV_NUM;
@@ -215,6 +218,7 @@ namespace nemesis
          codec.enable();
          codecWrite(0x03, 0xF4 | 0x01); // functional mode
          codecWrite(0x05, 0x00);        // ADC control
+         codec.invertDAC(0xFF);         // the output stages invert, measured on rev2
          codec.volume(1.0);
       }
 
@@ -240,8 +244,8 @@ namespace nemesis
 
       int aliasIndex(const char *name) { return -1; }
 
-      // LEDs are active low (the old MIDI handler switched pin 33 LOW on note on)
-      void setLed(int index, bool on) { digitalWrite(led_pin[index], on ? LOW : HIGH); }
+      // LEDs in the push buttons are active high (checked on hardware)
+      void setLed(int index, bool on) { digitalWrite(led_pin[index], on ? HIGH : LOW); }
 
       bool buttonPressed(int index) { return digitalRead(switch_pin[index]) == LOW; }
    }
