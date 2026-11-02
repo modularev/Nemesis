@@ -1,0 +1,10 @@
+{
+  "note": "CV input fits from cvtest.py sweep, 2026-11-02, rev2, ES-10 scale 11.046 V, offset -0.013 V, LTC1867 at 10 MHz mode 0",
+  "CV_X": {"per_volt": 0.12058, "zero": 0.50763},
+  "CV_Y": {"per_volt": 0.11940, "zero": 0.47848},
+  "CV_Z": {"per_volt": 0.11937, "zero": 0.56976},
+  "CV_A": {"per_volt": 0.11963, "zero": 0.00461},
+  "CV_B": {"per_volt": 0.11882, "zero": -0.00190},
+  "CV_C": {"per_volt": 0.11948, "zero": -0.00692},
+  "CV_D": {"per_volt": 0.11867, "zero": -0.00107}
+}
