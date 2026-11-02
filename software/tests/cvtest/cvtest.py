@@ -31,6 +31,16 @@ tests/hwtest firmware on the module and: pip install sounddevice numpy pyserial
 
    Every output steps through DC levels; a reading that decays back to 0 V
    within a few seconds means the output is AC coupled.
+
+4. Calibration, stored in the module's EEPROM:
+
+     python3 cvtest.py calibrate-inputs     # step 2 patch, X/Y/Z main knobs
+                                            # fully counter-clockwise
+     python3 cvtest.py calibrate-outputs    # patch output 1..4 to CV A..D,
+     python3 cvtest.py calibrate-outputs --patch 4:CV_A,5:CV_B,6:CV_C,7:CV_D
+
+   The ES-10 defaults (--es10-*) are the multimeter readings of this setup.
+   X/Y/Z only get their gain calibrated, their zero is set by the main knob.
 """
 
 import argparse
@@ -45,6 +55,8 @@ import serial
 import sounddevice as sd
 
 CV_NAMES = ["CV_X", "CV_Y", "CV_Z", "CV_A", "CV_B", "CV_C", "CV_D"]
+BIPOLAR = ("CV_X", "CV_Y", "CV_Z")
+OUTPUT_VOLTS = 5.0  # module outputs per unit after calibration
 FIT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cv_fit.json")
 
 
@@ -89,6 +101,7 @@ class Nemesis:
     def __init__(self, port):
         self.serial = serial.Serial(port, 115200, timeout=1)
         self.samples = []
+        self.replies = []
         self.lock = threading.Lock()
         self.running = True
         self.thread = threading.Thread(target=self._read, daemon=True)
@@ -104,6 +117,8 @@ class Nemesis:
                 values = [float(v) for v in line.split()[1:]]
                 with self.lock:
                     self.samples.append((time.time(), values))
+            elif line.startswith("OK") or line.startswith("OUT") or line.startswith("CV_"):
+                self.replies.append(line.strip())
 
     def average(self, seconds):
         start = time.time()
@@ -130,6 +145,122 @@ def load_fit():
 
 def to_volts(fit, name, reading):
     return (reading - fit[name]["zero"]) / fit[name]["per_volt"]
+
+
+class ES10:
+    """Volts to output levels, from multimeter readings of every output."""
+
+    def __init__(self, args):
+        self.offset = args.es10_offset
+        half = [float(v) for v in args.es10_volts_at_half.split(",")]
+        self.per_unit = [(v - self.offset) / 0.5 for v in half]
+
+    def level(self, output, volts):
+        u = (volts - self.offset) / self.per_unit[output]
+        if abs(u) > 1.0:
+            sys.exit("%.2f V is beyond the range of output %d" % (volts, output + 1))
+        return u
+
+    def levels(self, volts):
+        return np.array([self.level(o, volts) for o in range(8)])
+
+
+def add_es10_args(p):
+    p.add_argument("--es10-offset", type=float, default=-0.013, help="volts at level 0")
+    p.add_argument("--es10-volts-at-half", default="5.51,5.496,5.497,5.525,5.498,5.505,5.512,5.499",
+                   help="multimeter reading of every output at level 0.5")
+
+
+def calibrate_inputs(args):
+    es10 = ES10(args)
+    volts = np.arange(args.min_volts, args.max_volts + 1e-9, args.step)
+    nemesis = Nemesis(args.port)
+    fit = load_fit() if os.path.exists(FIT_FILE) else {}
+    with DCOutput(args.device, args.first_output, 8) as out:
+        out.set(es10.levels(0.0))
+        for ch, name in enumerate(CV_NAMES):
+            readings = []
+            for v in volts:
+                level = es10.levels(0.0)
+                level[ch] = es10.level(ch, v)
+                out.set(level)
+                time.sleep(args.settle)
+                readings.append(nemesis.average(args.average)[ch])
+            readings = np.array(readings)
+            valid = (readings > 0.002) & (readings < 0.998)
+            if valid.sum() < 6:
+                sys.exit("%s: only %d unclipped points, check the patch (X/Y/Z main knob fully ccw)" % (name, valid.sum()))
+            slope, intercept = np.polyfit(volts[valid], readings[valid], 1)
+            nonlinearity_mv = np.max(np.abs(readings[valid] - (slope * volts[valid] + intercept))) / slope * 1000
+            zero = 0.5 if name in BIPOLAR else intercept  # X/Y/Z: the main knob sets the zero
+            fit[name] = {"per_volt": round(slope, 6), "zero": round(intercept, 6)}
+            nemesis.send("CVCAL %d %.6f %.6f" % (ch, zero, slope))
+            print("%-6s %.5f per volt (design 0.12000, %+.2f%%), 0 V reads %.5f, linear to %.1f mV (%d points)" % (
+                name, slope, (slope / 0.12 - 1) * 100, intercept, nonlinearity_mv, valid.sum()))
+
+        nemesis.send("CALSTORE")
+        time.sleep(0.5)
+        # check: A-D at a few voltages, with the stored calibration
+        print("\ncheck, calibrated readings of CV A-D:")
+        for ch in range(3, 7):
+            name = CV_NAMES[ch]
+            errors = []
+            for v in (1.0, 4.0, 7.0):
+                level = es10.levels(0.0)
+                level[ch] = es10.level(ch, v)
+                out.set(level)
+                time.sleep(args.settle)
+                r = nemesis.average(args.average)[ch]
+                errors.append((r - fit[name]["zero"]) / fit[name]["per_volt"] - v)
+            print("  %s error at 1/4/7 V: %s mV" % (name, " / ".join("%+.1f" % (e * 1000) for e in errors)))
+    print("".join("\n" + r for r in nemesis.replies if "CALSTORE" in r))
+    nemesis.close()
+    with open(FIT_FILE, "w") as f:
+        json.dump(fit, f, indent=2)
+    print("CV fits saved to %s" % FIT_FILE)
+
+
+def calibrate_outputs(args):
+    fit = load_fit()
+    patch = [(int(o), cv) for o, cv in (p.split(":") for p in args.patch.split(","))]
+    levels = [float(v) for v in args.levels.split(",")]
+    nemesis = Nemesis(args.port)
+    time.sleep(0.5)
+    for output, _ in patch:
+        nemesis.send("OUTCAL %d %.4f 0" % (output, OUTPUT_VOLTS))  # uncorrected while measuring
+        nemesis.send("DC %d 0" % output)
+    time.sleep(0.3)
+
+    def measure(output, cv, level):
+        nemesis.send("DC %d %.4f" % (output, level))
+        time.sleep(args.settle)
+        r = nemesis.average(args.average)[CV_NAMES.index(cv)]
+        if not 0.002 < r < 0.998:
+            sys.exit("output %d -> %s clipped at level %.2f, check the patch" % (output + 1, cv, level))
+        return to_volts(fit, cv, r)
+
+    for output, cv in list(patch):
+        measured = [measure(output, cv, l) for l in levels]
+        per_unit, offset = np.polyfit(levels, measured, 1)
+        if not 4.0 < per_unit < 6.0:
+            print("output %d: no usable signal on %s (%.3f V per unit), not calibrated" % (output + 1, cv, per_unit))
+            nemesis.send("DC %d 0" % output)
+            patch = [p for p in patch if p[0] != output]
+            continue
+        nemesis.send("OUTCAL %d %.5f %.5f" % (output, per_unit, offset))
+        nemesis.send("DC %d 0" % output)
+        print("output %d: %.4f V per unit, %+.4f V at 0" % (output + 1, per_unit, offset))
+    nemesis.send("CALSTORE")
+    time.sleep(0.5)
+
+    # unipolar CV inputs can't read exactly 0 V (bottom of the ADC range), check from 0.2 V
+    print("\ncheck with the stored calibration (target %.0f V per unit):" % OUTPUT_VOLTS)
+    for output, cv in patch:
+        errors = [measure(output, cv, l) - OUTPUT_VOLTS * l for l in (0.04, 0.4, 0.8)]
+        nemesis.send("DC %d 0" % output)
+        print("  output %d error at 0.2/2/4 V: %s mV" % (output + 1, " / ".join("%+.1f" % (e * 1000) for e in errors)))
+    print("".join("\n" + r for r in nemesis.replies if "CALSTORE" in r))
+    nemesis.close()
 
 
 def hold(args):
@@ -263,6 +394,24 @@ def main():
     p.add_argument("--hold", type=float, default=3.0, help="seconds before the second reading")
     p.add_argument("--port", default="/dev/cu.usbmodem103226001")
     p.set_defaults(func=dac)
+
+    p = sub.add_parser("calibrate-inputs", help="calibrate all CV inputs with the ES-10 and store it")
+    add_es10_args(p)
+    p.add_argument("--min-volts", type=float, default=0.5)
+    p.add_argument("--max-volts", type=float, default=7.5)
+    p.add_argument("--step", type=float, default=0.5)
+    p.add_argument("--settle", type=float, default=0.4)
+    p.add_argument("--average", type=float, default=0.6)
+    p.add_argument("--port", default="/dev/cu.usbmodem103226001")
+    p.set_defaults(func=calibrate_inputs)
+
+    p = sub.add_parser("calibrate-outputs", help="calibrate module outputs through calibrated CV inputs")
+    p.add_argument("--patch", default="0:CV_A,1:CV_B,2:CV_C,3:CV_D", help="output index (0 based):CV input pairs")
+    p.add_argument("--levels", default="0.04,0.2,0.4,0.6,0.8", help="kept above 0 V for the unipolar CV inputs")
+    p.add_argument("--settle", type=float, default=0.4)
+    p.add_argument("--average", type=float, default=0.6)
+    p.add_argument("--port", default="/dev/cu.usbmodem103226001")
+    p.set_defaults(func=calibrate_outputs)
 
     args = parser.parse_args()
     if args.command == "hold" and abs(args.value) > 1:

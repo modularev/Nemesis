@@ -7,3 +7,6 @@
 
 # FAUST code generated at build time by software/faust/faust_build.py
 software/**/lib/faust_programs/
+
+# Python
+__pycache__/

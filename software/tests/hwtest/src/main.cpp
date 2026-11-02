@@ -7,6 +7,10 @@
 //   buttons and encoder switch; hold both buttons for 2 s to calibrate the knobs
 // - audio channels 1 and 2 are passed through, every output can additionally
 //   carry a DC level set over USB serial: "DC <output 0-7> <level -1..1>"
+// - rev2 volt calibration over serial (used by tests/cvtest):
+//   "CVCAL <input 0-6> <zero reading> <reading per volt>",
+//   "OUTCAL <output 0-7> <volts per unit> <volts at 0>",
+//   "CALSTORE" (to EEPROM), "CALRESET" (design values), "CALSHOW"
 //
 
 #include <nemesis.h>
@@ -46,13 +50,39 @@ void readCommands()
       command[commandLength] = '\0';
       commandLength = 0;
 
-      int output;
-      float level;
-      if (sscanf(command, "DC %d %f", &output, &level) == 2 && output >= 0 && output < 8 && !dcPath[output].empty())
+      int index;
+      float a, b;
+      if (sscanf(command, "DC %d %f", &index, &a) == 2 && index >= 0 && index < 8 && !dcPath[index].empty())
       {
-         passthrough.setParamValue(dcPath[output], constrain(level, -1.0f, 1.0f));
-         Serial.printf("OK DC %d %.4f\n", output, level);
+         passthrough.setParamValue(dcPath[index], constrain(a, -1.0f, 1.0f));
+         Serial.printf("OK DC %d %.4f\n", index, a);
       }
+#if NEMESIS_HW_REV == 2
+      else if (sscanf(command, "CVCAL %d %f %f", &index, &a, &b) == 3)
+      {
+         nemesis::setCvCalibration(index, a, b);
+         Serial.printf("OK CVCAL %d %.6f %.6f\n", index, a, b);
+      }
+      else if (sscanf(command, "OUTCAL %d %f %f", &index, &a, &b) == 3)
+      {
+         nemesis::setOutputCalibration(index, a, b);
+         Serial.printf("OK OUTCAL %d %.5f %.5f\n", index, a, b);
+      }
+      else if (strcmp(command, "CALSTORE") == 0)
+      {
+         nemesis::storeVoltCalibration();
+         Serial.println("OK CALSTORE");
+      }
+      else if (strcmp(command, "CALRESET") == 0)
+      {
+         nemesis::resetVoltCalibration();
+         Serial.println("OK CALRESET");
+      }
+      else if (strcmp(command, "CALSHOW") == 0)
+      {
+         nemesis::printVoltCalibration();
+      }
+#endif
    }
 }
 
@@ -167,5 +197,11 @@ void loop()
       for (int i = 0; i < nemesis::NUM_INPUTS; i++)
          Serial.printf(" %.5f", nemesis::rawInput(i));
       Serial.println();
+#if NEMESIS_HW_REV == 2
+      Serial.print("VOLTS");
+      for (int i = 0; i < 7; i++)
+         Serial.printf(" %.4f", nemesis::cvVolts(i));
+      Serial.println();
+#endif
    }
 }
