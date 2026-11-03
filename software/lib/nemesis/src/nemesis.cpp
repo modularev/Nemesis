@@ -12,6 +12,7 @@
 
 #include "nemesis.h"
 #include "nemesis_hw.h"
+#include "nemesis_settings.h"
 #include <EEPROM.h>
 #include <Wire.h>
 
@@ -84,8 +85,10 @@ namespace nemesis
          stored = EEPROM.read(PROGRAM_EEPROM_ADDRESS + 1);
       current = (stored < numPrograms && !hw::forceFirstProgram()) ? stored : 0;
 
+      settings::begin();
       active = programs[current];
       active->start();
+      settings::load(*active);
       patch(*active);
       hw::begin(*active);
    }
@@ -99,7 +102,10 @@ namespace nemesis
       Program *next = programs[index];
       if (!next->start()) // allocates the DSP on first use, outside the audio interrupt
          return false;
+      settings::load(*next);
 
+      for (int i = 0; i < NUM_LEDS; i++) // the LEDs belong to the program
+         hw::setLed(i, false);
       AudioNoInterrupts();
       patch(*next); // the old program is disconnected and no longer updated
       active = next;
@@ -128,16 +134,28 @@ namespace nemesis
          EEPROM.write(PROGRAM_EEPROM_ADDRESS, PROGRAM_EEPROM_MAGIC);
          EEPROM.write(PROGRAM_EEPROM_ADDRESS + 1, current);
       }
+      settings::service();
       hw::scan();
       if (active)
       {
-         for (const Control &c : active->controls())
+         for (Control &c : active->controls())
          {
-            float v = hw::input(c.input);
-            if (c.cv >= 0)
-               v = constrain(v + hw::input(c.cv), 0.0f, 1.0f);
+            float v;
+            if (c.input >= 0)
+               v = hw::input(c.input);
+            else if (c.cvMask || c.changed) // settings are only written when needed, MIDI CCs may set them too
+               v = (c.max != c.min) ? (c.value - c.min) / (c.max - c.min) : 0.0f;
+            else
+               continue;
+            c.changed = false;
+            for (uint32_t mask = c.cvMask; mask; mask &= mask - 1)
+               v += hw::input(__builtin_ctz(mask));
+            v = constrain(v, 0.0f, 1.0f);
             *c.zone = c.gate ? (v > 0.5f ? 1.0f : 0.0f) : c.min + v * (c.max - c.min);
          }
+         for (const Indicator &i : active->indicators())
+            if (i.led >= 0)
+               hw::setLed(i.led, *i.zone > 0.5f * (i.min + i.max));
          hw::service(*active);
       }
    }
@@ -189,10 +207,19 @@ namespace nemesis
    {
       if (!active)
          return;
-      out.printf("NEMESIS rev%d running %s\n", NEMESIS_HW_REV, active->name());
+      out.printf("NEMESIS rev%d running %s%s\n", NEMESIS_HW_REV, active->name(),
+                 sdCardPresent() ? "" : " (no SD card, settings are not kept)");
       for (const Control &c : active->controls())
-         out.printf("  %-6s%s%-5s -> %s [%g .. %g]\n", inputName(c.input), c.cv >= 0 ? " + " : "   ",
-                    c.cv >= 0 ? inputName(c.cv) : "", c.label, c.min, c.max);
+      {
+         char cv[40] = "";
+         for (int i = 0; i < NUM_INPUTS; i++)
+            if (c.cvMask & (1u << i))
+               snprintf(cv + strlen(cv), sizeof(cv) - strlen(cv), " + %s", inputName(i));
+         if (c.input >= 0)
+            out.printf("  %-6s%-14s -> %s [%g .. %g]\n", inputName(c.input), cv, c.label, c.min, c.max);
+         else
+            out.printf("  set   %-14s    %s = %g [%g .. %g]\n", cv, c.label, c.value, c.min, c.max);
+      }
    }
 
    FLASHMEM bool codecWrite(uint8_t reg, uint8_t val)

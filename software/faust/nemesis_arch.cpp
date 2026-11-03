@@ -145,33 +145,33 @@ struct NemesisAudioBindUI : public UI {
 
     void addButton(const char* label, FAUSTFLOAT* zone) override
     {
-        fProgram->bindControl(label, zone, 0, 1, true);
+        fProgram->bindControl(label, zone, 0, 0, 1, 1, nemesis::Program::BUTTON);
     }
     void addCheckButton(const char* label, FAUSTFLOAT* zone) override
     {
-        fProgram->bindControl(label, zone, 0, 1, true);
+        fProgram->bindControl(label, zone, 0, 0, 1, 1, nemesis::Program::CHECKBOX);
     }
     void addVerticalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step) override
     {
-        fProgram->bindControl(label, zone, min, max, false);
+        fProgram->bindControl(label, zone, init, min, max, step, nemesis::Program::SLIDER);
     }
     void addHorizontalSlider(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step) override
     {
-        fProgram->bindControl(label, zone, min, max, false);
+        fProgram->bindControl(label, zone, init, min, max, step, nemesis::Program::SLIDER);
     }
     void addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min, FAUSTFLOAT max, FAUSTFLOAT step) override
     {
-        fProgram->bindControl(label, zone, min, max, false);
+        fProgram->bindControl(label, zone, init, min, max, step, nemesis::Program::SLIDER);
     }
 
-    // outputs are never bound, only drop their metadata
+    // outputs only show status values or drive LEDs
     void addHorizontalBargraph(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT min, FAUSTFLOAT max) override
     {
-        fProgram->bindControl(label, nullptr, min, max, false);
+        fProgram->bindControl(label, zone, 0, min, max, 0, nemesis::Program::BARGRAPH);
     }
     void addVerticalBargraph(const char* label, FAUSTFLOAT* zone, FAUSTFLOAT min, FAUSTFLOAT max) override
     {
-        fProgram->bindControl(label, nullptr, min, max, false);
+        fProgram->bindControl(label, zone, 0, min, max, 0, nemesis::Program::BARGRAPH);
     }
     void addSoundfile(const char* label, const char* filename, Soundfile** sf_zone) override {}
 
@@ -271,6 +271,16 @@ void NemesisAudio::update(void)
 #ifdef MIDICTRL
     // Process the MIDI messages received by the Teensy
     fMIDIHandler->processMidi();
+    // MidiUI queues [midi:clock] toggles with a timestamp for a timed DSP,
+    // which this architecture doesn't run: apply them now, else the queue
+    // fills up and the clock never reaches the program
+    for (auto& timed : GUI::gTimedZoneMap) {
+        DatedControl dated(0, 0);
+        while (ringbuffer_read_space(timed.second) >= sizeof(DatedControl)) {
+            ringbuffer_read(timed.second, (char*)&dated, sizeof(DatedControl));
+            *timed.first = dated.fValue;
+        }
+    }
     // Synchronize all GUI controllers
     GUI::updateAllGuis();
 #endif

@@ -91,6 +91,29 @@ namespace nemesis
    // write a CS42448 register (AudioControlCS42448::write() is private)
    bool codecWrite(uint8_t reg, uint8_t val);
 
+   // system settings, kept on the SD card (see nemesis_settings.cpp)
+   struct SystemSettings
+   {
+      int midiChannel = 0;   // 0 omni, 1..16
+      bool popup = true;     // rev2: show the parameter of a turned knob
+      int brightness = 10;   // rev2: display, 1..10
+      int cvRangeVolts = 8;  // rev2: CV A-D read 0..1 = 0..5 V or 0..8 V
+   };
+   SystemSettings &systemSettings();
+   int midiChannel();
+   // schedule saving to the SD card
+   void systemSettingsChanged();
+   void programSettingsChanged(Program &program);
+   bool sdCardPresent();
+
+   // CV inputs whose routing to a parameter can be changed (rev2: CV A-D)
+#if NEMESIS_HW_REV == 2
+   constexpr int NUM_ROUTABLE_CV = 4;
+#else
+   constexpr int NUM_ROUTABLE_CV = 0;
+#endif
+   int routableCV(int i); // input index
+
 #if NEMESIS_HW_REV == 2
    extern Adafruit_SSD1306 display;
    // the library shows the program on the display and runs the program list

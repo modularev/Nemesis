@@ -7,8 +7,12 @@
 // Teensy analog pins, a 128x32 SSD1306 OLED, two push buttons with LEDs and
 // an encoder with push switch.
 //
-// Display: the current program and the CPU load; turning the encoder opens
-// the program list, pushing it loads the highlighted program.
+// Display: the current program and the CPU load. Turning the encoder opens
+// the program settings (parameters without a knob, CV A-D routing), a click
+// the program list, press and hold the system settings (MIDI channel, knob
+// popup, brightness, CV A-D range). In a list a click edits the highlighted
+// entry, turn to change it, click again when done. Settings are stored on
+// the SD card. Turning a knob shows its parameter for a moment.
 //
 // Knob calibration (POT A-D): hold both buttons for 2 seconds while running
 // (or button 1 while powering up), turn the knobs through their full range,
@@ -60,6 +64,11 @@ namespace nemesis
          // 3.7us plus at least 2.01us acquisition before the next conversion
          const SPISettings LTC_SPI(10000000, MSBFIRST, SPI_MODE0);
          constexpr uint32_t LTC_CYCLE_US = 8;
+         // the CV inputs are converted in a timer interrupt, independent of how
+         // busy loop() is (a display transfer takes ~40 ms at 70 % audio load):
+         // every channel each 7 * 125 us, smoothed with a ~4 ms time constant
+         constexpr uint32_t LTC_SCAN_US = 125;
+         constexpr uint8_t LTC_ISR_PRIORITY = 224; // below the audio update (208), waits while it runs
          constexpr float LTC_SMOO = 0.2f;
          constexpr float INT14_DIV = 1.0f / 16383.0f;
 
@@ -90,9 +99,10 @@ namespace nemesis
 
          ADC adc;
 
-         float cv_val[CV_NUM];
+         volatile float cv_val[CV_NUM]; // written in the timer interrupt
          int next_cv = 0;
          elapsedMicros since_conversion;
+         IntervalTimer cv_timer;
 
          volatile float pot_val[POT_NUM]; // 0..1, written in the ADC interrupts
 
@@ -129,15 +139,55 @@ namespace nemesis
          bool monitor = true;
          elapsedMillis since_display;
 
-         // program list on the display
-         constexpr uint32_t MENU_TIMEOUT_MS = 4000;
+         // screens: home (program, CPU load), program settings (turn the
+         // encoder), program list (click), system settings (press and hold)
+         enum Screen { HOME, SETTINGS, PROGRAMS, SYSTEM };
+         constexpr uint32_t MENU_TIMEOUT_MS = 8000;
          constexpr uint32_t PUSH_DEBOUNCE_MS = 30;
-         bool menu_open = false;
-         int menu_cursor = 0;
+         constexpr uint32_t HOLD_MS = 600;
+         constexpr uint32_t FAST_TURN_MS = 40; // detents closer than this: bigger steps
+         Screen screen = HOME;
+         bool editing = false;
+         int cursor = 0;
          int32_t last_encoder = 0;
          bool last_push = false;
+         bool hold_fired = false;
          elapsedMillis since_menu_input;
          elapsedMillis since_push_change;
+         elapsedMillis since_turn;
+         int brightness_shown = -1;
+
+         // entries of the settings lists
+         enum ItemKind { ITEM_SETTING, ITEM_ROUTE, ITEM_MIDI, ITEM_POPUP, ITEM_BRIGHTNESS, ITEM_CV_RANGE };
+         struct Item
+         {
+            ItemKind kind;
+            int index; // control index (setting) or CV input (route)
+         };
+         constexpr int MAX_ITEMS = 64;
+         Item items[MAX_ITEMS];
+         int item_count = 0;
+         int items_program = -1;
+
+         // parameter overlay: a bound input that moves shows its parameter.
+         // X/Y/Z sum knob and CV, so an input that keeps moving (patched
+         // modulation) is ignored until it rests again.
+         constexpr uint32_t PARAM_SHOW_MS = 1500;
+         constexpr uint32_t PARAM_REDRAW_MS = 40;
+         constexpr float PARAM_MOVE = 0.01f;       // change that counts as turning, ~40x the pot noise
+         constexpr uint32_t PARAM_REST_MS = 500;   // still this long: the movement ended
+         constexpr uint32_t PARAM_MOD_MS = 5000;   // moving longer than this: modulation, ignored
+         struct InputWatch
+         {
+            float reference;
+            elapsedMillis since_move;
+            elapsedMillis moving; // since the movement started
+            bool muted;
+         };
+         InputWatch watch[NUM_INPUTS];
+         bool watch_valid = false;
+         int param_input = -1; // input whose parameter is shown, -1 for none
+         elapsedMillis since_param;
 
          constexpr uint32_t CALIBRATION_HOLD_MS = 2000;
          elapsedMillis both_buttons_held;
@@ -403,27 +453,344 @@ namespace nemesis
             setLed(0, false);
             waitForRelease();
             delay(700);
+            watch_valid = false; // the knob scaling changed
          }
 
-         // current program, its number and the CPU load
+         // ---- screens ----------------------------------------------------
+
+         Program &activeProgram() { return *program(currentProgram()); }
+
+         // name of the menu entry with the largest value not above v, false if none
+         bool menuName(const char *menu, float v, char *text, size_t size)
+         {
+            // menu: 'name':value;'name':value}
+            bool found = false;
+            float best = 0.0f;
+            const char *p = menu;
+            while (p && *p && *p != '}')
+            {
+               const char *open = strchr(p, '\'');
+               const char *close = open ? strchr(open + 1, '\'') : nullptr;
+               const char *colon = close ? strchr(close, ':') : nullptr;
+               if (!colon)
+                  break;
+               float value = atof(colon + 1);
+               if (value <= v + 1e-4f && (!found || value > best))
+               {
+                  found = true;
+                  best = value;
+                  snprintf(text, size, "%.*s", (int)min((size_t)(close - open - 1), size - 1), open + 1);
+               }
+               p = strchr(colon, ';');
+               if (p)
+                  p++;
+            }
+            return found;
+         }
+
+         // number of a parameter with up to 5 significant places, or its menu name
+         void formatValue(const Control &c, float v, char *text, size_t size)
+         {
+            float a = fabsf(c.max) > fabsf(c.min) ? fabsf(c.max) : fabsf(c.min);
+            if (c.menu && menuName(c.menu, v, text, size))
+               return;
+            if (c.gate)
+               snprintf(text, size, "%s", v > 0.5f ? "on" : "off");
+            else
+               snprintf(text, size, a < 10.0f ? "%.2f" : a < 1000.0f ? "%.1f" : "%.0f", v);
+         }
+
+         // x for text ending at the right edge
+         int16_t rightAligned(const char *text, int16_t y)
+         {
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.getTextBounds(text, 0, y, &x1, &y1, &w, &h);
+            return 128 - w - x1;
+         }
+
+         // current program, its status values and the CPU load, a note when there is no SD card
          FLASHMEM void drawHome()
          {
+            char text[16];
             display.clearDisplay();
             display.setTextColor(WHITE);
             display.setFont(&SourceCodePro_ExtraLight6pt7b);
             display.setCursor(0, 7);
-            display.printf("%d/%d", currentProgram() + 1, programCount());
-            display.setCursor(80, 7);
-            display.printf("cpu %2d%%", (int)AudioProcessorUsage());
+            if (!sdCardPresent())
+               display.print(F("no SD "));
+            for (const Indicator &i : activeProgram().indicators())
+            {
+               if (i.led >= 0)
+                  continue;
+               Control c = {};
+               c.min = i.min;
+               c.max = i.max;
+               c.menu = i.menu;
+               formatValue(c, *i.zone, text, sizeof(text));
+               display.print(text);
+               display.print(' ');
+            }
+            snprintf(text, sizeof(text), "cpu %d%%", (int)AudioProcessorUsage());
+            display.setCursor(rightAligned(text, 7), 7);
+            display.print(text);
             display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
             display.setCursor(0, 31);
-            display.print(program(currentProgram())->name());
+            display.print(activeProgram().name());
             display.setFont(&SourceCodePro_ExtraLight6pt7b);
             display.display();
          }
 
+         // the control bound to a hardware input
+         const Control *controlOf(const Program &program, int input)
+         {
+            for (const Control &c : program.controls())
+               if (c.input == input)
+                  return &c;
+            return nullptr;
+         }
+
+         // finds a bound input that is being turned
+         void watchInputs(const Program &program)
+         {
+            for (int i = 0; i < NUM_INPUTS; i++)
+            {
+               InputWatch &w = watch[i];
+               float v = input(i);
+               if (!watch_valid)
+               {
+                  w.reference = v;
+                  continue;
+               }
+               if (fabsf(v - w.reference) < PARAM_MOVE)
+               {
+                  if (w.since_move > PARAM_REST_MS)
+                     w.muted = false;
+                  continue;
+               }
+               w.reference = v;
+               if (w.since_move > PARAM_REST_MS)
+                  w.moving = 0;
+               w.since_move = 0;
+               if (w.moving > PARAM_MOD_MS)
+                  w.muted = true;
+               if (w.muted || !controlOf(program, i))
+                  continue;
+               if (param_input != i)
+                  since_display = DISPLAY_INTERVAL_MS; // draw now
+               param_input = i;
+               since_param = 0;
+            }
+            watch_valid = true;
+         }
+
+         // parameter name (large if it fits), a bar and the value
+         FLASHMEM void drawParameter(const Control &c)
+         {
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.clearDisplay();
+            display.setTextColor(WHITE);
+            display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
+            display.getTextBounds(c.label, 0, 17, &x1, &y1, &w, &h);
+            if (x1 + w > 128)
+            {
+               display.setFont(&SourceCodePro_ExtraLight6pt7b);
+               display.setCursor(0, 14);
+            }
+            else
+               display.setCursor(0, 17);
+            display.print(c.label);
+
+            float range = c.max - c.min;
+            float position = range != 0.0f ? constrain((*c.zone - c.min) / range, 0.0f, 1.0f) : 0.0f;
+            display.drawRect(0, 26, 92, 6, WHITE);
+            display.fillRect(1, 27, (int)(position * 90.0f + 0.5f), 4, WHITE);
+
+            char text[16];
+            formatValue(c, *c.zone, text, sizeof(text));
+            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setCursor(rightAligned(text, 31), 31);
+            display.print(text);
+            display.display();
+         }
+
+         // ---- settings lists ---------------------------------------------
+
+         void buildItems()
+         {
+            item_count = 0;
+            items_program = currentProgram();
+            if (screen == SETTINGS)
+            {
+               const std::vector<Control> &controls = activeProgram().controls();
+               for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV; i++)
+                  if (controls[i].input < 0)
+                     items[item_count++] = {ITEM_SETTING, (int)i};
+               for (int i = 0; i < NUM_ROUTABLE_CV; i++)
+                  items[item_count++] = {ITEM_ROUTE, routableCV(i)};
+            }
+            else if (screen == SYSTEM)
+            {
+               items[item_count++] = {ITEM_MIDI, 0};
+               items[item_count++] = {ITEM_POPUP, 0};
+               items[item_count++] = {ITEM_BRIGHTNESS, 0};
+               items[item_count++] = {ITEM_CV_RANGE, 0};
+            }
+         }
+
+         const char *itemLabel(const Item &item, char *text, size_t size)
+         {
+            switch (item.kind)
+            {
+            case ITEM_SETTING:
+               return activeProgram().controls()[item.index].label;
+            case ITEM_ROUTE:
+               snprintf(text, size, "CV %c", 'A' + item.index - routableCV(0));
+               return text;
+            case ITEM_MIDI:
+               return "MIDI channel";
+            case ITEM_POPUP:
+               return "knob popup";
+            case ITEM_BRIGHTNESS:
+               return "brightness";
+            case ITEM_CV_RANGE:
+               return "CV A-D range";
+            }
+            return "";
+         }
+
+         void itemValue(const Item &item, char *text, size_t size)
+         {
+            const SystemSettings &s = systemSettings();
+            switch (item.kind)
+            {
+            case ITEM_SETTING:
+            {
+               const Control &c = activeProgram().controls()[item.index];
+               formatValue(c, c.value, text, size);
+               break;
+            }
+            case ITEM_ROUTE:
+            {
+               int target = activeProgram().route(item.index);
+               snprintf(text, size, "%s", target >= 0 ? activeProgram().controls()[target].label : "off");
+               break;
+            }
+            case ITEM_MIDI:
+               if (s.midiChannel == 0)
+                  snprintf(text, size, "omni");
+               else
+                  snprintf(text, size, "%d", s.midiChannel);
+               break;
+            case ITEM_POPUP:
+               snprintf(text, size, "%s", s.popup ? "on" : "off");
+               break;
+            case ITEM_BRIGHTNESS:
+               snprintf(text, size, "%d", s.brightness);
+               break;
+            case ITEM_CV_RANGE:
+               snprintf(text, size, "0-%dV", s.cvRangeVolts);
+               break;
+            }
+         }
+
+         // turning while editing; fast turns move the settings in bigger steps
+         void changeItem(const Item &item, int delta, bool fast)
+         {
+            SystemSettings &s = systemSettings();
+            Program &p = activeProgram();
+            switch (item.kind)
+            {
+            case ITEM_SETTING:
+            {
+               Control &c = p.controls()[item.index];
+               if (c.gate)
+                  c.value = delta > 0 ? 1.0f : 0.0f;
+               else
+               {
+                  float lo = min(c.min, c.max), hi = max(c.min, c.max);
+                  // the FAUST step when it is coarse (integers like a tempo), else 1 %
+                  float step = (c.step >= (hi - lo) / 250.0f ? c.step : (hi - lo) / 100.0f) * (fast ? 5 : 1);
+                  float v = c.value + delta * step;
+                  if (c.step > 0.0f)
+                     v = c.min + roundf((v - c.min) / c.step) * c.step;
+                  c.value = constrain(v, lo, hi);
+               }
+               c.changed = true;
+               programSettingsChanged(p);
+               return;
+            }
+            case ITEM_ROUTE:
+            {
+               // off, then every parameter except the one this CV input drives itself
+               int n = p.controls().size();
+               int target = p.route(item.index);
+               for (int k = 0; k < abs(delta); k++)
+               {
+                  int t = target;
+                  do
+                     t += delta > 0 ? 1 : -1;
+                  while (t >= 0 && t < n && p.controls()[t].input == item.index);
+                  if (t < -1 || t >= n)
+                     break;
+                  target = t;
+               }
+               p.setRoute(item.index, target);
+               programSettingsChanged(p);
+               return;
+            }
+            case ITEM_MIDI:
+               s.midiChannel = constrain(s.midiChannel + delta, 0, 16);
+               break;
+            case ITEM_POPUP:
+               s.popup = delta > 0;
+               break;
+            case ITEM_BRIGHTNESS:
+               s.brightness = constrain(s.brightness + delta, 1, 10);
+               break;
+            case ITEM_CV_RANGE:
+               s.cvRangeVolts = delta > 0 ? 8 : 5;
+               break;
+            }
+            systemSettingsChanged();
+         }
+
+         // three rows around the cursor: label left, value right (inverted while editing)
+         FLASHMEM void drawList()
+         {
+            char label[24], value[24];
+            display.clearDisplay();
+            display.setTextColor(WHITE);
+            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            if (item_count == 0)
+            {
+               display.setCursor(0, 19);
+               display.print(F("no settings"));
+            }
+            int first = constrain(cursor - 1, 0, max(0, item_count - 3));
+            for (int row = 0; row < 3 && first + row < item_count; row++)
+            {
+               int index = first + row;
+               int y = 9 + row * 11;
+               bool selected = index == cursor;
+               display.setCursor(0, y);
+               display.print(selected ? '>' : ' ');
+               display.print(itemLabel(items[index], label, sizeof(label)));
+               itemValue(items[index], value, sizeof(value));
+               int x = rightAligned(value, y);
+               bool inverted = selected && editing;
+               display.fillRect(x - 4, y - 9, 132 - x, 11, inverted ? WHITE : BLACK);
+               display.setTextColor(inverted ? BLACK : WHITE);
+               display.setCursor(x, y);
+               display.print(value);
+               display.setTextColor(WHITE);
+            }
+            display.display();
+         }
+
          // three entries around the cursor, '>' marks the cursor, '*' the running program
-         FLASHMEM void drawMenu()
+         FLASHMEM void drawPrograms()
          {
             display.clearDisplay();
             display.setTextColor(WHITE);
@@ -431,31 +798,106 @@ namespace nemesis
             int n = programCount();
             for (int row = 0; row < 3; row++)
             {
-               int index = menu_cursor - 1 + row;
+               int index = cursor - 1 + row;
                if (index < 0 || index >= n)
                   continue;
                display.setCursor(0, 9 + row * 11);
-               display.printf("%c%c %s", index == menu_cursor ? '>' : ' ',
+               display.printf("%c%c %s", index == cursor ? '>' : ' ',
                               index == currentProgram() ? '*' : ' ', program(index)->name());
             }
             display.display();
          }
 
-         // encoder: turn moves the cursor (and opens the list), push loads
-         FLASHMEM void handleMenu()
+         // ---- encoder ----------------------------------------------------
+
+         void open(Screen next)
          {
-            int n = programCount();
-            int32_t position = encoderPosition();
-            if (position != last_encoder && n > 0)
+            screen = next;
+            editing = false;
+            cursor = next == PROGRAMS ? currentProgram() : 0;
+            buildItems();
+         }
+
+         void onTurn(int delta, bool fast)
+         {
+            switch (screen)
             {
-               if (!menu_open)
-                  menu_cursor = currentProgram();
+            case HOME:
+               open(SETTINGS);
+               break;
+            case PROGRAMS:
+            {
+               int n = programCount();
+               if (n > 0)
+                  cursor = ((cursor + delta) % n + n) % n;
+               break;
+            }
+            case SETTINGS:
+            case SYSTEM:
+               if (editing)
+                  changeItem(items[cursor], delta, fast);
                else
-                  menu_cursor = ((menu_cursor + (int)(position - last_encoder)) % n + n) % n;
-               last_encoder = position;
-               menu_open = true;
-               since_menu_input = 0;
-               since_display = DISPLAY_INTERVAL_MS; // redraw now
+                  cursor = constrain(cursor + delta, 0, max(0, item_count - 1));
+               break;
+            }
+         }
+
+         void onClick()
+         {
+            switch (screen)
+            {
+            case HOME:
+               open(PROGRAMS);
+               break;
+            case PROGRAMS:
+               if (cursor != currentProgram())
+               {
+                  display.clearDisplay();
+                  display.setFont(&SourceCodePro_ExtraLight6pt7b);
+                  display.setCursor(0, 19);
+                  display.printf("loading %s", program(cursor)->name());
+                  display.display();
+                  selectProgram(cursor);
+               }
+               screen = HOME;
+               break;
+            case SETTINGS:
+            case SYSTEM:
+               if (item_count == 0)
+                  break;
+               editing = !editing;
+               if (editing && items[cursor].kind == ITEM_SETTING)
+               {
+                  // start from the parameter, a MIDI CC may have changed it
+                  Control &c = activeProgram().controls()[items[cursor].index];
+                  if (c.cvMask == 0)
+                     c.value = *c.zone;
+               }
+               break;
+            }
+         }
+
+         void onHold()
+         {
+            if (screen == SYSTEM)
+               screen = HOME;
+            else
+               open(SYSTEM);
+         }
+
+         // turn: settings, click: program list (or edit in a list), hold: system settings
+         void handleEncoder()
+         {
+            int32_t position = encoderPosition();
+            int delta = position - last_encoder;
+            last_encoder = position;
+            bool any = false;
+            if (delta)
+            {
+               bool fast = since_turn < FAST_TURN_MS;
+               since_turn = 0;
+               onTurn(delta, fast);
+               any = true;
             }
 
             bool push = encoderPressed();
@@ -463,23 +905,45 @@ namespace nemesis
             {
                last_push = push;
                since_push_change = 0;
-               if (push && menu_open)
+               if (push)
+                  hold_fired = false;
+               else if (!hold_fired)
                {
-                  display.clearDisplay();
-                  display.setCursor(0, 19);
-                  display.printf("loading %s", program(menu_cursor)->name());
-                  display.display();
-                  selectProgram(menu_cursor);
-                  menu_open = false;
-                  since_display = DISPLAY_INTERVAL_MS;
+                  onClick();
+                  any = true;
                }
             }
-
-            if (menu_open && since_menu_input > MENU_TIMEOUT_MS)
+            if (push && last_push && !hold_fired && since_push_change >= HOLD_MS)
             {
-               menu_open = false;
+               hold_fired = true;
+               onHold();
+               any = true;
+            }
+
+            if (any)
+            {
+               since_menu_input = 0;
+               since_display = DISPLAY_INTERVAL_MS; // redraw now
+            }
+            // back home after a while, or when the program was changed elsewhere
+            bool stale = screen == SETTINGS && items_program != currentProgram();
+            if (screen != HOME && (since_menu_input > MENU_TIMEOUT_MS || stale))
+            {
+               screen = HOME;
+               editing = false;
                since_display = DISPLAY_INTERVAL_MS;
             }
+         }
+
+         // display contrast for brightness 1..10, roughly even steps to the eye
+         void applyBrightness()
+         {
+            int level = systemSettings().brightness;
+            if (level == brightness_shown)
+               return;
+            brightness_shown = level;
+            display.ssd1306_command(SSD1306_SETCONTRAST);
+            display.ssd1306_command(max(1, level * level * 255 / 100));
          }
       }
 
@@ -506,6 +970,7 @@ namespace nemesis
          pinMode(CODEC_ENABLE_PIN, OUTPUT);
 
          display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+         display.setTextWrap(false);
          splash(program.name());
 
          pinMode(PIN_SPI_SS, OUTPUT);
@@ -514,6 +979,8 @@ namespace nemesis
          transferLTC(next_cv); // dummy transfer to start the first conversion
 
          beginPots();
+         cv_timer.priority(LTC_ISR_PRIORITY);
+         cv_timer.begin(scanCV, LTC_SCAN_US);
 
          loadCalibration();
          if (buttonPressed(0))
@@ -528,10 +995,9 @@ namespace nemesis
          codec.volume(1.0);
       }
 
-      // pots are read in the ADC interrupts
+      // pots are read in the ADC interrupts, CV inputs in a timer interrupt
       void scan()
       {
-         scanCV();
       }
 
       void service(const Program &program)
@@ -543,14 +1009,27 @@ namespace nemesis
 
          if (!monitor)
             return;
-         handleMenu();
-         if (since_display >= DISPLAY_INTERVAL_MS)
+         applyBrightness();
+         handleEncoder();
+         watchInputs(program);
+         if (param_input >= 0 && since_param >= PARAM_SHOW_MS)
          {
-            since_display = 0;
-            if (menu_open)
-               drawMenu();
+            param_input = -1;
+            since_display = DISPLAY_INTERVAL_MS;
+         }
+         bool popup = screen == HOME && systemSettings().popup && param_input >= 0;
+         const Control *param = popup ? controlOf(program, param_input) : nullptr;
+         if (since_display >= (param ? PARAM_REDRAW_MS : DISPLAY_INTERVAL_MS))
+         {
+            if (screen == PROGRAMS)
+               drawPrograms();
+            else if (screen == SETTINGS || screen == SYSTEM)
+               drawList();
+            else if (param)
+               drawParameter(*param);
             else
                drawHome();
+            since_display = 0; // counted from the end of the transfer, so loop() gets time in between
          }
       }
 
@@ -563,7 +1042,12 @@ namespace nemesis
       {
          float v;
          if (index < CV_NUM)
-            v = (cvVolts(index) + (index < CV_BIPOLAR ? CV_SPAN_VOLTS / 2 : 0.0f)) / CV_SPAN_VOLTS;
+         {
+            if (index < CV_BIPOLAR)
+               v = (cvVolts(index) + CV_SPAN_VOLTS / 2) / CV_SPAN_VOLTS;
+            else // CV A-D: 0..5 V or 0..8 V, a system setting
+               v = cvVolts(index) / systemSettings().cvRangeVolts;
+         }
          else
             v = (raw(index) - calibration.lo[index]) / (calibration.hi[index] - calibration.lo[index]);
          return constrain(v, 0.0f, 1.0f);

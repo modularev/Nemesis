@@ -9,7 +9,7 @@ during the PlatformIO build.
 | `lib/nemesis` | hardware library: codec, control inputs, LEDs, buttons, display (rev2) |
 | `faust` | FAUST architecture files and `faust_build.py`, which replaces `faust2nemesis` |
 | `firmware` | firmware with several programs, chosen with the encoder (rev2) |
-| `programs` | FAUST programs shared by the firmware (juno, freqshift) |
+| `programs` | FAUST programs shared by the firmware (juno, freqshift, breaker) |
 | `template` | starting point for your own program |
 | `examples/mooSpace` | stereo reverb |
 | `examples/polysynth` | oscillator experiments, parked programs are `.bdsp` files |
@@ -54,10 +54,11 @@ architecture files or the options change.
 | --- | --- | --- |
 | controls | 9 knobs, each summed with its CV jack, on Teensy analog pins | CV X/Y/Z: main knob summed with the CV through an attenuverter, CV A–D, all on an LTC1867 SPI ADC; 4 knobs (POT A–D) on Teensy analog pins |
 | input names | `CV_X CV_Y CV_Z CV_A`..`CV_F` (`POT_X`..`POT_F` also work) | `CV_X CV_Y CV_Z CV_A CV_B CV_C CV_D`, `POT_A POT_B POT_C POT_D` |
-| CV range (0..1) | – | calibrated: A–D 0…8 V, X/Y/Z −4…+4 V (main knob adds an offset); hardware range A–D ~0…8.4 V, X/Y/Z ~±4.2 V, linear to ~5 mV |
+| CV range (0..1) | – | calibrated: A–D 0…8 V (or 0…5 V, a system setting), X/Y/Z −4…+4 V (main knob adds an offset); hardware range A–D ~0…8.4 V, X/Y/Z ~±4.2 V, linear to ~5 mV |
 | outputs | – | 8, DC coupled, ±5 V; calibrated: 1.0 = 5 V, 0 = 0 V |
 | LEDs / buttons | 3 / 3 | 2 push buttons with LEDs, encoder with push switch |
-| display | – | 128x32 OLED: program and CPU load, program list on the encoder |
+| display | – | 128x32 OLED: program and CPU load; encoder turn: program settings, click: program list, hold: system settings; name and value of a parameter while its knob is turned |
+| settings | – | text files on the SD card (`/NEMESIS/`): per program the parameters without a knob and the CV A–D routing, system: MIDI channel, knob popup, brightness, CV A–D range (0–5 V or 0–8 V) |
 | calibration | knob min/max in EEPROM, hold button 3 at power up | POT A–D: hold both buttons for 2 s (or button 1 at power up); CV inputs and outputs in volts with `tests/cvtest` (±2.5 mV / ±2 mV), both in EEPROM |
 
 Both use the CS42448 codec in TDM mode. Every FAUST channel is a 24 bit

@@ -31,6 +31,10 @@
 #include "Arduino.h"
 #include "faust/midi/midi.h"
 
+namespace nemesis {
+    int midiChannel(); // system setting: 0 omni, 1..16
+}
+
 /**
  *  MIDI input for the NEMESIS module: serial MIDI on Serial1 and, when the
  *  Teensy USB type includes MIDI, USB MIDI.
@@ -61,6 +65,8 @@ class nemesis_midi : public midi_handler {
         {
             double time = 0.;
             int channel = status & 0x0F; // midi_handler expects 0-15
+            int listen = nemesis::midiChannel();
+            if (listen > 0 && channel != listen - 1) return;
             switch (status & 0xF0) {
                 case 0x80:
                     handleKeyOff(time, channel, data1, data2);

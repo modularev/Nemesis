@@ -27,15 +27,30 @@ namespace nemesis
    // input polarity, applied by the architecture file to every input sample
    float inputScale(int input);
 
-   // a FAUST parameter driven by a hardware input
+   // a FAUST parameter: driven by a hardware input (knob or CV jack), or a
+   // setting changed in the menu when input is -1
    struct Control
    {
-      float *zone;       // FAUST parameter memory
-      float min, max;    // parameter range, input 0..1 is scaled to it
-      int input;         // hardware input index, see nemesis::inputName()
-      int cv;            // input added to it (knob + CV), -1 for none
-      bool gate;         // buttons/checkboxes: input > 0.5 -> 1, else 0
-      const char *label; // parameter label without the input prefix
+      float *zone;        // FAUST parameter memory
+      float min, max;     // parameter range, input 0..1 is scaled to it
+      float step;         // FAUST step
+      int input;          // hardware input index (see nemesis::inputName()), -1 for a setting
+      uint32_t cvMask;    // CV inputs added to it (bit per input index)
+      bool gate;          // buttons/checkboxes: input > 0.5 -> 1, else 0
+      const char *label;  // parameter label without the input prefix
+      const char *menu;   // [style:menu{'name':value;..}] value names, or null
+      float value;        // settings: the value set in the menu
+      bool changed;       // settings: value still to be written to zone
+   };
+
+   // a FAUST bargraph shown on the home screen ([status:1]) or driving an LED ([led:1])
+   struct Indicator
+   {
+      float *zone;
+      float min, max;
+      const char *label;
+      const char *menu; // value names, see Control
+      int led;          // LED index, -1 for a status value
    };
 
    class Program : public AudioStream
@@ -61,18 +76,38 @@ namespace nemesis
       // diagnostics, e.g. the note of every voice of a polyphonic program
       virtual void printStatus(Print &out) {}
 
+      // bound parameters and settings
       const std::vector<Control> &controls() const { return fControls; }
+      std::vector<Control> &controls() { return fControls; }
+      const std::vector<Indicator> &indicators() const { return fIndicators; }
+
+      // CV routing: the control a CV input is added to, -1 for none. The
+      // default comes from the [cv:..] metadata, settings files change it.
+      static constexpr int MAX_INPUTS = 16;
+      int route(int cvInput) const;
+      void setRoute(int cvInput, int control);
+      int controlIndex(const char *label) const;
+      bool settingsLoaded = false;
 
       // called by the architecture file while the FAUST UI is built:
       // declareControl() for each [key:value] metadata of a parameter,
       // then bindControl() for the parameter itself
+      enum Kind { SLIDER, BUTTON, CHECKBOX, BARGRAPH };
       void declareControl(const char *key, const char *value);
-      void bindControl(const char *label, float *zone, float min, float max, bool gate);
+      void bindControl(const char *label, float *zone, float init, float min, float max, float step, Kind kind);
 
    private:
+      void updateMasks();
+
       std::vector<Control> fControls;
+      std::vector<Indicator> fIndicators;
+      bool fPendingStatus = false;
+      int fPendingLed = -1;
+      int8_t fRoute[MAX_INPUTS] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
       const char *fPendingInput = nullptr;
       const char *fPendingCV = nullptr;
+      const char *fPendingMenu = nullptr;
+      bool fPendingHidden = false;
       bool fPendingForRevision = false;
    };
 }
