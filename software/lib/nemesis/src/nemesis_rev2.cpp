@@ -7,6 +7,9 @@
 // Teensy analog pins, a 128x32 SSD1306 OLED, two push buttons with LEDs and
 // an encoder with push switch.
 //
+// Display: the current program and the CPU load; turning the encoder opens
+// the program list, pushing it loads the highlighted program.
+//
 // Knob calibration (POT A-D): hold both buttons for 2 seconds while running
 // (or button 1 while powering up), turn the knobs through their full range,
 // then press button 2 to store (button 1 cancels).
@@ -125,6 +128,16 @@ namespace nemesis
 
          bool monitor = true;
          elapsedMillis since_display;
+
+         // program list on the display
+         constexpr uint32_t MENU_TIMEOUT_MS = 4000;
+         constexpr uint32_t PUSH_DEBOUNCE_MS = 30;
+         bool menu_open = false;
+         int menu_cursor = 0;
+         int32_t last_encoder = 0;
+         bool last_push = false;
+         elapsedMillis since_menu_input;
+         elapsedMillis since_push_change;
 
          constexpr uint32_t CALIBRATION_HOLD_MS = 2000;
          elapsedMillis both_buttons_held;
@@ -392,18 +405,81 @@ namespace nemesis
             delay(700);
          }
 
-         // input values: CV X Y Z / A B C / D, POT A / B C D
-         FLASHMEM void drawMonitor()
+         // current program, its number and the CPU load
+         FLASHMEM void drawHome()
          {
-            static const uint8_t pos[NUM_INPUTS][2] = {
-                {0, 7}, {0, 17}, {0, 27}, {32, 7}, {32, 17}, {32, 27}, {64, 7}, {64, 27}, {96, 7}, {96, 17}, {96, 27}};
             display.clearDisplay();
-            for (int i = 0; i < NUM_INPUTS; i++)
+            display.setTextColor(WHITE);
+            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setCursor(0, 7);
+            display.printf("%d/%d", currentProgram() + 1, programCount());
+            display.setCursor(80, 7);
+            display.printf("cpu %2d%%", (int)AudioProcessorUsage());
+            display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
+            display.setCursor(0, 31);
+            display.print(program(currentProgram())->name());
+            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.display();
+         }
+
+         // three entries around the cursor, '>' marks the cursor, '*' the running program
+         FLASHMEM void drawMenu()
+         {
+            display.clearDisplay();
+            display.setTextColor(WHITE);
+            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            int n = programCount();
+            for (int row = 0; row < 3; row++)
             {
-               display.setCursor(pos[i][0], pos[i][1]);
-               display.print(input(i), 2);
+               int index = menu_cursor - 1 + row;
+               if (index < 0 || index >= n)
+                  continue;
+               display.setCursor(0, 9 + row * 11);
+               display.printf("%c%c %s", index == menu_cursor ? '>' : ' ',
+                              index == currentProgram() ? '*' : ' ', program(index)->name());
             }
             display.display();
+         }
+
+         // encoder: turn moves the cursor (and opens the list), push loads
+         FLASHMEM void handleMenu()
+         {
+            int n = programCount();
+            int32_t position = encoderPosition();
+            if (position != last_encoder && n > 0)
+            {
+               if (!menu_open)
+                  menu_cursor = currentProgram();
+               else
+                  menu_cursor = ((menu_cursor + (int)(position - last_encoder)) % n + n) % n;
+               last_encoder = position;
+               menu_open = true;
+               since_menu_input = 0;
+               since_display = DISPLAY_INTERVAL_MS; // redraw now
+            }
+
+            bool push = encoderPressed();
+            if (push != last_push && since_push_change > PUSH_DEBOUNCE_MS)
+            {
+               last_push = push;
+               since_push_change = 0;
+               if (push && menu_open)
+               {
+                  display.clearDisplay();
+                  display.setCursor(0, 19);
+                  display.printf("loading %s", program(menu_cursor)->name());
+                  display.display();
+                  selectProgram(menu_cursor);
+                  menu_open = false;
+                  since_display = DISPLAY_INTERVAL_MS;
+               }
+            }
+
+            if (menu_open && since_menu_input > MENU_TIMEOUT_MS)
+            {
+               menu_open = false;
+               since_display = DISPLAY_INTERVAL_MS;
+            }
          }
       }
 
@@ -465,10 +541,16 @@ namespace nemesis
          else if (both_buttons_held >= CALIBRATION_HOLD_MS)
             calibrate();
 
-         if (monitor && since_display >= DISPLAY_INTERVAL_MS)
+         if (!monitor)
+            return;
+         handleMenu();
+         if (since_display >= DISPLAY_INTERVAL_MS)
          {
             since_display = 0;
-            drawMonitor();
+            if (menu_open)
+               drawMenu();
+            else
+               drawHome();
          }
       }
 
@@ -492,6 +574,14 @@ namespace nemesis
       float rawInput(int index) { return raw(index); }
 
       int aliasIndex(const char *name) { return -1; }
+
+      // encoder held at power up (the pin is configured in begin(), so set it up here too)
+      bool forceFirstProgram()
+      {
+         pinMode(ENC_SW_PIN, INPUT_PULLUP);
+         delayMicroseconds(50);
+         return digitalRead(ENC_SW_PIN) == LOW;
+      }
 
       // LEDs in the push buttons are active high (checked on hardware)
       void setLed(int index, bool on) { digitalWrite(led_pin[index], on ? HIGH : LOW); }
@@ -533,6 +623,11 @@ namespace nemesis
       for (int i = 0; i < NUM_OUTPUTS; i++)
          out.printf("OUT%d %.4f V per unit, %+.4f V at 0\n", i + 1, hw::volts.out_per_unit[i], hw::volts.out_offset[i]);
    }
+
+   // all 8 audio input stages invert (IN 1-6 on the main board, IN 7/8 through
+   // the input board and CS5343, measured on rev2); the CS5343 channels can't
+   // be inverted in the codec, so it's done in software for all of them
+   float inputScale(int input) { return -1.0f; }
 
    // applied by the architecture file to every output sample: corrected = sample * scale + offset
    void outputCorrection(int output, float &scale, float &offset)

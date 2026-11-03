@@ -124,6 +124,11 @@ class nemesis_midi : public midi_handler {
 
     public:
 
+        // traffic counters for diagnostics (shared by all programs)
+        inline static uint32_t fSerialBytes = 0;
+        inline static uint32_t fUSBMessages = 0;
+        inline static uint8_t fLastStatus = 0;
+
         nemesis_midi() : midi_handler("nemesis") {}
 
         virtual ~nemesis_midi() { stopMidi(); }
@@ -139,10 +144,14 @@ class nemesis_midi : public midi_handler {
         void processMidi()
         {
             while (Serial1.available()) {
-                parse(Serial1.read());
+                uint8_t byte = Serial1.read();
+                fSerialBytes++;
+                if (byte & 0x80) fLastStatus = byte;
+                parse(byte);
             }
 #if defined(MIDI_INTERFACE)
             while (usbMIDI.read()) {
+                fUSBMessages++;
                 uint8_t type = usbMIDI.getType();
                 if (type >= 0xF8) {
                     handleRealtime(type);

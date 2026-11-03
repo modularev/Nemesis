@@ -214,12 +214,14 @@ namespace nemesis
       void resetVoltCalibration() {}
    }
 
-   // rev1 outputs are not calibrated
+   // rev1 outputs are not calibrated, input polarity not measured
    void outputCorrection(int output, float &scale, float &offset)
    {
       scale = 1.0f;
       offset = 0.0f;
    }
+
+   float inputScale(int input) { return 1.0f; }
 
    namespace hw
    {
@@ -237,6 +239,13 @@ namespace nemesis
                return i;
          }
          return -1;
+      }
+
+      // button 1 held at power up
+      bool forceFirstProgram()
+      {
+         pinMode(switch_pin[0], INPUT);
+         return digitalRead(switch_pin[0]) == LOW;
       }
 
       void setLed(int index, bool on) { digitalWrite(led_pin[index], on ? HIGH : LOW); }

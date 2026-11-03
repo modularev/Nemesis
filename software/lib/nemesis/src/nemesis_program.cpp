@@ -8,6 +8,8 @@
 //   2. metadata for every revision:      hslider("smear [hw:CV_X]", ...)
 //   3. an input name as label prefix:    hslider("CV_X: Pitch", ...)
 // Parameters without a binding keep their FAUST default value.
+// [cv:CV_A] adds a CV input to the bound knob (knob + CV, clipped to 0..1),
+// ignored where it names the same input (rev1 knobs are summed in hardware).
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
 // released under GNU GPL v3
@@ -59,6 +61,10 @@ namespace nemesis
       {
          fPendingInput = value;
       }
+      else if (strcmp(key, "cv") == 0)
+      {
+         fPendingCV = value;
+      }
    }
 
    FLASHMEM void Program::bindControl(const char *label, float *zone, float min, float max, bool gate)
@@ -66,10 +72,14 @@ namespace nemesis
       // zone is null for outputs (bargraphs), which only reset the pending metadata
       const char *displayLabel = label;
       int input = fPendingInput ? inputIndex(fPendingInput) : inputFromLabel(label, &displayLabel);
+      int cv = fPendingCV ? inputIndex(fPendingCV) : -1;
+      if (cv == input)
+         cv = -1;
       if (zone && input >= 0)
-         fControls.push_back({zone, min, max, input, gate, displayLabel});
+         fControls.push_back({zone, min, max, input, cv, gate, displayLabel});
 
       fPendingInput = nullptr;
+      fPendingCV = nullptr;
       fPendingForRevision = false;
    }
 }

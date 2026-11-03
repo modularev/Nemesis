@@ -12,6 +12,7 @@
 
 #include "nemesis.h"
 #include "nemesis_hw.h"
+#include <EEPROM.h>
 #include <Wire.h>
 
 namespace nemesis
@@ -30,6 +31,20 @@ namespace nemesis
       int numCords = 0;
 
       Program *active = nullptr;
+
+      constexpr int MAX_PROGRAMS = 32;
+      Program *programs[MAX_PROGRAMS];
+      int numPrograms = 0;
+      int current = -1;
+
+      // last selected program, kept apart from the calibration data; only
+      // stored once it ran for a while, so a crashing program can't cause a
+      // boot loop
+      constexpr int PROGRAM_EEPROM_ADDRESS = 1024;
+      constexpr uint8_t PROGRAM_EEPROM_MAGIC = 0xA5;
+      constexpr uint32_t PROGRAM_STORE_DELAY_MS = 3000;
+      bool storePending = false;
+      elapsedMillis sinceSelect;
 
       FLASHMEM void patch(Program &program)
       {
@@ -54,19 +69,73 @@ namespace nemesis
 
    FLASHMEM void begin(Program &program)
    {
-      active = &program;
-      patch(program);
-      hw::begin(program);
+      Program *list[] = {&program};
+      begin(list, 1);
+   }
+
+   FLASHMEM void begin(Program *const *list, int count)
+   {
+      numPrograms = min(count, MAX_PROGRAMS);
+      for (int i = 0; i < numPrograms; i++)
+         programs[i] = list[i];
+
+      int stored = 0;
+      if (EEPROM.read(PROGRAM_EEPROM_ADDRESS) == PROGRAM_EEPROM_MAGIC)
+         stored = EEPROM.read(PROGRAM_EEPROM_ADDRESS + 1);
+      current = (stored < numPrograms && !hw::forceFirstProgram()) ? stored : 0;
+
+      active = programs[current];
+      active->start();
+      patch(*active);
+      hw::begin(*active);
+   }
+
+   FLASHMEM bool selectProgram(int index)
+   {
+      if (index < 0 || index >= numPrograms)
+         return false;
+      if (index == current)
+         return true;
+      Program *next = programs[index];
+      if (!next->start()) // allocates the DSP on first use, outside the audio interrupt
+         return false;
+
+      AudioNoInterrupts();
+      patch(*next); // the old program is disconnected and no longer updated
+      active = next;
+      current = index;
+      AudioInterrupts();
+
+      storePending = true;
+      sinceSelect = 0;
+      return true;
+   }
+
+   int currentProgram() { return current; }
+
+   int programCount() { return numPrograms; }
+
+   Program *program(int index)
+   {
+      return (index >= 0 && index < numPrograms) ? programs[index] : nullptr;
    }
 
    void update()
    {
+      if (storePending && sinceSelect > PROGRAM_STORE_DELAY_MS)
+      {
+         storePending = false;
+         EEPROM.write(PROGRAM_EEPROM_ADDRESS, PROGRAM_EEPROM_MAGIC);
+         EEPROM.write(PROGRAM_EEPROM_ADDRESS + 1, current);
+      }
       hw::scan();
       if (active)
       {
          for (const Control &c : active->controls())
          {
             float v = hw::input(c.input);
+            if (c.cv >= 0)
+               v = constrain(v + hw::input(c.cv), 0.0f, 1.0f);
             *c.zone = c.gate ? (v > 0.5f ? 1.0f : 0.0f) : c.min + v * (c.max - c.min);
          }
          hw::service(*active);
@@ -122,7 +191,8 @@ namespace nemesis
          return;
       out.printf("NEMESIS rev%d running %s\n", NEMESIS_HW_REV, active->name());
       for (const Control &c : active->controls())
-         out.printf("  %-6s -> %s [%g .. %g]\n", inputName(c.input), c.label, c.min, c.max);
+         out.printf("  %-6s%s%-5s -> %s [%g .. %g]\n", inputName(c.input), c.cv >= 0 ? " + " : "   ",
+                    c.cv >= 0 ? inputName(c.cv) : "", c.label, c.min, c.max);
    }
 
    FLASHMEM bool codecWrite(uint8_t reg, uint8_t val)

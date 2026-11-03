@@ -60,6 +60,17 @@ namespace nemesis
    // audio memory is set with -D NEMESIS_AUDIO_MEMORY=<blocks> (default 100)
    void begin(Program &program);
 
+   // several programs in one firmware: the last selected one is restored at
+   // power up, on rev2 the encoder selects (turn) and loads (push) a program
+   void begin(Program *const *programs, int count);
+   template <size_t N>
+   void begin(Program *(&programs)[N]) { begin(programs, N); }
+
+   bool selectProgram(int index);
+   int currentProgram();
+   int programCount();
+   Program *program(int index);
+
    // scan the inputs and write the bound program parameters, call it from loop()
    void update();
 
@@ -82,7 +93,8 @@ namespace nemesis
 
 #if NEMESIS_HW_REV == 2
    extern Adafruit_SSD1306 display;
-   // the library redraws an input monitor on the display, disable it to draw your own
+   // the library shows the program on the display and runs the program list
+   // on the encoder; disable it to draw your own screen
    void showMonitor(bool enable);
 
    // encoder position in detents (counted in interrupts) and its push switch

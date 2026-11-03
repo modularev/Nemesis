@@ -40,6 +40,9 @@
 //   MIDICTRL                 [midi:on] in 'declare options'
 //   NVOICES <n>              [nvoices:n] in 'declare options'
 //   NEMESIS_FAUST_GLOBALS    in exactly one program that uses MIDI
+//   NEMESIS_EFFECT           polyphonic program with an 'effect' (compiled as
+//                            NemesisAudio_effect, inserted below), and
+//   NEMESIS_NUM_OUTPUTS      the effect's outputs
 
 #include <string.h> // for memset
 
@@ -90,9 +93,15 @@
 
 <<includeclass>>
 
+// <<NEMESIS_EFFECT_CLASS>>
+
 /***************************END USER SECTION ***************************/
 
 /*******************BEGIN ARCHITECTURE SECTION (part 2/2)***************/
+
+#ifndef NEMESIS_NUM_OUTPUTS
+#define NEMESIS_NUM_OUTPUTS FAUST_OUTPUTS
+#endif
 
 // 24 bit samples travel as two 16 bit TDM slots (MSB, LSB) per channel
 #define MULT_32 2147483648.0f
@@ -172,13 +181,35 @@ struct NemesisAudioBindUI : public UI {
     }
 };
 
-FLASHMEM NemesisAudio::NemesisAudio() : nemesis::Program(2 * FAUST_INPUTS, new audio_block_t*[2 * FAUST_INPUTS])
+FLASHMEM NemesisAudio::NemesisAudio() : nemesis::Program(2 * FAUST_INPUTS, new audio_block_t*[2 * FAUST_INPUTS]),
+    fInChannel(nullptr), fOutChannel(nullptr), fUI(nullptr), fMIDIHandler(nullptr), fMIDIInterface(nullptr), fDSP(nullptr), fVoices(nullptr), fResets(0)
 {
+}
+
+// creates the DSP (memory in PSRAM where possible), binds the controls and MIDI
+FLASHMEM bool NemesisAudio::start()
+{
+    if (fDSP) return true;
+#ifdef NVOICES
+    mydsp_poly* poly;
+#endif
+
     mydsp::fManager = &gNemesisAudioMemory;
     mydsp::classInit(AUDIO_SAMPLE_RATE_EXACT);
 #ifdef NVOICES
     // voices are cloned with mydsp::create(), so they use the memory manager too
-    fDSP = new mydsp_poly(mydsp::create(), NVOICES, true, true);
+    poly = new mydsp_poly(mydsp::create(), NVOICES, true, true);
+    fVoices = poly;
+#ifdef NEMESIS_EFFECT
+    // the effect runs once after the voice mix, MIDI still goes to the voices
+    NemesisAudio_effect::fManager = &gNemesisAudioMemory;
+    NemesisAudio_effect::classInit(AUDIO_SAMPLE_RATE_EXACT);
+    dsp* effect = NemesisAudio_effect::create();
+    effect->instanceInit(AUDIO_SAMPLE_RATE_EXACT);
+    fDSP = new dsp_poly_effect(poly, new dsp_sequencer(poly, effect, AUDIO_BLOCK_SAMPLES));
+#else
+    fDSP = poly;
+#endif
 #else
     fDSP = mydsp::create();
 #endif
@@ -195,26 +226,24 @@ FLASHMEM NemesisAudio::NemesisAudio() : nemesis::Program(2 * FAUST_INPUTS, new a
     for (int i = 0; i < FAUST_INPUTS; i++) {
         fInChannel[i] = new float[AUDIO_BLOCK_SAMPLES];
     }
-    fOutChannel = new float*[FAUST_OUTPUTS];
-    for (int i = 0; i < FAUST_OUTPUTS; i++) {
+    fOutChannel = new float*[NEMESIS_NUM_OUTPUTS];
+    for (int i = 0; i < NEMESIS_NUM_OUTPUTS; i++) {
         fOutChannel[i] = new float[AUDIO_BLOCK_SAMPLES];
     }
 
-    fMIDIHandler = nullptr;
-    fMIDIInterface = nullptr;
 #ifdef MIDICTRL
     fMIDIHandler = new nemesis_midi();
     fMIDIInterface = new MidiUI(fMIDIHandler);
+    // a polyphonic DSP registers itself for MIDI notes here (FAUST's poly-dsp.h)
     fDSP->buildUserInterface(fMIDIInterface);
-#ifdef NVOICES
-    fMIDIHandler->addMidiIn(static_cast<mydsp_poly*>(fDSP));
-#endif
     fMIDIInterface->run();
 #endif
+    return true;
 }
 
 FLASHMEM NemesisAudio::~NemesisAudio()
 {
+    if (!fDSP) return;
 #ifdef MIDICTRL
     delete fMIDIInterface;
     delete fMIDIHandler;
@@ -223,7 +252,7 @@ FLASHMEM NemesisAudio::~NemesisAudio()
         delete[] fInChannel[i];
     }
     delete[] fInChannel;
-    for (int i = 0; i < FAUST_OUTPUTS; i++) {
+    for (int i = 0; i < NEMESIS_NUM_OUTPUTS; i++) {
         delete[] fOutChannel[i];
     }
     delete[] fOutChannel;
@@ -238,6 +267,7 @@ FLASHMEM NemesisAudio::~NemesisAudio()
 
 void NemesisAudio::update(void)
 {
+    if (!fDSP) return;  // not started, only happens if patched without selectProgram()
 #ifdef MIDICTRL
     // Process the MIDI messages received by the Teensy
     fMIDIHandler->processMidi();
@@ -246,13 +276,15 @@ void NemesisAudio::update(void)
 #endif
 
     for (int channel = 0; channel < FAUST_INPUTS; channel++) {
+        // input polarity of the module
+        float scale = DIV_32 * nemesis::inputScale(channel);
         audio_block_t* msb = receiveReadOnly(2 * channel);
         audio_block_t* lsb = receiveReadOnly(2 * channel + 1);
         if (msb) {
             for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
                 uint16_t low = lsb ? (uint16_t)lsb->data[i] : 0;
                 int32_t val = (int32_t)(((uint32_t)(uint16_t)msb->data[i] << 16) | low);
-                fInChannel[channel][i] = val * DIV_32;
+                fInChannel[channel][i] = val * scale;
             }
         } else {
             memset(fInChannel[channel], 0, AUDIO_BLOCK_SAMPLES * sizeof(float));
@@ -263,7 +295,20 @@ void NemesisAudio::update(void)
 
     fDSP->compute(AUDIO_BLOCK_SAMPLES, fInChannel, fOutChannel);
 
-    for (int channel = 0; channel < FAUST_OUTPUTS; channel++) {
+    // safety net: an unstable filter can leave inf/NaN in the DSP state, which
+    // would silence the program for good, so clear the state and drop the block
+    for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS; channel++) {
+        if (!std::isfinite(fOutChannel[channel][AUDIO_BLOCK_SAMPLES - 1])) {
+            fDSP->instanceClear();
+            for (int c = 0; c < NEMESIS_NUM_OUTPUTS; c++) {
+                memset(fOutChannel[c], 0, AUDIO_BLOCK_SAMPLES * sizeof(float));
+            }
+            fResets++;
+            break;
+        }
+    }
+
+    for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS; channel++) {
         // per output gain and offset calibration of the module
         float scale, offset;
         nemesis::outputCorrection(channel, scale, offset);
@@ -286,26 +331,44 @@ void NemesisAudio::update(void)
 
 int NemesisAudio::numAudioInputs() const { return FAUST_INPUTS; }
 
-int NemesisAudio::numAudioOutputs() const { return FAUST_OUTPUTS; }
+int NemesisAudio::numAudioOutputs() const { return NEMESIS_NUM_OUTPUTS; }
 
 void NemesisAudio::setParamValue(const std::string& path, float value)
 {
-    fUI->setParamValue(path, value);
+    if (fUI) fUI->setParamValue(path, value);
 }
 
 float NemesisAudio::getParamValue(const std::string& path)
 {
-    return fUI->getParamValue(path);
+    return fUI ? fUI->getParamValue(path) : 0.0f;
 }
 
 int NemesisAudio::getParamsCount()
 {
-    return fUI->getParamsCount();
+    return fUI ? fUI->getParamsCount() : 0;
+}
+
+// voices: the MIDI note of every voice (-1 free, -2 releasing, -3 legato)
+FLASHMEM void NemesisAudio::printStatus(Print& out)
+{
+    out.printf("%s: %lu resets after inf/NaN output\n", name(), (unsigned long)fResets);
+#ifdef MIDICTRL
+    out.printf("MIDI: %lu bytes on the MIDI jack (last status 0x%02X), %lu USB messages\n",
+               (unsigned long)nemesis_midi::fSerialBytes, nemesis_midi::fLastStatus,
+               (unsigned long)nemesis_midi::fUSBMessages);
+#endif
+#ifdef NVOICES
+    if (!fVoices) return;
+    mydsp_poly* poly = static_cast<mydsp_poly*>(fVoices);
+    out.printf("%s: %d voices:", name(), (int)poly->fVoiceTable.size());
+    for (dsp_voice* v : poly->fVoiceTable) out.printf(" %d", v->fCurNote);
+    out.println();
+#endif
 }
 
 std::string NemesisAudio::getParamAddress(int index)
 {
-    return fUI->getParamAddress(index);
+    return fUI ? fUI->getParamAddress(index) : std::string();
 }
 
 /********************END ARCHITECTURE SECTION (part 2/2)****************/

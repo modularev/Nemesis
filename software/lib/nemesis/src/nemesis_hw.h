@@ -34,6 +34,9 @@ namespace nemesis
       // revision specific alternative input names, -1 if none matches
       int aliasIndex(const char *name);
 
+      // a control held at power up that starts the first program instead of the stored one
+      bool forceFirstProgram();
+
       void setLed(int index, bool on);
       bool buttonPressed(int index);
 

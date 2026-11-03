@@ -24,6 +24,8 @@ namespace nemesis
    // output calibration, applied by the architecture file to every sample:
    // corrected = sample * scale + offset
    void outputCorrection(int output, float &scale, float &offset);
+   // input polarity, applied by the architecture file to every input sample
+   float inputScale(int input);
 
    // a FAUST parameter driven by a hardware input
    struct Control
@@ -31,6 +33,7 @@ namespace nemesis
       float *zone;       // FAUST parameter memory
       float min, max;    // parameter range, input 0..1 is scaled to it
       int input;         // hardware input index, see nemesis::inputName()
+      int cv;            // input added to it (knob + CV), -1 for none
       bool gate;         // buttons/checkboxes: input > 0.5 -> 1, else 0
       const char *label; // parameter label without the input prefix
    };
@@ -43,6 +46,10 @@ namespace nemesis
       virtual ~Program() {}
 
       virtual const char *name() const = 0;
+      // create the DSP and bind the controls; called when the program is
+      // first selected, so unused programs take no memory
+      virtual bool start() = 0;
+      virtual bool started() const = 0;
       // number of FAUST audio channels (each uses an MSB and an LSB TDM slot)
       virtual int numAudioInputs() const = 0;
       virtual int numAudioOutputs() const = 0;
@@ -51,6 +58,8 @@ namespace nemesis
       virtual float getParamValue(const std::string &path) = 0;
       virtual int getParamsCount() = 0;
       virtual std::string getParamAddress(int index) = 0;
+      // diagnostics, e.g. the note of every voice of a polyphonic program
+      virtual void printStatus(Print &out) {}
 
       const std::vector<Control> &controls() const { return fControls; }
 
@@ -63,6 +72,7 @@ namespace nemesis
    private:
       std::vector<Control> fControls;
       const char *fPendingInput = nullptr;
+      const char *fPendingCV = nullptr;
       bool fPendingForRevision = false;
    };
 }
