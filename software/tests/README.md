@@ -1,7 +1,7 @@
 # tests
 
 Hardware test firmware and measurement tools. The firmware projects build
-like the examples (`pio run -e rev2 -t upload`). The Python tools need the
+like the other projects (`pio run -e rev2 -t upload`). The Python tools need the
 environment in `.venv` (not committed):
 
 ```sh

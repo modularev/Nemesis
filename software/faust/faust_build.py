@@ -14,7 +14,7 @@
 #                                          ; repository (default: searched upwards)
 #   custom_faust_programs =                ; optional, more programs (paths or
 #       ../../programs/juno.dsp            ; globs relative to the project) in
-#       ../examples/mooSpace/src/*.dsp     ; this order, before src/*.dsp
+#       ../../programs/*.dsp               ; this order, before src/*.dsp
 #
 # For many programs in one firmware, board_build.ldscript =
 # ../lib/nemesis/teensy41_flash.ld runs them from flash instead of RAM1.

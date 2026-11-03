@@ -6,7 +6,7 @@
 
 **\hardware** gerber, panel, pcb and schematic files, sorted by hardware revision (rev1, rev2)
 
-**\software** hardware library, FAUST toolchain, template and examples for both revisions, see [software/README.md](software/README.md)
+**\software** hardware library, FAUST toolchain, programs, firmware and template for both revisions, see [software/README.md](software/README.md)
 
 **\doc** datasheets and additional information
 

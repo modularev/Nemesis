@@ -8,11 +8,10 @@ during the PlatformIO build.
 | --- | --- |
 | `lib/nemesis` | hardware library: codec, control inputs, LEDs, buttons, display (rev2) |
 | `faust` | FAUST architecture files and `faust_build.py`, which replaces `faust2nemesis` |
-| `firmware` | firmware with several programs, chosen with the encoder (rev2) |
-| `programs` | FAUST programs shared by the firmware (juno, freqshift, breaker) |
+| `programs` | all FAUST programs and their controls, see `programs/README.md`; unfinished ones in `programs/sketches` (not built) |
+| `firmware` | firmware with all programs, chosen with the encoder (rev2) |
+| `single` | firmware with one program: for rev1, or to try a program alone |
 | `template` | starting point for your own program |
-| `examples/mooSpace` | stereo reverb |
-| `examples/polysynth` | oscillator experiments, parked programs are `.bdsp` files |
 | `tests` | hardware test firmware and measurement tools, see `tests/README.md` |
 
 ## requirements
@@ -34,8 +33,9 @@ Every project has an environment per hardware revision. The pin assignments
 differ, so always build for the revision you are flashing:
 
 ```sh
-cd examples/mooSpace
+cd firmware                 # rev2: all programs
 pio run -e rev2 -t upload   # rev2 is the default environment
+cd ../single                # one program, set in its platformio.ini
 pio run -e rev1 -t upload
 ```
 
@@ -136,15 +136,15 @@ The architecture clears a program's DSP state if it ever outputs inf/NaN
 ```ini
 custom_faust_programs =
     ../programs/juno.dsp
-    ../examples/mooSpace/src/mooSpace.dsp
+    ../programs/mooSpace.dsp
 board_build.ldscript = ../lib/nemesis/teensy41_flash.ld
 ```
 
 `faust_build.py` compiles them (plus any `src/*.dsp`) and generates
 `nemesis_programs.h`, so `main.cpp` is just
 `nemesis::begin(nemesis_programs)`. A program only takes memory once it is
-first selected. On rev2 turning the encoder opens the program list and
-pushing it loads the program; the last one is stored after it ran for 3 s
+first selected. On rev2 a click on the encoder opens the program list,
+turning and clicking again loads a program; the last one is stored after it ran for 3 s
 and restored at power up. Hold the encoder while powering up to start the
 first program instead (e.g. after a program crashed).
 
