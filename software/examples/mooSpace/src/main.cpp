@@ -13,6 +13,13 @@ mooSpace reverb;
 
 void setup()
 {
+   if (CrashReport)
+   {
+      while (!Serial && millis() < 4000)
+      {
+      }
+      Serial.print(CrashReport);
+   }
    nemesis::begin(reverb);
    nemesis::printControls();
 }

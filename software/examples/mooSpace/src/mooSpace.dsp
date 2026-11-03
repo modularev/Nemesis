@@ -2,12 +2,14 @@ declare name "mooSpace";
 declare description "variable space reverberation audio effect";
 declare author "Arev Imer (arev.imer@students.fhnw.ch)";
 declare copyright "Arev";
-declare version "0.3";
+declare version "0.4";
 
-// hardware controls      rev1             rev2
-// smear decay drag       CV_X CV_Y CV_Z   CV_X CV_Y CV_Z
-// Filter modulate        CV_A CV_B        CV_A CV_B
-// colour lag push mix    CV_C D E F       POT_A B C D
+// hardware controls   rev1 (knob + CV)    rev2
+// smear decay drag    CV_X CV_Y CV_Z      knobs X Y Z (+ CV X Y Z)
+// Filter modulate     CV_A CV_B           POT_A + CV_A, POT_B + CV_B
+// colour              CV_C                POT_C + CV_C
+// lag push            CV_D CV_E           - (no predelay, no drive)
+// mix                 CV_F                POT_D + CV_D
 
 import("stdfaust.lib");
 
@@ -19,23 +21,25 @@ diff_mult 	= hslider("smear [hw:CV_X]", 0.5, 0, 1, 0.001) : si.smooth(0.998) :_ 
 late_diff 	= hslider("drag [hw:CV_Z]", 0.5, 0, 1, 0.001) : si.smoo: _ * MAX_LATE ;
 
 mod = 0;
-shift			= hslider("modulate [hw:CV_B]", 0.02, 0, 1, 0.001) : _-0.5 : *(2) :  pow(_,3) : si.smoo * sine
-	with {
-		rand = (0.5 * (1 + no.lfnoiseN(3,5)));
-		sine = os.lf_sawpos(133) ;// * ma.PI : (sin + 1)*0.5;
-	};
+// modulate: noon is off, both directions add a slow wobble of the diffusion
+// delay times (cubed for fine control near noon). It used to be a 133 Hz saw
+// with a depth of +-1, which sounded like FM noise.
+MOD_DEPTH	= 0.25;
+MOD_RATE	= 0.37;
+shift			= hslider("modulate [rev1:CV_B] [rev2:POT_B] [cv:CV_B]", 0.5, 0, 1, 0.001) : _-0.5 : *(2) :  pow(_,3) : si.smoo
+				: *(MOD_DEPTH * os.osc(MOD_RATE));
 
 decay  		= hslider("decay [hw:CV_Y]", 0.3, 0, 1., 0.001) : sqrt : si.smoo;
 
-predelay 	= hslider("lag [rev1:CV_D] [rev2:POT_B]", 0, 0, 1, 0.001) <: * : si.smoo  : _ * (MAX_LAG - 1);
-damp 		= hslider("colour [rev1:CV_C] [rev2:POT_A]", 0.1, 0, 1, 0.01) : si.smoo;
+predelay 	= hslider("lag [rev1:CV_D]", 0, 0, 1, 0.001) <: * : si.smoo  : _ * (MAX_LAG - 1);
+damp 		= hslider("colour [rev1:CV_C] [rev2:POT_C] [cv:CV_C]", 0.1, 0, 1, 0.01) : si.smoo;
 ducktime 	= 0.2 * (dtime / 2);
-dist_amt 	= hslider("push [rev1:CV_E] [rev2:POT_C]", 0, 0, 1, 0.01) : si.smoo;
-filt_ctrl   = hslider("Filter [hw:CV_A]", 0.5, 0, 1, 0.01) : si.smoo ;
+dist_amt 	= hslider("push [rev1:CV_E]", 0, 0, 1, 0.01) : si.smoo;
+filt_ctrl   = hslider("Filter [rev1:CV_A] [rev2:POT_A] [cv:CV_A]", 0.5, 0, 1, 0.01) : si.smoo ;
 diff_ctrl   = hslider("input diffusion", 0.5, 0, 1, 0.01) : si.smoo : _ * 1.3  ;
 lp_freq 	= filt_ctrl : clip(0.0, 0.48) * 2.083 <: *       : _ * 15900 : _ + 100 ;
 hp_freq		= filt_ctrl : (clip(0.52, 1) - 0.52) * 2.083  <: *: _ * 4980 : _ + 20 ;
-rev_mix 	= hslider("mix [rev1:CV_F] [rev2:POT_D]", 0.5, 0, 1, 0.01) : si.smoo;
+rev_mix 	= hslider("mix [rev1:CV_F] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01) : si.smoo;
  
 
 // Parameters
