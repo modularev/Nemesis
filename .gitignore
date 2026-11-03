@@ -10,3 +10,6 @@ software/**/lib/faust_programs/
 
 # Python
 __pycache__/
+
+# Python environments
+.venv/
