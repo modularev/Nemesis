@@ -40,7 +40,7 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   `arm-none-eabi-addr2line` from `~/.platformio/packages/toolchain-gccarmnoneeabi-teensy/bin`.
 - Use short tool timeouts (upload ~60 s) and keep long hardware tests in
   short steps with progress output.
-- software/firmware serial commands: `PROG <n>`, `CONTROLS`, `STATUS`
+- software/firmware serial commands: `PROG <n>`, `CONTROLS`, `MEM` (PSRAM, 16 MB on the rev2 unit), `STATUS`
   (MIDI bytes/USB messages, voice notes, NaN resets), CPU report every 2 s.
 - tests/hwtest serial commands: see the top of `software/tests/hwtest/src/main.cpp`
   (DC/SINE/FREQ per output, AIN meters, REG codec write, CVCAL/OUTCAL/CALSTORE).
@@ -68,6 +68,7 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 - Calibration in the rev2 test unit's EEPROM: outputs vs. HP 34401A (±0.4 mV),
   CV inputs in loopback from them (±1 mV A–D).
 - Firmware programs: juno (6 voice MIDI poly, chorus effect), mooSpace,
+  breaker (beat slice repeat/reverse, crush, comb, drive; MIDI clock),
   freqshift, superosc; 816 MHz, 48 kHz.
 - Open: juno stress test with cutoff/resonance/env at max (NaN counter),
   rev1 never tested with the unified code, the 0x44 register mode for DC on

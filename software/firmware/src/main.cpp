@@ -5,15 +5,18 @@
 // lib/faust_programs/nemesis_programs.h is generated from that list.
 // On rev2 the encoder selects (turn) and loads (push) a program, the last
 // one is restored at power up. Over USB serial: "PROG <n>" selects program n
-// (1 based), "CONTROLS" lists its hardware bindings, "STATUS" shows MIDI
+// (1 based), "CONTROLS" lists its hardware bindings, "MEM" the PSRAM size,
+// "GET /breaker/bpm" a parameter or meter of the running program, "STATUS" shows MIDI
 // traffic, voices and NaN resets; the CPU load is reported every 2 s.
 //
 
 #include <nemesis.h>
 #include "nemesis_programs.h"
 
+extern "C" uint8_t external_psram_size; // MB, set by the startup code
+
 elapsedMillis sinceReport;
-char command[24];
+char command[64];
 size_t commandLength = 0;
 
 void readCommands()
@@ -34,6 +37,10 @@ void readCommands()
          Serial.printf("OK PROG %d %s\n", n, nemesis::selectProgram(n - 1) ? "selected" : "failed");
       else if (strcmp(command, "CONTROLS") == 0)
          nemesis::printControls();
+      else if (strncmp(command, "GET ", 4) == 0)
+         Serial.printf("%s = %g\n", command + 4, nemesis::program(nemesis::currentProgram())->getParamValue(command + 4));
+      else if (strcmp(command, "MEM") == 0)
+         Serial.printf("PSRAM %u MB\n", external_psram_size);
       else if (strcmp(command, "STATUS") == 0)
          nemesis::program(nemesis::currentProgram())->printStatus(Serial);
    }
