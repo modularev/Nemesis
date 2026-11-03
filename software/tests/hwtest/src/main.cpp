@@ -5,8 +5,11 @@
 // - the LED of each button is lit while the button is pressed
 // - rev2 OLED: a bar per input (CV X..D, pots a..d), encoder position,
 //   buttons and encoder switch; hold both buttons for 2 s to calibrate the knobs
-// - audio channels 1 and 2 are passed through, every output can additionally
-//   carry a DC level set over USB serial: "DC <output 0-7> <level -1..1>"
+// - outputs carry a DC level and a sine set over USB serial:
+//   "DC <output 0-7> <level -1..1>", "SINE <output 0-7> <amplitude 0..1>",
+//   "FREQ <Hz>"; every audio input's DC level and AC RMS is printed ("AIN")
+// - "HPF 1|0" runs / freezes the high-pass filter of codec inputs 1-6,
+//   "REG <register> <value>" writes any CS42448 register
 // - rev2 volt calibration over serial (used by tests/cvtest):
 //   "CVCAL <input 0-6> <zero reading> <reading per volt>",
 //   "OUTCAL <output 0-7> <volts per unit> <volts at 0>",
@@ -20,18 +23,31 @@ hwtest passthrough;
 
 elapsedMillis sincePrint;
 
-std::string dcPath[8]; // FAUST addresses of the dc0..dc7 sliders
+// FAUST addresses of the test program parameters
+std::string dcPath[8], sinePath[8], inDcPath[8], inRmsPath[8], freqPath;
 char command[32];
 size_t commandLength = 0;
 
-void findDcParams()
+// addresses end in /<name><digit>, e.g. /hwtest/idc3
+void findParams()
 {
+   const struct
+   {
+      const char *name;
+      std::string *paths;
+   } groups[] = {{"/dc", dcPath}, {"/sine", sinePath}, {"/idc", inDcPath}, {"/irms", inRmsPath}};
+
    for (int p = 0; p < passthrough.getParamsCount(); p++)
    {
       std::string path = passthrough.getParamAddress(p);
-      size_t pos = path.rfind("/dc");
-      if (pos != std::string::npos && pos + 4 == path.size())
-         dcPath[path[pos + 3] - '0'] = path;
+      if (path.size() > 5 && path.compare(path.size() - 5, 5, "/freq") == 0)
+         freqPath = path;
+      for (const auto &g : groups)
+      {
+         size_t len = strlen(g.name);
+         if (path.size() == path.rfind(g.name) + len + 1 && isdigit(path.back()))
+            g.paths[path.back() - '0'] = path;
+      }
    }
 }
 
@@ -50,12 +66,39 @@ void readCommands()
       command[commandLength] = '\0';
       commandLength = 0;
 
-      int index;
+      int index, value;
       float a, b;
       if (sscanf(command, "DC %d %f", &index, &a) == 2 && index >= 0 && index < 8 && !dcPath[index].empty())
       {
          passthrough.setParamValue(dcPath[index], constrain(a, -1.0f, 1.0f));
          Serial.printf("OK DC %d %.4f\n", index, a);
+      }
+      else if (sscanf(command, "SINE %d %f", &index, &a) == 2 && index >= 0 && index < 8 && !sinePath[index].empty())
+      {
+         passthrough.setParamValue(sinePath[index], constrain(a, 0.0f, 1.0f));
+         Serial.printf("OK SINE %d %.4f\n", index, a);
+      }
+      else if (sscanf(command, "FREQ %f", &a) == 1 && !freqPath.empty())
+      {
+         passthrough.setParamValue(freqPath, constrain(a, 10.0f, 20000.0f));
+         Serial.printf("OK FREQ %.1f\n", a);
+      }
+      else if (sscanf(command, "REG %i %i", &index, &value) == 2)
+      {
+         // raw CS42448 register write, e.g. "REG 0x05 0xDC"
+         Serial.printf("OK REG 0x%02X 0x%02X %s\n", index, value, nemesis::codecWrite(index, value) ? "ok" : "no ack");
+      }
+      else if (strcmp(command, "LIST") == 0)
+      {
+         for (int p = 0; p < passthrough.getParamsCount(); p++)
+            Serial.printf("PARAM %s = %g\n", passthrough.getParamAddress(p).c_str(),
+                          passthrough.getParamValue(passthrough.getParamAddress(p)));
+      }
+      else if (sscanf(command, "HPF %d", &index) == 1)
+      {
+         // register 05h bits 7/6 freeze the high-pass of ADC1-2 / ADC3 (inputs 1-4 / 5-6)
+         nemesis::codecWrite(0x05, index ? 0x00 : 0xC0);
+         Serial.printf("OK HPF %d\n", index);
       }
 #if NEMESIS_HW_REV == 2
       else if (sscanf(command, "CVCAL %d %f %f", &index, &a, &b) == 3)
@@ -148,7 +191,7 @@ void drawTestScreen()
 void setup()
 {
    nemesis::begin(passthrough);
-   findDcParams();
+   findParams();
 #if NEMESIS_HW_REV == 2
    nemesis::showMonitor(false);
 #endif
@@ -196,6 +239,13 @@ void loop()
       Serial.print("RAW");
       for (int i = 0; i < nemesis::NUM_INPUTS; i++)
          Serial.printf(" %.5f", nemesis::rawInput(i));
+      Serial.println();
+      // audio inputs: DC level and AC RMS, relative to digital full scale
+      Serial.print("AIN");
+      for (int i = 0; i < 8; i++)
+         Serial.printf(" %.6f", inDcPath[i].empty() ? 0.0f : passthrough.getParamValue(inDcPath[i]));
+      for (int i = 0; i < 8; i++)
+         Serial.printf(" %.6f", inRmsPath[i].empty() ? 0.0f : passthrough.getParamValue(inRmsPath[i]));
       Serial.println();
 #if NEMESIS_HW_REV == 2
       Serial.print("VOLTS");

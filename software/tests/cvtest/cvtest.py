@@ -2,7 +2,8 @@
 """
 CV input test for the NEMESIS rev2, using DC coupled audio interface outputs
 (e.g. an Expert Sleepers ES-10 on ADAT) as voltage source. Needs the
-tests/hwtest firmware on the module and: pip install sounddevice numpy pyserial
+tests/hwtest firmware on the module. Run it with tests/.venv/bin/python
+(see tests/requirements.txt).
 
 1. Measure the output scale, nothing patched to the module yet:
 
@@ -41,6 +42,20 @@ tests/hwtest firmware on the module and: pip install sounddevice numpy pyserial
 
    The ES-10 defaults (--es10-*) are the multimeter readings of this setup.
    X/Y/Z only get their gain calibrated, their zero is set by the main knob.
+
+5. Outputs against an HP 34401A over RS-232 (driver in ~/GitHub/34401a-calibrator,
+   installed in tests/.venv): meter on output N (tip HI, sleeve LO), then
+
+     python3 cvtest.py calibrate-outputs-dmm --output N
+
+6. CV inputs from the calibrated outputs (loopback), output 1..7 patched to
+   CV X Y Z A B C D, X/Y/Z main knobs around noon:
+
+     python3 cvtest.py calibrate-inputs-loopback
+
+7. Audio inputs (codec ADC), output 1..8 patched to audio input 1..8:
+
+     python3 cvtest.py audio-inputs
 """
 
 import argparse
@@ -101,6 +116,7 @@ class Nemesis:
     def __init__(self, port):
         self.serial = serial.Serial(port, 115200, timeout=1)
         self.samples = []
+        self.ain = []
         self.replies = []
         self.lock = threading.Lock()
         self.running = True
@@ -117,6 +133,10 @@ class Nemesis:
                 values = [float(v) for v in line.split()[1:]]
                 with self.lock:
                     self.samples.append((time.time(), values))
+            elif line.startswith("AIN"):
+                values = [float(v) for v in line.split()[1:]]
+                with self.lock:
+                    self.ain.append((time.time(), values))
             elif line.startswith("OK") or line.startswith("OUT") or line.startswith("CV_"):
                 self.replies.append(line.strip())
 
@@ -129,6 +149,18 @@ class Nemesis:
         if not window:
             sys.exit("no data from the module, is the hwtest firmware running?")
         return np.mean(np.array(window)[:, :len(CV_NAMES)], axis=0)
+
+    def average_ain(self, seconds):
+        """Mean of the audio input meters: (dc[8], rms[8]) in digital full scale."""
+        start = time.time()
+        time.sleep(seconds)
+        with self.lock:
+            window = [v for t, v in self.ain if t >= start]
+            self.ain = self.ain[-100:]
+        if not window:
+            sys.exit("no AIN data, is the current hwtest firmware running?")
+        a = np.mean(np.array(window), axis=0)
+        return a[:8], a[8:16]
 
     def send(self, line):
         self.serial.write((line + "\n").encode())
@@ -260,6 +292,201 @@ def calibrate_outputs(args):
         nemesis.send("DC %d 0" % output)
         print("  output %d error at 0.2/2/4 V: %s mV" % (output + 1, " / ".join("%+.1f" % (e * 1000) for e in errors)))
     print("".join("\n" + r for r in nemesis.replies if "CALSTORE" in r))
+    nemesis.close()
+
+
+def calibrate_output_dmm(args):
+    from hp34401a import HP34401A  # pip install -e ~/GitHub/34401a-calibrator
+
+    output = args.output - 1
+    levels = np.linspace(-args.max_level, args.max_level, args.points)
+    nemesis = Nemesis(args.port)
+    time.sleep(0.5)
+    with HP34401A(args.dmm_port) as dmm:
+        dmm.configure_dcv(range_=10, nplc=args.nplc)
+        dmm.display("NEMESIS OUT%d" % args.output)
+
+        def measure(level):
+            nemesis.send("DC %d %.5f" % (output, level))
+            mean, sd = dmm.measure(args.readings, settle=args.settle)
+            return mean
+
+        # quick check that the meter sees this output before measuring
+        nemesis.send("OUTCAL %d %.4f 0" % (output, OUTPUT_VOLTS))  # uncorrected while measuring
+        low, high = measure(-0.4), measure(0.4)
+        if abs((high - low) - 0.8 * OUTPUT_VOLTS) > 0.5:
+            nemesis.send("DC %d 0" % output)
+            nemesis.close()
+            sys.exit("output %d: meter shows %+.3f V / %+.3f V for -2 V / +2 V, is it connected to output %d?" % (
+                args.output, low, high, args.output))
+
+        measured = np.array([measure(l) for l in levels])
+        per_unit, offset = np.polyfit(levels, measured, 1)
+        linearity_mv = np.max(np.abs(measured - (per_unit * levels + offset))) * 1000
+        print("output %d: %.5f V per unit, %+.5f V at 0, linear to %.2f mV over %+.1f..%+.1f V" % (
+            args.output, per_unit, offset, linearity_mv, levels[0] * per_unit, levels[-1] * per_unit))
+
+        nemesis.send("OUTCAL %d %.6f %.6f" % (output, per_unit, offset))
+        nemesis.send("CALSTORE")
+        time.sleep(0.5)
+        checks = [(v, measure(v / OUTPUT_VOLTS)) for v in (-4.0, 0.0, 4.0)]
+        print("  check: %s" % ",  ".join("%+.1f V -> %+.5f V (%+.2f mV)" % (v, m, (m - v) * 1000) for v, m in checks))
+        nemesis.send("DC %d 0" % output)
+    stored = [r for r in nemesis.replies if "CALSTORE" in r]
+    nemesis.close()
+    print("  %s" % (stored[0] if stored else "WARNING: no CALSTORE confirmation from the module"))
+
+
+def calibrate_inputs_loopback(args):
+    patch = [(int(o) - 1, cv) for o, cv in (p.split(":") for p in args.patch.split(","))]
+    volts = np.arange(-args.max_volts, args.max_volts + 1e-9, args.step)
+    nemesis = Nemesis(args.port)
+    time.sleep(0.5)
+    for output, _ in patch:
+        nemesis.send("DC %d 0" % output)
+    fit = load_fit() if os.path.exists(FIT_FILE) else {}
+
+    def read(output, cv, v):
+        nemesis.send("DC %d %.5f" % (output, v / OUTPUT_VOLTS))
+        time.sleep(args.settle)
+        return nemesis.average(args.average)[CV_NAMES.index(cv)]
+
+    for output, cv in patch:
+        ch = CV_NAMES.index(cv)
+        readings = np.array([read(output, cv, v) for v in volts])
+        nemesis.send("DC %d 0" % output)
+        valid = (readings > 0.003) & (readings < 0.997)
+        if valid.sum() < 6:
+            print("%s: only %d unclipped points from output %d, not calibrated" % (cv, valid.sum(), output + 1))
+            continue
+        slope, intercept = np.polyfit(volts[valid], readings[valid], 1)
+        residual_mv = np.max(np.abs(readings[valid] - (slope * volts[valid] + intercept))) / slope * 1000
+        zero = 0.5 if cv in BIPOLAR else intercept  # X/Y/Z: the main knob sets the zero
+        fit[cv] = {"per_volt": round(slope, 6), "zero": round(intercept, 6)}
+        nemesis.send("CVCAL %d %.6f %.6f" % (ch, zero, slope))
+        span = volts[valid]
+        print("%-5s from output %d: %.6f per volt (design %+.2f%%), 0 V reads %+.5f%s, linear to %.1f mV over %+.1f..%+.1f V" % (
+            cv, output + 1, slope, (slope / 0.12 - 1) * 100, intercept,
+            " (knob)" if cv in BIPOLAR else "", residual_mv, span[0], span[-1]))
+
+    nemesis.send("CALSTORE")
+    time.sleep(0.5)
+    print("\ncheck with the stored calibration, A-D (V) and the X/Y/Z gain (difference between +-2 V):")
+    for output, cv in patch:
+        ch = CV_NAMES.index(cv)
+        if cv in BIPOLAR:
+            lo, hi = (to_volts(fit, cv, read(output, cv, v)) for v in (-2.0, 2.0))
+            print("  %s: +-2 V reads a %.4f V span (%+.2f mV)" % (cv, hi - lo, (hi - lo - 4.0) * 1000))
+        else:
+            errs = [to_volts(fit, cv, read(output, cv, v)) - v for v in (0.5, 2.5, 4.5)]
+            print("  %s error at 0.5/2.5/4.5 V: %s mV" % (cv, " / ".join("%+.2f" % (e * 1000) for e in errs)))
+        nemesis.send("DC %d 0" % output)
+    print("".join("\n" + r for r in nemesis.replies if "CALSTORE" in r))
+    nemesis.close()
+    with open(FIT_FILE, "w") as f:
+        json.dump(fit, f, indent=2)
+    print("CV fits saved to %s" % FIT_FILE)
+
+
+def audio_inputs(args):
+    nemesis = Nemesis(args.port)
+    time.sleep(0.5)
+    for o in range(8):
+        nemesis.send("DC %d 0" % o)
+        nemesis.send("SINE %d 0" % o)
+    nemesis.send("FREQ %.1f" % args.freq)
+    nemesis.send("HPF 1")
+    settle = args.settle
+    _, noise = nemesis.average_ain(1.0)
+
+    print("1) %g Hz sine on one output at a time, amplitude raised while there's room" % args.freq)
+    gains = {}
+    for o in range(8):
+        peak_v = 0.25
+        while True:
+            nemesis.send("SINE %d %.5f" % (o, peak_v / OUTPUT_VOLTS))
+            time.sleep(settle)
+            _, rms = nemesis.average_ain(0.6)
+            responding = int(np.argmax(rms))
+            in_peak = rms[responding] * np.sqrt(2)  # of full scale
+            if in_peak > 0.3 or peak_v >= 4.0:
+                break
+            # only ever raise the level, aiming at ~half of full scale
+            peak_v = min(4.0, peak_v * min(4.0, max(1.25, 0.5 / max(in_peak, 1e-6))))
+        nemesis.send("SINE %d 0" % o)
+        others = np.delete(rms, responding)
+        crosstalk_db = 20 * np.log10(max(others.max(), 1e-9) / rms[responding])
+        fs_per_volt = in_peak / peak_v
+        gains[o] = (responding, fs_per_volt)
+        print("  out %d -> in %d: %.3f V peak gives %.3f of full scale, full scale = %.3f V peak, "
+              "next strongest input %.0f dB below" % (o + 1, responding + 1, peak_v, in_peak, 1 / fs_per_volt, crosstalk_db))
+
+    print("\n2) DC with the codec high-pass frozen (inputs 1-6; 7-8 have a fixed 1 Hz high-pass)")
+    nemesis.send("HPF 0")
+    time.sleep(0.5)
+    for o, (inp, fs_per_volt) in gains.items():
+        dc_v = min(2.0, 0.4 / fs_per_volt)
+        readings = []
+        for v in (0.0, dc_v, -dc_v):
+            nemesis.send("DC %d %.5f" % (o, v / OUTPUT_VOLTS))
+            time.sleep(settle)
+            early = nemesis.average_ain(0.5)[0][inp]
+            time.sleep(args.hold)
+            late = nemesis.average_ain(0.5)[0][inp]
+            readings.append((v, early, late))
+        nemesis.send("DC %d 0" % o)
+        (_, z0, z1), (vp, p0, p1), (vn, n0, n1) = readings
+        dc_gain = (p1 - n1) / (2 * dc_v)
+        held = abs(p1 - z1) > 0.5 * abs(p0 - z0) if abs(p0 - z0) > 0.01 else False
+        print("  in %d: 0 V %+.4f, %+.2f V %+.4f -> %+.4f after %.0f s, %+.2f V %+.4f -> %+.4f  => %s, %s, DC gain %+.3f FS/V (AC %.3f)" % (
+            inp + 1, z1, vp, p0, p1, args.hold, vn, n0, n1,
+            "DC coupled" if held else "AC coupled",
+            "inverted" if dc_gain < 0 else "same polarity", dc_gain, fs_per_volt))
+
+    print("\n3) the same DC step with the high-pass running")
+    nemesis.send("HPF 1")
+    o, (inp, fs_per_volt) = 0, gains[0]
+    dc_v = min(2.0, 0.4 / fs_per_volt)
+    nemesis.send("DC %d %.5f" % (o, dc_v / OUTPUT_VOLTS))
+    prev_t = 0.0
+    for t in (0.5, 1.5, 3.0, 6.0):
+        time.sleep(max(0.0, t - prev_t - 0.3))
+        prev_t = t
+        print("  in %d, %.1f s after a %+.2f V step: %+.4f" % (inp + 1, t, dc_v, nemesis.average_ain(0.3)[0][inp]))
+    nemesis.send("DC %d 0" % o)
+    nemesis.close()
+    print("\nnoise floor before the test (RMS, dBFS): %s" % " ".join("%.0f" % (20 * np.log10(max(n, 1e-9))) for n in noise))
+
+
+def codec_mode(args):
+    """AC gain and DC response of IN 1-6 with CS42448 register 05h set to --reg05."""
+    nemesis = Nemesis(args.port)
+    time.sleep(0.5)
+    for o in range(8):
+        nemesis.send("DC %d 0" % o)
+        nemesis.send("SINE %d 0" % o)
+    nemesis.send("FREQ 1000")
+    nemesis.send("REG 0x05 %s" % args.reg05)
+    time.sleep(2.0)
+    print("register 05h = %s" % args.reg05, flush=True)
+    for o in range(6):
+        nemesis.send("SINE %d %.5f" % (o, 1.0 / OUTPUT_VOLTS))
+        time.sleep(1.5)
+        _, rms = nemesis.average_ain(0.5)
+        nemesis.send("SINE %d 0" % o)
+        ac = rms[o] * np.sqrt(2)
+        loudest = int(np.argmax(rms))
+        dc = []
+        for v in (0.0, 1.0, -1.0):
+            nemesis.send("DC %d %.5f" % (o, v / OUTPUT_VOLTS))
+            time.sleep(1.5)
+            early = nemesis.average_ain(0.4)[0][o]
+            time.sleep(2.0)
+            dc.append((early, nemesis.average_ain(0.4)[0][o]))
+        nemesis.send("DC %d 0" % o)
+        dc_gain = (dc[1][1] - dc[2][1]) / 2.0
+        print("  in %d: AC %.4f FS/V (loudest input %d)  DC %+.4f FS/V  [0 V %+.4f, +1 V %+.4f -> %+.4f, -1 V %+.4f -> %+.4f]" % (
+            o + 1, ac, loudest + 1, dc_gain, dc[0][1], dc[1][0], dc[1][1], dc[2][0], dc[2][1]), flush=True)
     nemesis.close()
 
 
@@ -412,6 +639,39 @@ def main():
     p.add_argument("--average", type=float, default=0.6)
     p.add_argument("--port", default="/dev/cu.usbmodem103226001")
     p.set_defaults(func=calibrate_outputs)
+
+    p = sub.add_parser("calibrate-outputs-dmm", help="calibrate one module output against an HP 34401A")
+    p.add_argument("--output", type=int, required=True, help="1..8")
+    p.add_argument("--max-level", type=float, default=0.9, help="highest level, 0.9 = 4.5 V")
+    p.add_argument("--points", type=int, default=13)
+    p.add_argument("--readings", type=int, default=3, help="meter readings averaged per level")
+    p.add_argument("--nplc", type=float, default=10)
+    p.add_argument("--settle", type=float, default=0.3)
+    p.add_argument("--dmm-port", help="meter serial port, default: first USB serial adapter")
+    p.add_argument("--port", default="/dev/cu.usbmodem103226001")
+    p.set_defaults(func=calibrate_output_dmm)
+
+    p = sub.add_parser("calibrate-inputs-loopback", help="calibrate CV inputs from the calibrated module outputs")
+    p.add_argument("--patch", default="1:CV_X,2:CV_Y,3:CV_Z,4:CV_A,5:CV_B,6:CV_C,7:CV_D",
+                   help="output (1 based):CV input pairs")
+    p.add_argument("--max-volts", type=float, default=4.5)
+    p.add_argument("--step", type=float, default=0.5)
+    p.add_argument("--settle", type=float, default=0.4)
+    p.add_argument("--average", type=float, default=0.6)
+    p.add_argument("--port", default="/dev/cu.usbmodem103226001")
+    p.set_defaults(func=calibrate_inputs_loopback)
+
+    p = sub.add_parser("audio-inputs", help="mapping, gain, polarity and DC coupling of the audio inputs")
+    p.add_argument("--freq", type=float, default=1000)
+    p.add_argument("--settle", type=float, default=1.5, help="the input meters average over ~0.3 s")
+    p.add_argument("--hold", type=float, default=3.0)
+    p.add_argument("--port", default="/dev/cu.usbmodem103226001")
+    p.set_defaults(func=audio_inputs)
+
+    p = sub.add_parser("codec-mode", help="AC/DC response of IN 1-6 for a CS42448 register 05h value")
+    p.add_argument("--reg05", default="0x1C")
+    p.add_argument("--port", default="/dev/cu.usbmodem103226001")
+    p.set_defaults(func=codec_mode)
 
     args = parser.parse_args()
     if args.command == "hold" and abs(args.value) > 1:

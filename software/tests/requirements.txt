@@ -1,0 +1,8 @@
+# test tools (cvtest.py, MIDI tests): python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# python-rtmidi has no wheels for Python 3.14 yet, use 3.12
+pyserial
+numpy
+sounddevice
+mido
+python-rtmidi
+-e ../../../34401a-calibrator
