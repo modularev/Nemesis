@@ -14,6 +14,10 @@
 #include "nemesis_programs.h"
 
 extern "C" uint8_t external_psram_size; // MB, set by the startup code
+extern "C" char *__brkval;
+extern "C" unsigned long _heap_end;
+#include <malloc.h>
+static size_t heapTop() { return (char *)&_heap_end - __brkval; } // never used heap above the break
 
 elapsedMillis sinceReport;
 char command[64];
@@ -40,7 +44,8 @@ void readCommands()
       else if (strncmp(command, "GET ", 4) == 0)
          Serial.printf("%s = %g\n", command + 4, nemesis::program(nemesis::currentProgram())->getParamValue(command + 4));
       else if (strcmp(command, "MEM") == 0)
-         Serial.printf("PSRAM %u MB\n", external_psram_size);
+         Serial.printf("PSRAM %u MB, heap free %u kB (top %u kB)\n", external_psram_size,
+                       (unsigned)(heapTop() + mallinfo().fordblks) / 1024, (unsigned)heapTop() / 1024);
       else if (strcmp(command, "STATUS") == 0)
          nemesis::program(nemesis::currentProgram())->printStatus(Serial);
    }

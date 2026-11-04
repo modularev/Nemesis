@@ -45,6 +45,9 @@ class nemesis_midi;
 class NemesisAudio : public nemesis::Program
 {
    private:
+    // set at the very end of start() and cleared first in stop(): the audio
+    // interrupt calls update() while start() is still allocating
+    volatile bool fReady = false;
     float** fInChannel;
     float** fOutChannel;
     MapUI* fUI;
@@ -59,7 +62,8 @@ class NemesisAudio : public nemesis::Program
     ~NemesisAudio();
 
     bool start() override;
-    bool started() const override { return fDSP != nullptr; }
+    bool started() const override { return fReady; }
+    void stop() override;
     void update(void) override;
 
     const char* name() const override { return "NemesisAudio"; }

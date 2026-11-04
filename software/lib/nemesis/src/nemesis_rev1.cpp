@@ -210,6 +210,8 @@ namespace nemesis
 
       // rev1 calibrates while scaling the readings, there is no separate raw value
       float rawInput(int index) { return value[index]; }
+      // not calibrated in volts: assume the 0..1 input spans 0..5 V
+      float inputVolts(int index) { return value[index] * 5.0f; }
 
       void resetVoltCalibration() {}
    }

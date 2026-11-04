@@ -33,6 +33,9 @@
 # A polyphonic program can define 'effect = ...;' next to 'process': the voices
 # are mixed and run through the effect once (e.g. a chorus), as in FAUST's
 # faust2xx -effect auto.
+#
+# Programs can import("nemesis.lib") from this folder: the module's transport
+# (internal tempo or MIDI clock).
 
 import glob
 import os
@@ -143,7 +146,7 @@ def compile_effect(faust, faust_options, arch_dir, dsp_path, tmp):
 def arch_inputs(arch_dir):
     files = []
     for root, _, names in os.walk(arch_dir):
-        files += [os.path.join(root, n) for n in names if n.endswith((".cpp", ".h", ".py"))]
+        files += [os.path.join(root, n) for n in names if n.endswith((".cpp", ".h", ".py", ".lib"))]
     return files
 
 
@@ -183,6 +186,7 @@ def generate(faust, version, dsp_path, out_dir, arch_dir, faust_options, define_
             "-cn", PLACEHOLDER + "_dsp",
             "-A", arch_dir, "-a", os.path.join(arch_dir, ARCH_CPP),
             "-I", os.path.dirname(os.path.abspath(dsp_path)),
+            "-I", arch_dir,  # nemesis.lib
             dsp_path, "-o", tmp_cpp]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
@@ -291,6 +295,18 @@ def run_platformio(env):
 
     if poly_sources:
         env.AddBuildMiddleware(rtti_middleware)
+
+    # Project Tasks > Custom > Check programs: the programs are compiled
+    # above whenever PlatformIO loads this script, so the task only stops
+    # there; FAUST errors show with file and line, no C++ build or upload
+    env.AddCustomTarget(
+        name="check_programs",
+        dependencies=None,
+        actions=["@echo FAUST programs compiled: %s" % ", ".join(names)],
+        title="Check programs",
+        description="Compile the FAUST programs only (seconds), to find errors before an upload",
+        always_build=True,
+    )
 
 
 def main(argv):

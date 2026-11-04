@@ -92,6 +92,10 @@ namespace nemesis
          file.printf("popup=%d\n", system_settings.popup ? 1 : 0);
          file.printf("brightness=%d\n", system_settings.brightness);
          file.printf("cv_range=%d\n", system_settings.cvRangeVolts);
+         file.printf("clock=%d\n", system_settings.clockSource);
+         file.printf("tempo=%g\n", system_settings.tempo);
+         file.printf("run=%d\n", system_settings.run ? 1 : 0);
+         file.printf("clock_offset=%d\n", system_settings.clockOffsetMs);
          file.close();
       }
 
@@ -171,6 +175,14 @@ namespace nemesis
                system_settings.brightness = constrain(v, 1, 10);
             else if (strcmp(key, "cv_range") == 0)
                system_settings.cvRangeVolts = (v == 5) ? 5 : 8;
+            else if (strcmp(key, "clock") == 0)
+               system_settings.clockSource = constrain(v, 0, 2);
+            else if (strcmp(key, "tempo") == 0)
+               system_settings.tempo = constrain((float)atof(value), 20.0f, 300.0f);
+            else if (strcmp(key, "run") == 0)
+               system_settings.run = v != 0;
+            else if (strcmp(key, "clock_offset") == 0)
+               system_settings.clockOffsetMs = constrain(v, -50, 50);
          }
          file.close();
       }
@@ -212,6 +224,15 @@ namespace nemesis
             c.changed = true;
          }
          file.close();
+      }
+
+      FLASHMEM void flush(Program &program)
+      {
+         if (program_pending != &program)
+            return;
+         if (card)
+            saveProgram(program);
+         program_pending = nullptr;
       }
 
       void service()

@@ -22,6 +22,7 @@
 #include <Arduino.h>
 #include <Audio.h>
 #include "nemesis_program.h"
+#include "nemesis_transport_core.h"
 
 #ifndef NEMESIS_HW_REV
 #error "Set the hardware revision: build_flags = -D NEMESIS_HW_REV=1 or 2 (see software/README.md)"
@@ -98,9 +99,13 @@ namespace nemesis
       bool popup = true;     // rev2: show the parameter of a turned knob
       int brightness = 10;   // rev2: display, 1..10
       int cvRangeVolts = 8;  // rev2: CV A-D read 0..1 = 0..5 V or 0..8 V
+      // transport
+      int clockSource = 0;   // TransportCore::AUTO (MIDI clock when there is one), INTERNAL, MIDI
+      float tempo = 120;     // internal clock, BPM
+      bool run = true;       // also switched by MIDI Start/Stop
+      int clockOffsetMs = 0; // shifts the transport position, -50..+50 ms
    };
    SystemSettings &systemSettings();
-   int midiChannel();
    // schedule saving to the SD card
    void systemSettingsChanged();
    void programSettingsChanged(Program &program);
@@ -113,6 +118,16 @@ namespace nemesis
    constexpr int NUM_ROUTABLE_CV = 0;
 #endif
    int routableCV(int i); // input index
+
+   // transport: position in MIDI clock ticks (24 per quarter) on the internal
+   // tempo or the MIDI clock, see nemesis_transport_core.h; FAUST programs
+   // get it with nemesis.lib
+   const TransportState &transportState();
+   namespace transport
+   {
+      // advance by one audio block, called by the program before computing it
+      const TransportState &block();
+   }
 
 #if NEMESIS_HW_REV == 2
    extern Adafruit_SSD1306 display;

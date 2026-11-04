@@ -9,10 +9,13 @@
 //
 // Display: the current program and the CPU load. Turning the encoder opens
 // the program settings (parameters without a knob, CV A-D routing), a click
-// the program list, press and hold the system settings (MIDI channel, knob
+// the program list, press and hold the system settings (transport run, clock,
+// tempo, clock offset, MIDI channel, knob
 // popup, brightness, CV A-D range). In a list a click edits the highlighted
 // entry, turn to change it, click again when done. Settings are stored on
-// the SD card. Turning a knob shows its parameter for a moment.
+// the SD card. Turning a knob shows its parameter for a moment. Programs
+// that use the transport show its clock and tempo on the home screen; run,
+// clock source, tempo and offset are system settings.
 //
 // Knob calibration (POT A-D): hold both buttons for 2 seconds while running
 // (or button 1 while powering up), turn the knobs through their full range,
@@ -158,7 +161,8 @@ namespace nemesis
          int brightness_shown = -1;
 
          // entries of the settings lists
-         enum ItemKind { ITEM_SETTING, ITEM_ROUTE, ITEM_MIDI, ITEM_POPUP, ITEM_BRIGHTNESS, ITEM_CV_RANGE };
+         enum ItemKind { ITEM_SETTING, ITEM_ROUTE, ITEM_RUN, ITEM_CLOCK, ITEM_TEMPO, ITEM_OFFSET,
+                         ITEM_MIDI, ITEM_POPUP, ITEM_BRIGHTNESS, ITEM_CV_RANGE };
          struct Item
          {
             ItemKind kind;
@@ -173,6 +177,7 @@ namespace nemesis
          // X/Y/Z sum knob and CV, so an input that keeps moving (patched
          // modulation) is ignored until it rests again.
          constexpr uint32_t PARAM_SHOW_MS = 1500;
+         constexpr uint32_t CLIP_SHOW_MS = 500;
          constexpr uint32_t PARAM_REDRAW_MS = 40;
          constexpr float PARAM_MOVE = 0.01f;       // change that counts as turning, ~40x the pot noise
          constexpr uint32_t PARAM_REST_MS = 500;   // still this long: the movement ended
@@ -496,8 +501,12 @@ namespace nemesis
                return;
             if (c.gate)
                snprintf(text, size, "%s", v > 0.5f ? "on" : "off");
+            else if (c.log) // log ranges: 3 significant places
+               snprintf(text, size, fabsf(v) < 10.0f ? "%.2f" : fabsf(v) < 100.0f ? "%.1f" : "%.0f", v);
             else
                snprintf(text, size, a < 10.0f ? "%.2f" : a < 1000.0f ? "%.1f" : "%.0f", v);
+            if (c.unit)
+               snprintf(text + strlen(text), size - strlen(text), " %s", c.unit);
          }
 
          // x for text ending at the right edge
@@ -519,21 +528,48 @@ namespace nemesis
             display.setCursor(0, 7);
             if (!sdCardPresent())
                display.print(F("no SD "));
+            if (activeProgram().usesTransport())
+            {
+               const TransportState &t = transportState();
+               display.print(t.external ? F("MIDI ") : F("int "));
+               if (t.running)
+                  display.printf("%.1f ", t.bpm);
+               else
+                  display.print(F("stop "));
+            }
+            float limit_db = 0; // strongest gain reduction of the program's limiters
             for (const Indicator &i : activeProgram().indicators())
             {
-               if (i.led >= 0)
+               if (i.limit) // linear gain of the limiter
+                  limit_db = min(limit_db, 20.0f * log10f(max(*i.zone, 0.001f)));
+               if (i.led >= 0 || i.limit)
                   continue;
                Control c = {};
                c.min = i.min;
                c.max = i.max;
                c.menu = i.menu;
+               c.unit = i.unit;
                formatValue(c, *i.zone, text, sizeof(text));
                display.print(text);
                display.print(' ');
             }
-            snprintf(text, sizeof(text), "cpu %d%%", (int)AudioProcessorUsage());
-            display.setCursor(rightAligned(text, 7), 7);
+            // top right: CLIP after an output clipped, else limiting, else the CPU load
+            bool clip = millis() - activeProgram().lastClipMillis() < CLIP_SHOW_MS && activeProgram().lastClipMillis() != 0;
+            if (clip)
+               snprintf(text, sizeof(text), "CLIP");
+            else if (limit_db < -0.5f)
+               snprintf(text, sizeof(text), "lim %d dB", (int)roundf(limit_db));
+            else
+               snprintf(text, sizeof(text), "cpu %d%%", (int)AudioProcessorUsage());
+            int16_t x = rightAligned(text, 7);
+            if (clip)
+            {
+               display.fillRect(x - 2, 0, 130 - x, 9, WHITE);
+               display.setTextColor(BLACK);
+            }
+            display.setCursor(x, 7);
             display.print(text);
+            display.setTextColor(WHITE);
             display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
             display.setCursor(0, 31);
             display.print(activeProgram().name());
@@ -602,8 +638,7 @@ namespace nemesis
                display.setCursor(0, 17);
             display.print(c.label);
 
-            float range = c.max - c.min;
-            float position = range != 0.0f ? constrain((*c.zone - c.min) / range, 0.0f, 1.0f) : 0.0f;
+            float position = constrain(c.position(*c.zone), 0.0f, 1.0f);
             display.drawRect(0, 26, 92, 6, WHITE);
             display.fillRect(1, 27, (int)(position * 90.0f + 0.5f), 4, WHITE);
 
@@ -632,6 +667,10 @@ namespace nemesis
             }
             else if (screen == SYSTEM)
             {
+               items[item_count++] = {ITEM_RUN, 0};
+               items[item_count++] = {ITEM_CLOCK, 0};
+               items[item_count++] = {ITEM_TEMPO, 0};
+               items[item_count++] = {ITEM_OFFSET, 0};
                items[item_count++] = {ITEM_MIDI, 0};
                items[item_count++] = {ITEM_POPUP, 0};
                items[item_count++] = {ITEM_BRIGHTNESS, 0};
@@ -648,6 +687,14 @@ namespace nemesis
             case ITEM_ROUTE:
                snprintf(text, size, "CV %c", 'A' + item.index - routableCV(0));
                return text;
+            case ITEM_RUN:
+               return "run";
+            case ITEM_CLOCK:
+               return "clock";
+            case ITEM_TEMPO:
+               return "tempo";
+            case ITEM_OFFSET:
+               return "clock offset";
             case ITEM_MIDI:
                return "MIDI channel";
             case ITEM_POPUP:
@@ -677,6 +724,21 @@ namespace nemesis
                snprintf(text, size, "%s", target >= 0 ? activeProgram().controls()[target].label : "off");
                break;
             }
+            case ITEM_RUN:
+               snprintf(text, size, "%s", s.run ? "on" : "off");
+               break;
+            case ITEM_CLOCK:
+            {
+               static const char *const names[] = {"auto", "internal", "MIDI"};
+               snprintf(text, size, "%s", names[constrain(s.clockSource, 0, 2)]);
+               break;
+            }
+            case ITEM_TEMPO:
+               snprintf(text, size, "%.0f", s.tempo);
+               break;
+            case ITEM_OFFSET:
+               snprintf(text, size, "%+d ms", s.clockOffsetMs);
+               break;
             case ITEM_MIDI:
                if (s.midiChannel == 0)
                   snprintf(text, size, "omni");
@@ -707,6 +769,8 @@ namespace nemesis
                Control &c = p.controls()[item.index];
                if (c.gate)
                   c.value = delta > 0 ? 1.0f : 0.0f;
+               else if (c.log) // even steps along the knob travel
+                  c.value = c.fromPosition(constrain(c.position(c.value) + delta * (fast ? 0.05f : 0.01f), 0.0f, 1.0f));
                else
                {
                   float lo = min(c.min, c.max), hi = max(c.min, c.max);
@@ -740,6 +804,18 @@ namespace nemesis
                programSettingsChanged(p);
                return;
             }
+            case ITEM_RUN:
+               s.run = delta > 0;
+               break;
+            case ITEM_CLOCK:
+               s.clockSource = constrain(s.clockSource + delta, 0, 2);
+               break;
+            case ITEM_TEMPO:
+               s.tempo = constrain(roundf(s.tempo) + delta * (fast ? 5 : 1), 20.0f, 300.0f);
+               break;
+            case ITEM_OFFSET:
+               s.clockOffsetMs = constrain(s.clockOffsetMs + delta, -50, 50);
+               break;
             case ITEM_MIDI:
                s.midiChannel = constrain(s.midiChannel + delta, 0, 16);
                break;
@@ -1056,6 +1132,8 @@ namespace nemesis
       FLASHMEM void resetVoltCalibration() { resetVolts(); }
 
       float rawInput(int index) { return raw(index); }
+      // CV inputs calibrated, the knobs as 0..5 V
+      float inputVolts(int index) { return index < CV_NUM ? cvVolts(index) : input(index) * 5.0f; }
 
       int aliasIndex(const char *name) { return -1; }
 

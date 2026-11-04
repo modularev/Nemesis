@@ -13,6 +13,7 @@
 #include "nemesis.h"
 #include "nemesis_hw.h"
 #include "nemesis_settings.h"
+#include "nemesis_transport.h"
 #include <EEPROM.h>
 #include <Wire.h>
 
@@ -86,6 +87,7 @@ namespace nemesis
       current = (stored < numPrograms && !hw::forceFirstProgram()) ? stored : 0;
 
       settings::begin();
+      transport::begin();
       active = programs[current];
       active->start();
       settings::load(*active);
@@ -100,7 +102,30 @@ namespace nemesis
       if (index == current)
          return true;
       Program *next = programs[index];
-      if (!next->start()) // allocates the DSP on first use, outside the audio interrupt
+      Program *previous = active;
+
+      // free the previous program first, so the next one gets the internal
+      // RAM; its settings are written before (its update() is still called,
+      // it returns early without a DSP)
+      if (previous && previous != next)
+      {
+         settings::flush(*previous);
+         NEMESIS_TRACE("switch: stop %s\n", previous->name());
+         AudioNoInterrupts();
+         previous->stop();
+         AudioInterrupts();
+      }
+
+      // with the audio update paused: building a program changes FAUST's
+      // global MIDI tables, which the running program's update() reads
+      NEMESIS_TRACE("switch: start %s\n", next->name());
+      AudioNoInterrupts();
+      bool started = next->start();
+      NEMESIS_TRACE("switch: started %d\n", started);
+      if (!started && previous)
+         previous->start(); // keep the previous program running
+      AudioInterrupts();
+      if (!started)
          return false;
       settings::load(*next);
 
@@ -116,6 +141,33 @@ namespace nemesis
       sinceSelect = 0;
       return true;
    }
+
+   // in RAM1 (DTCM: single cycle, no cache); RAM2 stays free for the heap,
+   // which FAUST's MIDI handling needs a lot of (8 kB per MIDI mapped parameter)
+#ifndef NEMESIS_ARENA_SIZE
+#define NEMESIS_ARENA_SIZE (192 * 1024)
+#endif
+   namespace
+   {
+      uint8_t arena[NEMESIS_ARENA_SIZE] __attribute__((aligned(32)));
+      size_t arena_used = 0;
+   }
+
+   void *arenaAllocate(size_t size)
+   {
+      size_t start = (arena_used + 31) & ~(size_t)31;
+      if (start + size > sizeof(arena))
+         return nullptr;
+      arena_used = start + size;
+      return arena + start;
+   }
+
+   bool arenaOwns(const void *p)
+   {
+      return p >= (const void *)arena && p < (const void *)(arena + sizeof(arena));
+   }
+
+   void arenaReset() { arena_used = 0; }
 
    int currentProgram() { return current; }
 
@@ -141,17 +193,22 @@ namespace nemesis
          for (Control &c : active->controls())
          {
             float v;
+            if (c.volts)
+            {
+               *c.zone = hw::inputVolts(c.input); // V/Oct: volts, no scaling or CV routing
+               continue;
+            }
             if (c.input >= 0)
                v = hw::input(c.input);
             else if (c.cvMask || c.changed) // settings are only written when needed, MIDI CCs may set them too
-               v = (c.max != c.min) ? (c.value - c.min) / (c.max - c.min) : 0.0f;
+               v = c.position(c.value);
             else
                continue;
             c.changed = false;
             for (uint32_t mask = c.cvMask; mask; mask &= mask - 1)
                v += hw::input(__builtin_ctz(mask));
             v = constrain(v, 0.0f, 1.0f);
-            *c.zone = c.gate ? (v > 0.5f ? 1.0f : 0.0f) : c.min + v * (c.max - c.min);
+            *c.zone = c.gate ? (v > 0.5f ? 1.0f : 0.0f) : c.fromPosition(v);
          }
          for (const Indicator &i : active->indicators())
             if (i.led >= 0)

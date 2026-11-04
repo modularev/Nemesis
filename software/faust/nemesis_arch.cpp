@@ -112,19 +112,35 @@ std::list<GUI*> GUI::fGuiList;
 ztimedmap GUI::gTimedZoneMap;
 #endif
 
-// DSP memory: large buffers (delay lines, tables) go to the optional PSRAM,
-// extmem_malloc() falls back to RAM when no PSRAM is fitted
+// DSP memory: small allocations from the heap; delay lines up to
+// NEMESIS_RAM_BUFFER_MAX from the library's RAM arena (fast, read on every
+// sample: PSRAM reads cost a lot of CPU, e.g. mooSpace), the rest from the
+// optional PSRAM (extmem_malloc() falls back to RAM without PSRAM).
+// MIDI programs stay allocated (see stop()), so they don't use the arena,
+// which is emptied whenever a program stops.
 #ifndef NEMESIS_EXTMEM_THRESHOLD
 #define NEMESIS_EXTMEM_THRESHOLD 1024
+#endif
+#ifndef NEMESIS_RAM_BUFFER_MAX
+#define NEMESIS_RAM_BUFFER_MAX 32768
 #endif
 
 struct NemesisAudioMemory : public dsp_memory_manager {
     void* allocate(size_t size) override
     {
-        return (size >= NEMESIS_EXTMEM_THRESHOLD) ? extmem_malloc(size) : malloc(size);
+        if (size < NEMESIS_EXTMEM_THRESHOLD) return malloc(size);
+#if !defined(NVOICES) && !defined(MIDICTRL)
+        if (size <= NEMESIS_RAM_BUFFER_MAX) {
+            void* p = nemesis::arenaAllocate(size);
+            if (p) { NEMESIS_TRACE("  alloc %u arena\n", (unsigned)size); return p; }
+        }
+#endif
+        NEMESIS_TRACE("  alloc %u psram\n", (unsigned)size);
+        return extmem_malloc(size);
     }
     void destroy(void* ptr) override
     {
+        if (nemesis::arenaOwns(ptr)) return;  // emptied as a whole in stop()
         extmem_free(ptr); // falls back to free(ptr) for addresses in RAM
     }
 };
@@ -181,6 +197,13 @@ struct NemesisAudioBindUI : public UI {
     }
 };
 
+// global metadata: 'declare output "clip";', 'declare audio_outputs "1-6";'
+struct NemesisAudioMeta : public Meta {
+    nemesis::Program* fProgram;
+    NemesisAudioMeta(nemesis::Program* program) : fProgram(program) {}
+    void declare(const char* key, const char* value) override { fProgram->declareProgram(key, value); }
+};
+
 FLASHMEM NemesisAudio::NemesisAudio() : nemesis::Program(2 * FAUST_INPUTS, new audio_block_t*[2 * FAUST_INPUTS]),
     fInChannel(nullptr), fOutChannel(nullptr), fUI(nullptr), fMIDIHandler(nullptr), fMIDIInterface(nullptr), fDSP(nullptr), fVoices(nullptr), fResets(0)
 {
@@ -195,6 +218,7 @@ FLASHMEM bool NemesisAudio::start()
 #endif
 
     mydsp::fManager = &gNemesisAudioMemory;
+    NEMESIS_TRACE("  classInit\n");
     mydsp::classInit(AUDIO_SAMPLE_RATE_EXACT);
 #ifdef NVOICES
     // voices are cloned with mydsp::create(), so they use the memory manager too
@@ -216,11 +240,16 @@ FLASHMEM bool NemesisAudio::start()
     // with -mem, init() is empty: classInit() above plus instanceInit()
     fDSP->instanceInit(AUDIO_SAMPLE_RATE_EXACT);
 
+    NEMESIS_TRACE("  MapUI\n");
     fUI = new MapUI();
     fDSP->buildUserInterface(fUI);
 
+    NEMESIS_TRACE("  bind\n");
     NemesisAudioBindUI bindUI(this);
     fDSP->buildUserInterface(&bindUI);
+    NemesisAudioMeta meta(this);
+    fDSP->metadata(&meta);
+    bindOutputSetting();  // "output": clip/soft/tape/fold of the audio outputs
 
     fInChannel = new float*[FAUST_INPUTS];
     for (int i = 0; i < FAUST_INPUTS; i++) {
@@ -232,49 +261,93 @@ FLASHMEM bool NemesisAudio::start()
     }
 
 #ifdef MIDICTRL
+    NEMESIS_TRACE("  MIDI\n");
     fMIDIHandler = new nemesis_midi();
     fMIDIInterface = new MidiUI(fMIDIHandler);
     // a polyphonic DSP registers itself for MIDI notes here (FAUST's poly-dsp.h)
     fDSP->buildUserInterface(fMIDIInterface);
     fMIDIInterface->run();
 #endif
+    NEMESIS_TRACE("  restore\n");
+    restoreBindings();  // settings and CV routing from before a stop()
+    fReady = true;
     return true;
 }
 
 FLASHMEM NemesisAudio::~NemesisAudio()
 {
+    stop();
+}
+
+// frees the DSP, its buffers and the MIDI handlers; start() builds them again
+FLASHMEM void NemesisAudio::stop()
+{
     if (!fDSP) return;
-#ifdef MIDICTRL
-    delete fMIDIInterface;
-    delete fMIDIHandler;
+#if defined(NVOICES) || defined(MIDICTRL)
+    // MIDI programs stay allocated (they are small): FAUST's poly DSP deletes
+    // its voices with delete, which can't free memory from our memory manager,
+    // and deleting a MidiUI while another program's MidiUI exists hangs in
+    // FAUST's shared MIDI tables
+    return;
 #endif
+    fReady = false;
+    NEMESIS_TRACE("  release\n");
+    releaseBindings();  // the parameter zones go away with the DSP
+
     for (int i = 0; i < FAUST_INPUTS; i++) {
         delete[] fInChannel[i];
     }
     delete[] fInChannel;
+    fInChannel = nullptr;
     for (int i = 0; i < NEMESIS_NUM_OUTPUTS; i++) {
         delete[] fOutChannel[i];
     }
     delete[] fOutChannel;
+    fOutChannel = nullptr;
+    NEMESIS_TRACE("  delete MapUI\n");
     delete fUI;
+    fUI = nullptr;
 #ifdef NVOICES
     delete fDSP;
+    fVoices = nullptr;
 #else
     mydsp::destroy(fDSP);
 #endif
+    NEMESIS_TRACE("  classDestroy\n");
+    fDSP = nullptr;
     mydsp::classDestroy();
+    nemesis::arenaReset();  // this program's delay lines
+#ifdef MIDICTRL
+    // a poly DSP unregisters from the MidiUI, the MidiUI from the handler:
+    // delete them in that order
+    delete fMIDIInterface;
+    fMIDIInterface = nullptr;
+    delete fMIDIHandler;
+    fMIDIHandler = nullptr;
+#endif
 }
 
 void NemesisAudio::update(void)
 {
-    if (!fDSP) return;  // not started, only happens if patched without selectProgram()
+    if (!fReady) return;  // not started, or start() is still allocating
+    // transport position for this block ([transport:..] parameters)
+    beginBlock();
+    // MIDI received in the background: mono note parameters, then FAUST's MIDI
+    // handler; programs without MIDI only empty the queue, so old messages
+    // don't reach the next program
+    nemesis::MidiMessage message;
+    while (nemesis::midiRead(message)) {
+        handleMidi(message);
 #ifdef MIDICTRL
-    // Process the MIDI messages received by the Teensy
-    fMIDIHandler->processMidi();
+        fMIDIHandler->handle(message);
+#endif
+    }
+#ifdef MIDICTRL
     // MidiUI queues [midi:clock] toggles with a timestamp for a timed DSP,
     // which this architecture doesn't run: apply them now, else the queue
     // fills up and the clock never reaches the program
     for (auto& timed : GUI::gTimedZoneMap) {
+        if (!timed.second) continue;  // operator[] in FAUST's modifyZone can leave empty entries
         DatedControl dated(0, 0);
         while (ringbuffer_read_space(timed.second) >= sizeof(DatedControl)) {
             ringbuffer_read(timed.second, (char*)&dated, sizeof(DatedControl));
@@ -318,6 +391,14 @@ void NemesisAudio::update(void)
         }
     }
 
+    // output stage (setting "output", see nemesis_output.h)
+    int mode = outputMode();
+    if (mode != nemesis::output::CLIP) {
+        for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS; channel++) {
+            if (isAudioOutput(channel)) nemesis::output::shapeBlock(mode, fOutChannel[channel], AUDIO_BLOCK_SAMPLES);
+        }
+    }
+
     for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS; channel++) {
         // per output gain and offset calibration of the module
         float scale, offset;
@@ -325,12 +406,23 @@ void NemesisAudio::update(void)
         audio_block_t* msb = allocate();
         audio_block_t* lsb = allocate();
         if (msb && lsb) {
+            uint32_t clipped = 0;  // samples beyond the DAC range, shown as CLIP
             for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
                 float sample = fOutChannel[channel][i] * scale + offset;
-                int32_t val = (sample >= 1.0f) ? INT32_MAX : (sample <= -1.0f) ? INT32_MIN : (int32_t)(sample * MULT_32);
+                int32_t val;
+                if (sample >= 1.0f) {
+                    val = INT32_MAX;
+                    clipped++;
+                } else if (sample <= -1.0f) {
+                    val = INT32_MIN;
+                    clipped++;
+                } else {
+                    val = (int32_t)(sample * MULT_32);
+                }
                 msb->data[i] = val >> 16;
                 lsb->data[i] = val & 0xFFFF;
             }
+            countClip(channel, clipped);
             transmit(msb, 2 * channel);
             transmit(lsb, 2 * channel + 1);
         }
@@ -363,10 +455,11 @@ FLASHMEM void NemesisAudio::printStatus(Print& out)
 {
     out.printf("%s: %lu resets after inf/NaN output\n", name(), (unsigned long)fResets);
 #ifdef MIDICTRL
-    out.printf("MIDI: %lu bytes on the MIDI jack (last status 0x%02X), %lu USB messages\n",
-               (unsigned long)nemesis_midi::fSerialBytes, nemesis_midi::fLastStatus,
-               (unsigned long)nemesis_midi::fUSBMessages);
 #endif
+    nemesis::printMidiStatus(out);
+    out.print("clipped samples per output:");
+    for (int i = 0; i < NEMESIS_NUM_OUTPUTS; i++) out.printf(" %lu", (unsigned long)clipCount(i));
+    out.println();
 #ifdef NVOICES
     if (!fVoices) return;
     mydsp_poly* poly = static_cast<mydsp_poly*>(fVoices);

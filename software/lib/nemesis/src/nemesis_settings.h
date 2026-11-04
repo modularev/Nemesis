@@ -25,6 +25,8 @@ namespace nemesis
       void load(Program &program);
       // writes changed settings to the card, called from update()
       void service();
+      // writes a program's pending changes now (before it is stopped)
+      void flush(Program &program);
    }
 }
 

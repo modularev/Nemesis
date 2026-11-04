@@ -58,7 +58,7 @@ architecture files or the options change.
 | outputs | – | 8, DC coupled, ±5 V; calibrated: 1.0 = 5 V, 0 = 0 V |
 | LEDs / buttons | 3 / 3 | 2 push buttons with LEDs, encoder with push switch |
 | display | – | 128x32 OLED: program and CPU load; encoder turn: program settings, click: program list, hold: system settings; name and value of a parameter while its knob is turned |
-| settings | – | text files on the SD card (`/NEMESIS/`): per program the parameters without a knob and the CV A–D routing, system: MIDI channel, knob popup, brightness, CV A–D range (0–5 V or 0–8 V) |
+| settings | – | text files on the SD card (`/NEMESIS/`): per program the parameters without a knob and the CV A–D routing, system: transport (run, clock, tempo, offset), MIDI channel, knob popup, brightness, CV A–D range (0–5 V or 0–8 V) |
 | calibration | knob min/max in EEPROM, hold button 3 at power up | POT A–D: hold both buttons for 2 s (or button 1 at power up); CV inputs and outputs in volts with `tests/cvtest` (±2.5 mV / ±2 mV), both in EEPROM |
 
 Both use the CS42448 codec in TDM mode. Every FAUST channel is a 24 bit
@@ -128,6 +128,81 @@ effect = chorus;   // after the voice mix
 
 The architecture clears a program's DSP state if it ever outputs inf/NaN
 (e.g. an unstable filter), so it can't stay silent.
+
+## MIDI and transport
+
+The library reads the MIDI jack and USB MIDI in a 100 µs timer interrupt
+(both revisions). Note, controller and other channel messages are queued
+for the program's MIDI handler (FAUST `[midi:on]` programs), filtered by the
+MIDI channel setting.
+
+The transport is system wide: a position in MIDI clock ticks (24 per
+quarter) that runs on the internal tempo or follows the MIDI clock. Clock
+ticks are timestamped when they arrive and tracked by a phase locked loop,
+so the position moves smoothly and stays within a few samples of the clock
+(simulated: 2.6 samples rms at a steady tempo, ~12 on a tempo ramp). MIDI
+Start resets it to the downbeat, Stop and Continue stop and resume, Song
+Position sets it; when the clock stops without a Stop the position holds,
+after 0.3 s the internal tempo takes over (clock `auto`). System settings:
+run, clock (auto, internal, MIDI), tempo, clock offset (±50 ms, against
+latency). FAUST programs use it with `import("nemesis.lib");`:
+
+```faust
+import("nemesis.lib");
+sixteenth = nm_grid(6);        // 1 sample impulse on every 1/16 (and at start)
+beat      = nm_grid(24);
+length    = nm_samples(6);     // samples per 1/16 at the current tempo
+```
+
+`nm_position` (ticks, wraps every 16 bars), `nm_running`, `nm_bpm` and
+`nm_external` are there too, see `faust/nemesis.lib`. The home screen shows
+the clock and tempo of programs that use it.
+
+## program memory
+
+Selecting a program frees the previous one, except MIDI programs (juno,
+superosc), which stay loaded (small; FAUST's MIDI objects can't be deleted
+safely). Settings and CV routing are kept. The running program's delay lines
+up to 32 kB come from a 192 kB arena in RAM1 (fast, no cache; emptied when
+the program stops), larger ones from the PSRAM. PSRAM reads cost a lot of
+CPU: mooSpace runs at ~56 % with its diffusers in the arena, ~65 % without.
+`MEM` shows the free heap; build with `-D NEMESIS_DEBUG_SWITCH` to trace
+program switches and buffer placement over serial.
+
+## output levels, clipping and limiting
+
+Outputs are DC coupled, 1.0 = 5 V; beyond the DAC range a sample clips.
+Clipping is always detected: the home screen shows CLIP and `STATUS` the
+clipped samples per output.
+
+Every program gets the setting "output" (turn the encoder), stored with its
+other settings: what happens to its audio outputs above 4.4 V, after the
+FAUST code (`lib/nemesis/src/nemesis_output.h`):
+
+| output | |
+|---|---|
+| clip | nothing, the DAC clips hard |
+| soft | transparent to 4.4 V, then bends into 4.9 V (default) |
+| tape | gradual saturation over the whole range |
+| fold | folds the wave back at 4.9 V (wavefolder) |
+
+CV, gate and V/Oct outputs must stay exact, so only outputs 1/2 are shaped
+unless the program declares its audio outputs; it can also change the
+default:
+
+```faust
+declare audio_outputs "1-6";
+declare output "clip";
+```
+
+A program can still limit itself: `nm_limiter2(ceiling)` from `nemesis.lib`
+(stereo linked, 1 ms lookahead, soft clip; about 0.5 % CPU), whose gain
+reduction the home screen shows ("lim -3 dB").
+
+More label metadata: `[volts:1]` gives a CV input in volts (calibrated on
+rev2, for V/Oct), `[mono:note]`, `[mono:gate]` and `[mono:velocity]` follow
+monophonic MIDI (last note priority, the note stays after release),
+`[scale:log]` maps a knob exponentially, `[unit:Hz]` is shown after values.
 
 ## several programs in one firmware
 

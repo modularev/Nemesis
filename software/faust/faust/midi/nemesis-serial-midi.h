@@ -31,35 +31,17 @@
 #include "Arduino.h"
 #include "faust/midi/midi.h"
 
-namespace nemesis {
-    int midiChannel(); // system setting: 0 omni, 1..16
-}
+#include <nemesis_program.h> // midiRead(), midiChannel()
 
 /**
- *  MIDI input for the NEMESIS module: serial MIDI on Serial1 and, when the
- *  Teensy USB type includes MIDI, USB MIDI.
- *
- *  Serial MIDI is parsed here instead of using the Arduino MIDI library,
- *  whose 'midi' namespace collides with FAUST's 'midi' class.
+ *  MIDI input for the NEMESIS module. The library reads the MIDI jack and
+ *  USB MIDI in the background (nemesis_transport.cpp) and keeps the MIDI
+ *  clock for its transport; this handler passes the queued messages to
+ *  FAUST, filtered by the MIDI channel setting.
  */
 class nemesis_midi : public midi_handler {
 
     private:
-
-        uint8_t fStatus = 0;
-        uint8_t fData[2];
-        int fDataCount = 0;
-
-        static int dataLength(uint8_t status)
-        {
-            switch (status & 0xF0) {
-                case 0xC0:  // Program Change
-                case 0xD0:  // Channel Pressure
-                    return 1;
-                default:
-                    return 2;
-            }
-        }
 
         void handleMessage(uint8_t status, uint8_t data1, uint8_t data2)
         {
@@ -109,63 +91,24 @@ class nemesis_midi : public midi_handler {
             }
         }
 
-        // running status parser, system common and SysEx messages are skipped
-        void parse(uint8_t byte)
-        {
-            if (byte >= 0xF8) {
-                handleRealtime(byte);
-            } else if (byte >= 0xF0) {
-                fStatus = 0;
-            } else if (byte & 0x80) {
-                fStatus = byte;
-                fDataCount = 0;
-            } else if (fStatus) {
-                fData[fDataCount++] = byte;
-                if (fDataCount == dataLength(fStatus)) {
-                    handleMessage(fStatus, fData[0], fDataCount > 1 ? fData[1] : 0);
-                    fDataCount = 0;
-                }
-            }
-        }
-
     public:
-
-        // traffic counters for diagnostics (shared by all programs)
-        inline static uint32_t fSerialBytes = 0;
-        inline static uint32_t fUSBMessages = 0;
-        inline static uint8_t fLastStatus = 0;
 
         nemesis_midi() : midi_handler("nemesis") {}
 
         virtual ~nemesis_midi() { stopMidi(); }
 
-        bool startMidi()
-        {
-            Serial1.begin(31250);
-            return true;
-        }
+        bool startMidi() { return true; } // the library opened the MIDI jack
 
         void stopMidi() {}
 
-        void processMidi()
+        // a message from the library's queue, before every audio block
+        void handle(const nemesis::MidiMessage& m)
         {
-            while (Serial1.available()) {
-                uint8_t byte = Serial1.read();
-                fSerialBytes++;
-                if (byte & 0x80) fLastStatus = byte;
-                parse(byte);
+            if (m.status >= 0xF8) {
+                handleRealtime(m.status);
+            } else {
+                handleMessage(m.status, m.data1, m.data2);
             }
-#if defined(MIDI_INTERFACE)
-            while (usbMIDI.read()) {
-                fUSBMessages++;
-                uint8_t type = usbMIDI.getType();
-                if (type >= 0xF8) {
-                    handleRealtime(type);
-                } else if (type >= 0x80 && type < 0xF0) {
-                    handleMessage(type | (usbMIDI.getChannel() - 1), usbMIDI.getData1(), usbMIDI.getData2());
-                }
-            }
-#endif
         }
 };
 

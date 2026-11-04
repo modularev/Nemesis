@@ -1,0 +1,75 @@
+//##############################################################################
+// nemesis.lib - the NEMESIS module's transport for FAUST programs
+//
+//   import("nemesis.lib");   (faust_build.py adds this folder to the imports)
+//
+// The transport is system wide: it runs on the internal tempo or follows the
+// MIDI clock (MIDI jack or USB, Start/Stop/Continue/Song Position), set in the
+// system settings (press and hold the encoder): clock, tempo, run, offset.
+// Its position counts MIDI clock ticks, 24 per quarter note, and wraps every
+// 16 bars; it is sample accurate and moves smoothly (the MIDI clock is
+// tracked by a phase locked loop in the library).
+//
+//   nm_position           ticks, 0 .. 1536
+//   nm_running            1 while the transport runs
+//   nm_bpm                tempo
+//   nm_external           1 while following the MIDI clock
+//   nm_grid(ticks)        1 sample impulse at every multiple of ticks, and when
+//                         the transport starts (24 quarter, 6 sixteenth, 8 eighth
+//                         triplet, 96 bar)
+//   nm_grid_index(ticks)  number of the current grid step since the wrap
+//   nm_samples(ticks)     length of that many ticks in samples at the tempo
+//
+// Output protection (outputs: 1.0 = 5 V, the DAC clips a little above):
+//
+//   nm_limiter2(ceiling)  stereo linked peak limiter for audio outputs, e.g.
+//                         nm_limiter2(0.9) = 4.5 V; the home screen shows its
+//                         gain reduction ("lim -3 dB")
+//   nm_softclip(ceiling)  soft saturation to the ceiling above 90 % of it
+//
+// Use them on audio only: CV, gate and V/Oct outputs must stay exact. Clipped
+// outputs are always detected by the module ("CLIP" on the home screen).
+//##############################################################################
+
+nm_ticks_per_quarter = 24;
+nm_wrap = 1536;
+
+// written by the library at the start of every audio block
+nm_block_position = hslider("transport position [transport:position]", 0, 0, 1536, 0);
+nm_increment      = hslider("transport increment [transport:increment]", 0, 0, 1, 0);
+nm_running        = hslider("transport running [transport:running]", 0, 0, 1, 1);
+nm_bpm            = hslider("transport bpm [transport:bpm]", 120, 0, 1000, 0);
+nm_external       = hslider("transport external [transport:external]", 0, 0, 1, 1);
+
+// samples since the block position changed, i.e. since the block start while running
+nm_counter(reset) = (+(1) : *(1 - reset)) ~ _;
+nm_position = fmod(nm_block_position + nm_counter(nm_block_position != nm_block_position') * nm_increment, nm_wrap);
+
+nm_grid_index(ticks) = floor(nm_position / ticks);
+// compares the step of this and the previous sample with the same length,
+// so a length changed between grid points doesn't trigger
+nm_grid(ticks) = (nm_running > 0) & ((floor(nm_position / ticks) != floor(nm_position' / ticks)) | (nm_running' == 0));
+nm_samples(ticks) = ticks * ma.SR * 60 / (nm_ticks_per_quarter * max(1, nm_bpm));
+
+//---- output protection ------------------------------------------------------
+
+// stereo linked limiter: 1 ms lookahead, 0.3 ms attack, 150 ms release, then
+// a soft clip that catches what the attack lets through
+nm_limiter2(ceiling, l, r) = l @ NM_LOOKAHEAD * gain, r @ NM_LOOKAHEAD * gain
+                           : nm_softclip(ceiling), nm_softclip(ceiling)
+with {
+    peak = max(abs(l), abs(r));
+    reduction = 1 - min(1, ceiling / max(peak, 1e-6));          // 0 .. 1 needed
+    gain = 1 - (reduction : si.onePoleSwitching(0.0003, 0.15)) : meter;
+    // linear gain, the module shows it in dB (no log10 per sample)
+    meter(g) = attach(g, g : vbargraph("limiter [limit:1]", 0, 1));
+};
+NM_LOOKAHEAD = 48;   // samples, 1 ms at 48 kHz
+
+// above the knee a rational curve t / (1 + t) approaches the ceiling smoothly
+// (cheaper than tanh, which FAUST would compute on every sample)
+nm_softclip(ceiling, x) = select2(abs(x) > knee, x, ma.signum(x) * (knee + (ceiling - knee) * t / (1 + t)))
+with {
+    knee = 0.9 * ceiling;
+    t = max(0, abs(x) - knee) / (ceiling - knee);
+};

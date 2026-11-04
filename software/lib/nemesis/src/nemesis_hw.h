@@ -30,6 +30,8 @@ namespace nemesis
 
       float input(int index);
       float rawInput(int index);
+      // an input in volts: calibrated on rev2 CV inputs, otherwise estimated
+      float inputVolts(int index);
       void resetVoltCalibration();
       // revision specific alternative input names, -1 if none matches
       int aliasIndex(const char *name);
