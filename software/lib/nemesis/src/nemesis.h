@@ -30,8 +30,10 @@
 #error "NEMESIS_HW_REV must be 1 or 2"
 #endif
 
+// audio blocks for Audio library objects; the programs read and write the
+// TDM DMA buffers directly (nemesis_tdm.h) and need none
 #ifndef NEMESIS_AUDIO_MEMORY
-#define NEMESIS_AUDIO_MEMORY 100
+#define NEMESIS_AUDIO_MEMORY 4
 #endif
 
 #if NEMESIS_HW_REV == 2
@@ -57,9 +59,11 @@ namespace nemesis
 
    extern AudioControlCS42448 codec;
 
-   // start the hardware and patch the program between the codec TDM in- and outputs,
-   // audio memory is set with -D NEMESIS_AUDIO_MEMORY=<blocks> (default 100)
+   // start the hardware and run the program on the codec's TDM in- and outputs,
+   // audio memory is set with -D NEMESIS_AUDIO_MEMORY=<blocks> (default 4)
    void begin(Program &program);
+   // audio block size, latency and late output writes (nemesis_tdm.h)
+   void printAudioStatus(Print &out);
 
    // several programs in one firmware: the last selected one is restored at
    // power up, on rev2 the encoder selects (turn) and loads (push) a program

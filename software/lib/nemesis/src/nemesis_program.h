@@ -113,7 +113,9 @@ namespace nemesis
       // running program gets the fast internal RAM; settings values and CV
       // routing are kept and restored by the next start()
       virtual void stop() {}
-      // number of FAUST audio channels (each uses an MSB and an LSB TDM slot)
+      // updated by the Audio library (only the running program)
+      void setActive(bool on) { active = on; }
+      // number of FAUST audio channels (one 32 bit TDM slot each)
       virtual int numAudioInputs() const = 0;
       virtual int numAudioOutputs() const = 0;
 

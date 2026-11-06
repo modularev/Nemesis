@@ -11,6 +11,7 @@
 //
 
 #include "nemesis.h"
+#include "nemesis_tdm.h"
 #include "nemesis_hw.h"
 #include "nemesis_settings.h"
 #include "nemesis_transport.h"
@@ -23,14 +24,10 @@ namespace nemesis
 
    namespace
    {
-      // the CS42448 runs in TDM mode: 16 slots of 16 bit, every 24 bit
-      // channel uses two consecutive slots (MSB, LSB)
-      constexpr int MAX_CHANNELS = 8;
-
-      AudioInputTDM tdmIn;
-      AudioOutputTDM tdmOut;
-      AudioConnection *cords[4 * MAX_CHANNELS];
-      int numCords = 0;
+      // the CS42448 runs in TDM mode: 8 channels of 32 bit slots (24 bit
+      // audio); programs read and write the DMA buffers (nemesis_tdm.h)
+      InputTDM tdmIn;    // first: its DMA interrupt starts the updates
+      OutputTDM tdmOut;
 
       Program *active = nullptr;
 
@@ -48,24 +45,11 @@ namespace nemesis
       bool storePending = false;
       elapsedMillis sinceSelect;
 
-      FLASHMEM void patch(Program &program)
+      // only the running program is updated by the Audio library
+      FLASHMEM void run(Program &program)
       {
-         for (int i = 0; i < numCords; i++)
-            delete cords[i];
-         numCords = 0;
-
-         int inputs = min(program.numAudioInputs(), MAX_CHANNELS);
-         for (int ch = 0; ch < inputs; ch++)
-         {
-            cords[numCords++] = new AudioConnection(tdmIn, 2 * ch, program, 2 * ch);
-            cords[numCords++] = new AudioConnection(tdmIn, 2 * ch + 1, program, 2 * ch + 1);
-         }
-         int outputs = min(program.numAudioOutputs(), MAX_CHANNELS);
-         for (int ch = 0; ch < outputs; ch++)
-         {
-            cords[numCords++] = new AudioConnection(program, 2 * ch, tdmOut, 2 * ch);
-            cords[numCords++] = new AudioConnection(program, 2 * ch + 1, tdmOut, 2 * ch + 1);
-         }
+         for (int i = 0; i < numPrograms; i++)
+            programs[i]->setActive(programs[i] == &program);
       }
    }
 
@@ -91,8 +75,15 @@ namespace nemesis
       active = programs[current];
       active->start();
       settings::load(*active);
-      patch(*active);
+      run(*active);
       hw::begin(*active);
+   }
+
+   FLASHMEM void printAudioStatus(Print &out)
+   {
+      out.printf("audio: block %d samples, round trip %d samples; output written late %lu of %lu blocks\n",
+                 AUDIO_BLOCK_SAMPLES, 2 * AUDIO_BLOCK_SAMPLES, (unsigned long)tdm::lateWrites(),
+                 (unsigned long)tdm::writes());
    }
 
    FLASHMEM bool selectProgram(int index)
@@ -132,7 +123,7 @@ namespace nemesis
       for (int i = 0; i < NUM_LEDS; i++) // the LEDs belong to the program
          hw::setLed(i, false);
       AudioNoInterrupts();
-      patch(*next); // the old program is disconnected and no longer updated
+      run(*next); // the old program is no longer updated
       active = next;
       current = index;
       AudioInterrupts();

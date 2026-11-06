@@ -47,7 +47,10 @@ void readCommands()
          Serial.printf("PSRAM %u MB, heap free %u kB (top %u kB)\n", external_psram_size,
                        (unsigned)(heapTop() + mallinfo().fordblks) / 1024, (unsigned)heapTop() / 1024);
       else if (strcmp(command, "STATUS") == 0)
+      {
          nemesis::program(nemesis::currentProgram())->printStatus(Serial);
+         nemesis::printAudioStatus(Serial);
+      }
    }
 }
 

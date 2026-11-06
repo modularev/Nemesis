@@ -61,8 +61,12 @@ architecture files or the options change.
 | settings | – | text files on the SD card (`/NEMESIS/`): per program the parameters without a knob and the CV A–D routing, system: transport (run, clock, tempo, offset), MIDI channel, knob popup, brightness, CV A–D range (0–5 V or 0–8 V) |
 | calibration | knob min/max in EEPROM, hold button 3 at power up | POT A–D: hold both buttons for 2 s (or button 1 at power up); CV inputs and outputs in volts with `tests/cvtest` (±2.5 mV / ±2 mV), both in EEPROM |
 
-Both use the CS42448 codec in TDM mode. Every FAUST channel is a 24 bit
-sample carried in two 16 bit TDM slots, up to 8 channels in and out.
+Both use the CS42448 codec in TDM mode: 8 channels in and out, each a 32 bit
+slot (24 bit audio). The running program reads and writes the TDM DMA
+buffers directly (`lib/nemesis/src/nemesis_tdm.h`), without Audio library
+blocks: the round trip is two audio blocks (256 samples, 5.3 ms at 48 kHz)
+plus the codec. `STATUS` shows output blocks written too late (a program at
+almost 100 % CPU).
 
 On rev2 the pots are converted in the background (ADC interrupt, 32x
 hardware averaging) and smoothed adaptively: still when resting, no lag
@@ -237,7 +241,8 @@ traffic, voices, NaN resets); it reports the CPU load every 2 s.
 - Large FAUST buffers (1 kB and up) are allocated in the optional PSRAM and
   fall back to RAM when none is fitted. Change the threshold with
   `-D NEMESIS_EXTMEM_THRESHOLD=<bytes>`.
-- Audio blocks: `-D NEMESIS_AUDIO_MEMORY=<blocks>` (default 100).
+- Audio blocks: `-D NEMESIS_AUDIO_MEMORY=<blocks>` (default 4; the programs
+  use none, only extra Audio library objects would).
 - The block size is set with `-D AUDIO_BLOCK_SAMPLES=<n>` (default 128),
   the sample rate with `-D AUDIO_SAMPLE_RATE_EXACT=48000.0f`.
 

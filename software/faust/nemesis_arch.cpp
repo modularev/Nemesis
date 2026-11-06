@@ -47,6 +47,7 @@
 #include <string.h> // for memset
 
 #include "NemesisAudio.h"
+#include <nemesis_tdm.h>  // the TDM DMA buffers
 
 // IMPORTANT: in order for MapUI to work, the teensy linker must be g++
 #include "faust/gui/MapUI.h"
@@ -103,7 +104,7 @@
 #define NEMESIS_NUM_OUTPUTS FAUST_OUTPUTS
 #endif
 
-// 24 bit samples travel as two 16 bit TDM slots (MSB, LSB) per channel
+// samples are 32 bit words in the TDM DMA buffers (24 bit audio, left justified)
 #define MULT_32 2147483648.0f
 #define DIV_32 4.656612873077392578125e-10f
 
@@ -204,7 +205,8 @@ struct NemesisAudioMeta : public Meta {
     void declare(const char* key, const char* value) override { fProgram->declareProgram(key, value); }
 };
 
-FLASHMEM NemesisAudio::NemesisAudio() : nemesis::Program(2 * FAUST_INPUTS, new audio_block_t*[2 * FAUST_INPUTS]),
+// no Audio library inputs: the program reads the TDM DMA buffer (nemesis_tdm.h)
+FLASHMEM NemesisAudio::NemesisAudio() : nemesis::Program(0, nullptr),
     fInChannel(nullptr), fOutChannel(nullptr), fUI(nullptr), fMIDIHandler(nullptr), fMIDIInterface(nullptr), fDSP(nullptr), fVoices(nullptr), fResets(0)
 {
 }
@@ -358,22 +360,20 @@ void NemesisAudio::update(void)
     GUI::updateAllGuis();
 #endif
 
+    // inputs from the receive DMA buffer: one 32 bit word per channel and
+    // frame (24 bit audio, left justified), see nemesis_tdm.h
+    const int32_t* frames = nemesis::tdm::input();
     for (int channel = 0; channel < FAUST_INPUTS; channel++) {
+        if (!frames || channel >= nemesis::tdm::CHANNELS) {
+            memset(fInChannel[channel], 0, AUDIO_BLOCK_SAMPLES * sizeof(float));
+            continue;
+        }
         // input polarity of the module
         float scale = DIV_32 * nemesis::inputScale(channel);
-        audio_block_t* msb = receiveReadOnly(2 * channel);
-        audio_block_t* lsb = receiveReadOnly(2 * channel + 1);
-        if (msb) {
-            for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                uint16_t low = lsb ? (uint16_t)lsb->data[i] : 0;
-                int32_t val = (int32_t)(((uint32_t)(uint16_t)msb->data[i] << 16) | low);
-                fInChannel[channel][i] = val * scale;
-            }
-        } else {
-            memset(fInChannel[channel], 0, AUDIO_BLOCK_SAMPLES * sizeof(float));
+        const int32_t* src = frames + channel;
+        for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+            fInChannel[channel][i] = src[i * nemesis::tdm::CHANNELS] * scale;
         }
-        if (msb) release(msb);
-        if (lsb) release(lsb);
     }
 
     fDSP->compute(AUDIO_BLOCK_SAMPLES, fInChannel, fOutChannel);
@@ -399,36 +399,33 @@ void NemesisAudio::update(void)
         }
     }
 
-    for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS; channel++) {
+    // outputs into the transmit DMA half that plays next (zeroed by the
+    // interrupt: unused channels stay silent)
+    int32_t* out = nemesis::tdm::output();
+    if (!out) return;
+    for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS && channel < nemesis::tdm::CHANNELS; channel++) {
         // per output gain and offset calibration of the module
         float scale, offset;
         nemesis::outputCorrection(channel, scale, offset);
-        audio_block_t* msb = allocate();
-        audio_block_t* lsb = allocate();
-        if (msb && lsb) {
-            uint32_t clipped = 0;  // samples beyond the DAC range, shown as CLIP
-            for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-                float sample = fOutChannel[channel][i] * scale + offset;
-                int32_t val;
-                if (sample >= 1.0f) {
-                    val = INT32_MAX;
-                    clipped++;
-                } else if (sample <= -1.0f) {
-                    val = INT32_MIN;
-                    clipped++;
-                } else {
-                    val = (int32_t)(sample * MULT_32);
-                }
-                msb->data[i] = val >> 16;
-                lsb->data[i] = val & 0xFFFF;
+        int32_t* dest = out + channel;
+        uint32_t clipped = 0;  // samples beyond the DAC range, shown as CLIP
+        for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+            float sample = fOutChannel[channel][i] * scale + offset;
+            int32_t val;
+            if (sample >= 1.0f) {
+                val = INT32_MAX;
+                clipped++;
+            } else if (sample <= -1.0f) {
+                val = INT32_MIN;
+                clipped++;
+            } else {
+                val = (int32_t)(sample * MULT_32);
             }
-            countClip(channel, clipped);
-            transmit(msb, 2 * channel);
-            transmit(lsb, 2 * channel + 1);
+            dest[i * nemesis::tdm::CHANNELS] = val;
         }
-        if (msb) release(msb);
-        if (lsb) release(lsb);
+        countClip(channel, clipped);
     }
+    nemesis::tdm::outputDone();
 }
 
 int NemesisAudio::numAudioInputs() const { return FAUST_INPUTS; }
