@@ -80,7 +80,6 @@ No bytes arrived from a MIDI keyboard on the test unit; USB MIDI works.
   calibrated per output in software (±0.4 mV against the HP 34401A); a
   hardware offset trim or matched references would make the module usable for
   CV without calibration.
-- OUT 5 jack was not soldered (intermittent signal), fixed on the test unit.
 
 ## CV inputs
 
