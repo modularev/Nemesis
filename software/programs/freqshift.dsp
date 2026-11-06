@@ -18,7 +18,7 @@ declare audio_outputs "1-6";   // the output setting leaves the oscillator on 7/
 // in 1/2: stereo audio
 // out 1/2: main L/R (dry/wet mix)
 // out 3/4: shifted up L/R      out 5/6: shifted down L/R   (wet only, with feedback)
-// out 7/8: shift oscillator of the left channel, sine and cosine, +-4.9 V:
+// out 7/8: shift oscillator of the left channel, sine and cosine, +-4.75 V:
 //          a quadrature LFO at small shifts, an audio oscillator at large ones
 //
 // hardware controls (rev2)                       rev1
@@ -97,5 +97,6 @@ show(x)     = x : attach(_, shift_bar);
 process(l, r) = (channel(shift_l, l), channel(shift_r, r)
                  : route(6, 6, 1, 1, 4, 2, 2, 3, 5, 4, 3, 5, 6, 6)
                  : show, _, _, _, _, _),
-                // 0.98: +-5 V would end just beyond the calibrated DAC range (CLIP)
-                osc_sin(shift_l) * 0.98, osc_cos(shift_l) * 0.98;
+                // 0.95: with the output calibration (gain and offset) +-5 V ends beyond
+                // the DAC range (CLIP)
+                osc_sin(shift_l) * 0.95, osc_cos(shift_l) * 0.95;
