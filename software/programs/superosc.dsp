@@ -66,7 +66,9 @@ partial(side, g, i) = os.polyblep_saw(f) / (1 + 0.5 * i)
 with {
     ratio  = ba.take(g + 1, RATIOS);
     spread = (i - 1.5) * (1 + 0.37 * g);                   // -1.5 .. 2.8, different per group
-    wander = drift * 0.004 * os.osc(0.023 + 0.011 * (4 * g + i) + 0.007 * side);   // up to ~7 cents
+    // os.oscs: a sine without a table (os.osc reads a 256 kB table in PSRAM,
+    // 24 times per sample at scattered positions)
+    wander = drift * 0.004 * os.oscs(0.023 + 0.011 * (4 * g + i) + 0.007 * side);   // up to ~7 cents
     f      = (ratio * (i + 1) * freq + side * detune * spread) * (1 + wander);
 };
 

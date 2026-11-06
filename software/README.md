@@ -166,12 +166,21 @@ the clock and tempo of programs that use it.
 
 Selecting a program frees the previous one, except MIDI programs (juno,
 superosc), which stay loaded (small; FAUST's MIDI objects can't be deleted
-safely). Settings and CV routing are kept. The running program's delay lines
-up to 32 kB come from a 192 kB arena in RAM1 (fast, no cache; emptied when
-the program stops), larger ones from the PSRAM. PSRAM reads cost a lot of
-CPU: mooSpace runs at ~56 % with its diffusers in the arena, ~65 % without.
-`MEM` shows the free heap; build with `-D NEMESIS_DEBUG_SWITCH` to trace
-program switches and buffer placement over serial.
+safely). Settings and CV routing are kept.
+
+The running program's delay lines up to 32 kB come from a 192 kB arena in
+RAM1 (fast, no cache; emptied when the program stops), larger ones from the
+PSRAM (mooSpace runs at ~56 % with its diffusers in the arena, ~65 %
+without). Placing buffers by FAUST's access counts (`memoryInfo()`) was
+tried on the branch `memory-plan`: no gain, mooSpace even 4 % slower, since
+delays read in order are cheap from the PSRAM (its cache reads whole
+lines). `MEM` shows the free heap; build with `-D NEMESIS_DEBUG_SWITCH` to
+trace program switches and buffer placement over serial.
+
+The firmware compiles with `-dlt 16384`: delays longer than 16384 samples
+get their exact length instead of the next power of two (mooSpace2: 1141 ->
+1059 kB, ~0.25 % CPU for the compare instead of a mask). Prefer `os.oscs` to
+`os.osc` for LFOs: `os.osc` reads a 256 kB sine table.
 
 ## output levels, clipping and limiting
 
