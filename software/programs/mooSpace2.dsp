@@ -34,8 +34,12 @@ MAX_DIFF    = 9.5;    // smear: diffuser length multiplier as in v1: all diffuse
 MAX_LATE    = 10;     // drag: late tap multiplier (v1: 5)
 MAX_LAG     = 2^15-2;
 
+// Computation order (faustdoc "Optimizing"): FAUST computes expressions of a
+// raw slider once per block (control rate), but everything after si.smoo on
+// every sample. So curves, pow, sin etc. come first, smoothing last (where
+// it saves work: a linear curve after one shared smoother is just as cheap).
 smear_knob  = hslider("smear [hw:CV_X]", 0.5, 0, 1, 0.001) : si.smooth(0.998);
-drag_knob   = hslider("drag [hw:CV_Z]", 0.5, 0, 1, 0.001) : si.smoo;
+drag_knob   = hslider("drag [hw:CV_Z]", 0.5, 0, 1, 0.001);
 decay_raw   = hslider("decay [hw:CV_Y]", 0.3, 0, 1., 0.001) : sqrt;
 decay       = decay_raw : si.smoo;
 // filter and colour coefficients are computed from the raw knob values: FAUST
@@ -43,17 +47,18 @@ decay       = decay_raw : si.smoo;
 filt_ctrl   = hslider("filter [rev1:CV_A] [rev2:POT_A] [cv:CV_A]", 0.5, 0, 1, 0.01);
 mod_knob    = hslider("modulate [rev1:CV_B] [rev2:POT_B] [cv:CV_B]", 0.5, 0, 1, 0.001);
 damp_knob   = hslider("colour [rev1:CV_C] [rev2:POT_C] [cv:CV_C]", 0.1, 0, 1, 0.01);
-rev_mix     = hslider("mix [rev1:CV_F] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01) : si.smoo;
+rev_mix     = hslider("mix [rev1:CV_F] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01);
 
-predelay    = hslider("lag [rev1:CV_D]", 0, 0, 1, 0.001) <: * : si.smoo : _ * (MAX_LAG - 1);
-dist_amt    = hslider("push [rev1:CV_E]", 0, 0, 1, 0.01) : si.smoo;
+predelay    = hslider("lag [rev1:CV_D]", 0, 0, 1, 0.001) <: * : _ * (MAX_LAG - 1) : si.smoo;
+dist_amt    = hslider("push [rev1:CV_E]", 0, 0, 1, 0.01);
 motion      = hslider("motion", 1, 0, 1, 0.01) : si.smoo;   // 1 glide (pitch), 0 crossfade
 xfade_ms    = hslider("crossfade [scale:log] [unit:ms]", 30, 3, 300, 1);
 
 // knob curves: square laws, so the centre gives v1's default values
 //   smear as v1 (centre 4.75); drag 0.5 -> 2.5 (v1 default), 1 -> 10
 smear       = smear_knob * MAX_DIFF + 0.05;           // as v1: centre 4.75, top 9.5
-late_diff   = 0.2 + drag_knob * drag_knob * (MAX_LATE - 0.2);   // never 0: the taps would coincide and cancel
+late_raw    = 0.2 + drag_knob * drag_knob * (MAX_LATE - 0.2);   // never 0: the taps would coincide and cancel
+late_diff   = late_raw : si.smoo;
 damp        = damp_knob * 0.97 : si.smoo;             // v1 went silent at 1
 // colour also darkens the wet input once (above v1's default 0.1), so it is
 // heard with a short decay too: 18 kHz .. 1.2 kHz
@@ -63,7 +68,7 @@ pre_colour  = fi.lowpass(1, 18000 * (1200 / 18000) ^ (max(0, damp_knob - 0.1) / 
 // clockwise side faster; relative to the lengths (works at any smear)
 mod_amount  = mod_knob - 0.5 : *(2) : \(m).(m * m * m) : si.smoo;
 mod_rate    = select2(mod_amount > 0, 0.29, 0.37 + 1.6 * mod_amount);
-wobble      = abs(mod_amount) * os.osc(mod_rate);
+wobble      = abs(mod_amount) * os.oscs(mod_rate);   // no table: os.osc's is 256 kB
 // relative (+-15 % of the lengths) plus an absolute part like v1 (works at smear 0)
 diff_mult   = smear * (1 + 0.15 * wobble) + 0.5 * wobble : max(0.05);
 
@@ -129,9 +134,12 @@ clip(lo, hi) = min(hi) : max(lo);
 lp_freq 	= filt_ctrl : clip(0.0, 0.48) * 2.083 <: * : _ * 15900 : _ + 100;
 hp_freq		= filt_ctrl : (clip(0.52, 1) - 0.52) * 2.083 <: * : _ * 4980 : _ + 20;
 
-balance(mix, dry_l, wet_l, dry_r, wet_r) = pan(mix, dry_l, wet_l), pan(mix, dry_r, wet_r)
+// equal power crossfade; the sin gains come from the raw knob (control rate)
+balance(mix, dry_l, wet_l, dry_r, wet_r) = pan(dry_l, wet_l), pan(dry_r, wet_r)
 	with {
-			pan(mix, dry, wet) = sin(mix*ma.PI/2) * wet + sin((1-mix)*ma.PI/2) * dry;
+			wet_gain = sin(mix*ma.PI/2) : si.smoo;
+			dry_gain = sin((1-mix)*ma.PI/2) : si.smoo;
+			pan(dry, wet) = wet_gain * wet + dry_gain * dry;
 		  };
 
 // Schroeder allpass around a moving delay (in the tank), or a gliding one
@@ -245,7 +253,7 @@ distortion_stereo(distortion) = par(i,2,cubic_distort(distortion, 0))
 	with {
 		cubic_distort(drive, offset) = * (pregain) : + (offset) : clip(-1, 1) : cubic
 			with {
-    			pregain = pow(10.0, 2 * drive);
+    			pregain = pow(10.0, 2 * drive) : si.smoo;   // pow at control rate
     			clip(lo, hi) = min(hi) : max(lo);
     			cubic(x) = x - x*x*x / 3;
 		};
