@@ -91,7 +91,7 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 - Firmware programs: juno (6 voice MIDI poly, chorus effect), mooSpace,
   breaker (beat slice repeat/reverse, crush, comb, drive, drum triggers on
   outs 3–8 from a pattern map; on the transport),
-  freqshift, superosc; 816 MHz, 48 kHz.
+  freqshift, superosc, growler (mono FM bass, 14 %); 816 MHz, 48 kHz.
 - mooSpace2 (program 3): v1 algorithm with wider controls, measured 67 %
   (max 72 %) on the module; motion only on the tank delays (CPU). mooSpace v1
   56 % since the RAM arena. freqshift 13 %, superosc 25 %, breaker 14 %.
@@ -104,6 +104,15 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 - Open: MIDI input in the 100 us timer interrupt and the transport PLL are
   only simulated, not yet run on the module (check STATUS, juno notes over
   USB and the jack, breaker on a DAW clock, CPU load of the poll timer).
+- Direct TDM, measured 2026-11-06: programs read/write the TDM DMA
+  buffers directly (nemesis_tdm.cpp), loopback OUT 1 -> IN 1 281 samples
+  (5.85 ms; main 537, the codec adds 25), level identical, "written late" 0
+  of 21617 blocks (mooSpace/mooSpace2 at ~60 %). CPU: mooSpace2 58 % (main
+  62), breaker 12, growler 14, rest unchanged. The memory plan from
+  memoryInfo() (branch memory-plan, not on main) gains nothing (mooSpace v1
+  60 % with it, 56 % without): access counts don't predict cost, PSRAM
+  reads in order are cheap. Not yet checked: other channels' mapping,
+  calibration with the HP, hwtest, rev1.
 - Idea, parked: 96 kHz. CS42448 TDM supports double speed (MCLK 512x = 49.2 MHz,
   register 0x03 MFREQ needs 1xx), but the datasheet warns ADC_SDOUT may miss
   timing in TDM double speed: measure the inputs first (a rev2_96k build).
