@@ -29,6 +29,9 @@
 // This default routing can be changed in the menu. [setting:0] makes a
 // parameter only a CV target, left out of the settings list (with
 // [volts:1] a routed CV gives it volts, e.g. V/Oct on any CV A-D).
+// [name:lag] shows another name (labels stay unique: settings are stored by
+// label), [if:sync] / [ifnot:sync] lists a setting only while the setting
+// "sync" is on / off, e.g. a lag in ms or in note values under one name.
 // Every program also gets the setting "output" (clip/soft/tape/fold) for its
 // audio outputs, see nemesis_output.h.
 //
@@ -140,6 +143,15 @@ namespace nemesis
       {
          fPendingUnlisted = strcmp(value, "0") == 0;
       }
+      else if (strcmp(key, "name") == 0)
+      {
+         fPendingName = value;
+      }
+      else if (strcmp(key, "if") == 0 || strcmp(key, "ifnot") == 0)
+      {
+         fPendingCond = value;
+         fPendingCondOn = strcmp(key, "if") == 0;
+      }
       else if (strcmp(key, "limit") == 0)
       {
          fPendingLimit = strcmp(value, "0") != 0;
@@ -196,6 +208,9 @@ namespace nemesis
          bool log = fPendingLog && !gate && min > 0 && max > 0;
          fControls.push_back({zone, min, max, step, input, 0, gate, displayLabel, fPendingMenu, init, false, log, fPendingUnit,
                               fPendingVolts, !fPendingUnlisted});
+         fControls.back().name = fPendingName;
+         fControls.back().cond = fPendingCond;
+         fControls.back().condOn = fPendingCondOn;
          if (cv >= 0 && cv < MAX_INPUTS)
             fRoute[cv] = fControls.size() - 1;
          updateMasks();
@@ -208,6 +223,9 @@ namespace nemesis
       fPendingUnit = nullptr;
       fPendingVolts = false;
       fPendingUnlisted = false;
+      fPendingName = nullptr;
+      fPendingCond = nullptr;
+      fPendingCondOn = true;
       fPendingLimit = false;
       fPendingHidden = false;
       fPendingStatus = false;
@@ -466,6 +484,18 @@ namespace nemesis
          if (strcmp(fControls[i].label, label) == 0)
             return i;
       return -1;
+   }
+
+   bool Program::visible(const Control &c) const
+   {
+      if (!c.cond)
+         return true;
+      int index = controlIndex(c.cond);
+      if (index < 0)
+         return true;
+      const Control &other = fControls[index];
+      float v = other.input < 0 ? other.value : *other.zone;
+      return (v > 0.5f) == c.condOn;
    }
 
    void Program::updateMasks()

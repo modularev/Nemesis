@@ -40,8 +40,13 @@
 #include <Encoder.h>
 #include <SPI.h>
 #include <Wire.h>
-#include "fonts/SourceCodePro6.h"
-#include "fonts/SourceCodeProItalic14.h"
+// menus, header, values: Oxanium 10 px (SIL OFL, fonts/OFL-Oxanium.txt), the
+// small companion of Michroma (which turns 0/8 into D/B at small sizes)
+#include "fonts/Oxanium10.h"
+// program names: Michroma (SIL OFL, fonts/OFL-Michroma.txt), upright for the
+// program, oblique for the knob popup; converted with fonts/ttf2gfx.py
+#include "fonts/Michroma16.h"
+#include "fonts/Michroma13Oblique.h"
 
 namespace nemesis
 {
@@ -313,24 +318,24 @@ namespace nemesis
             display.clearDisplay();
             display.setTextSize(1);
             display.setTextColor(WHITE);
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             display.setCursor(0, 8);
             display.print(F("say hello to"));
-            display.setCursor(0, 29);
-            display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
+            display.setCursor(0, 27);
+            display.setFont(&Michroma13Oblique);
             display.print(F(">NEMESIS"));
             display.display();
             delay(1500);
 
             display.clearDisplay();
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             display.setCursor(0, 8);
             display.print(F("running"));
             display.setCursor(0, 29);
-            display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
+            display.setFont(&Michroma16);
             display.print(programName);
             display.display();
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             delay(1000);
          }
 
@@ -382,7 +387,7 @@ namespace nemesis
          FLASHMEM void drawCalibration(const float *lo, const float *hi)
          {
             display.clearDisplay();
-            display.setFont(&SourceCodePro_ExtraLight6pt7b); // a sketch may have changed it
+            display.setFont(&Oxanium10); // a sketch may have changed it
             display.setTextColor(WHITE);
             display.setCursor(0, 8);
             display.print(F("CAL  B2 save  B1 cancel"));
@@ -459,7 +464,7 @@ namespace nemesis
             }
 
             display.clearDisplay();
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             display.setCursor(0, 19);
             display.print(store ? F("calibration stored") : F("calibration cancelled"));
             display.display();
@@ -532,7 +537,7 @@ namespace nemesis
             char text[16];
             display.clearDisplay();
             display.setTextColor(WHITE);
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             display.setCursor(0, 8); // 6pt reaches 8 px above the baseline
             if (!sdCardPresent())
                display.print(F("no SD "));
@@ -578,10 +583,10 @@ namespace nemesis
             display.setCursor(x, 8);
             display.print(text);
             display.setTextColor(WHITE);
-            display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
-            display.setCursor(0, 29); // descenders (g, p) end 2 px below the baseline
+            display.setFont(&Michroma16);
+            display.setCursor(0, 29); // descenders (g, j, p) end 3 px below the baseline
             display.print(activeProgram().name());
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             display.display();
          }
 
@@ -635,17 +640,16 @@ namespace nemesis
             uint16_t w, h;
             display.clearDisplay();
             display.setTextColor(WHITE);
-            display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
-            // 14pt ascenders (b, d, f, l) reach 20 px above the baseline
-            display.getTextBounds(c.label, 0, 20, &x1, &y1, &w, &h);
+            display.setFont(&Michroma13Oblique); // names up to ~11 characters, else the small font
+            display.getTextBounds(c.shown(), 0, 20, &x1, &y1, &w, &h);
             if (x1 + w > 128)
             {
-               display.setFont(&SourceCodePro_ExtraLight6pt7b);
+               display.setFont(&Oxanium10);
                display.setCursor(0, 14);
             }
             else
                display.setCursor(0, 20);
-            display.print(c.label);
+            display.print(c.shown());
 
             float position = constrain(c.position(*c.zone), 0.0f, 1.0f);
             display.drawRect(0, 26, 92, 6, WHITE);
@@ -653,7 +657,7 @@ namespace nemesis
 
             char text[16];
             formatValue(c, *c.zone, text, sizeof(text));
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             display.setCursor(rightAligned(text, 31), 31);
             display.print(text);
             display.display();
@@ -669,7 +673,7 @@ namespace nemesis
             {
                const std::vector<Control> &controls = activeProgram().controls();
                for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV; i++)
-                  if (controls[i].input < 0 && controls[i].listed)
+                  if (controls[i].input < 0 && controls[i].listed && activeProgram().visible(controls[i]))
                      items[item_count++] = {ITEM_SETTING, (int)i};
                for (int i = 0; i < NUM_ROUTABLE_CV; i++)
                   items[item_count++] = {ITEM_ROUTE, routableCV(i)};
@@ -695,7 +699,7 @@ namespace nemesis
             switch (item.kind)
             {
             case ITEM_SETTING:
-               return activeProgram().controls()[item.index].label;
+               return activeProgram().controls()[item.index].shown();
             case ITEM_ROUTE:
                snprintf(text, size, "CV %c", 'A' + item.index - routableCV(0));
                return text;
@@ -737,7 +741,7 @@ namespace nemesis
             case ITEM_ROUTE:
             {
                int target = activeProgram().route(item.index);
-               snprintf(text, size, "%s", target >= 0 ? activeProgram().controls()[target].label : "off");
+               snprintf(text, size, "%s", target >= 0 ? activeProgram().controls()[target].shown() : "off");
                break;
             }
             case ITEM_RUN:
@@ -793,6 +797,19 @@ namespace nemesis
             }
          }
 
+         // settings with [if:]/[ifnot:] on this one come and go
+         void rebuildIfConditional(const Program &p, const Control &c)
+         {
+            for (const Control &other : p.controls())
+               if (other.cond && strcmp(other.cond, c.label) == 0)
+               {
+                  buildItems();
+                  if (cursor >= item_count)
+                     cursor = item_count > 0 ? item_count - 1 : 0;
+                  return;
+               }
+         }
+
          // turning while editing; fast turns move the settings in bigger steps
          void changeItem(const Item &item, int delta, bool fast)
          {
@@ -819,6 +836,7 @@ namespace nemesis
                }
                c.changed = true;
                programSettingsChanged(p);
+               rebuildIfConditional(p, c);
                return;
             }
             case ITEM_ROUTE:
@@ -903,7 +921,7 @@ namespace nemesis
             char label[24], value[24];
             display.clearDisplay();
             display.setTextColor(WHITE);
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             if (item_count == 0)
             {
                display.setCursor(0, 19);
@@ -913,7 +931,7 @@ namespace nemesis
             for (int row = 0; row < 3 && first + row < item_count; row++)
             {
                int index = first + row;
-               int y = 9 + row * 11;
+               int y = 8 + row * 11; // Oxanium: 8 px above, 2 below: rows 0..31
                bool selected = index == cursor;
                display.setCursor(0, y);
                display.print(selected ? '>' : ' ');
@@ -936,7 +954,7 @@ namespace nemesis
          {
             display.clearDisplay();
             display.setTextColor(WHITE);
-            display.setFont(&SourceCodePro_ExtraLight6pt7b);
+            display.setFont(&Oxanium10);
             int n = programCount();
             int first = constrain(cursor - 1, 0, max(0, n - 3));
             for (int row = 0; row < 3; row++)
@@ -944,7 +962,7 @@ namespace nemesis
                int index = first + row;
                if (index < 0 || index >= n)
                   continue;
-               display.setCursor(0, 9 + row * 11);
+               display.setCursor(0, 8 + row * 11);
                display.printf("%c%c %s", index == cursor ? '>' : ' ',
                               index == currentProgram() ? '*' : ' ', program(index)->name());
             }
@@ -1007,7 +1025,7 @@ namespace nemesis
                if (cursor != currentProgram())
                {
                   display.clearDisplay();
-                  display.setFont(&SourceCodePro_ExtraLight6pt7b);
+                  display.setFont(&Oxanium10);
                   display.setCursor(0, 19);
                   display.printf("loading %s", program(cursor)->name());
                   display.display();

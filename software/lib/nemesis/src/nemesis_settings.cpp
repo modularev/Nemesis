@@ -97,7 +97,6 @@ namespace nemesis
          file.printf("run=%d\n", system_settings.run ? 1 : 0);
          file.printf("clock_offset=%d\n", system_settings.clockOffsetMs);
          file.printf("clock_ppqn=%d\n", system_settings.clockPpqn);
-         file.printf("block_size=%d\n", system_settings.blockSize);
          file.close();
       }
 
@@ -179,8 +178,6 @@ namespace nemesis
                system_settings.cvRangeVolts = (v == 5) ? 5 : 8;
             else if (strcmp(key, "clock") == 0)
                system_settings.clockSource = constrain(v, 0, 3);
-            else if (strcmp(key, "block_size") == 0)
-               system_settings.blockSize = (v == 32 || v == 64 || v == 128) ? v : 0;
             else if (strcmp(key, "clock_ppqn") == 0)
                system_settings.clockPpqn = (v == 1 || v == 2 || v == 24) ? v : 4;
             else if (strcmp(key, "tempo") == 0)

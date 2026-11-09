@@ -75,6 +75,11 @@ namespace nemesis
       const char *unit;   // [unit:Hz], or null
       bool volts;         // [volts:1]: the input in volts instead of 0..1 (V/Oct), also routed CV
       bool listed;        // settings: shown in the settings list ([setting:0]: only a CV target)
+      const char *name = nullptr; // [name:lag]: shown instead of the label (labels stay unique: saved settings)
+      const char *cond = nullptr; // [if:sync] / [ifnot:sync]: listed only while that setting is on / off
+      bool condOn = true;
+
+      const char *shown() const { return name ? name : label; }
 
       // parameter value <-> position 0..1 of the knob
       float fromPosition(float v) const
@@ -163,6 +168,8 @@ namespace nemesis
       int route(int cvInput) const;
       void setRoute(int cvInput, int control);
       int controlIndex(const char *label) const;
+      // a setting's [if:]/[ifnot:] condition holds (always true without one)
+      bool visible(const Control &c) const;
       bool settingsLoaded = false;
 
       // called by the architecture file while the FAUST UI is built:
@@ -207,6 +214,9 @@ namespace nemesis
       int fPendingMono = -1;
       bool fPendingVolts = false;
       bool fPendingUnlisted = false;
+      const char *fPendingName = nullptr;
+      const char *fPendingCond = nullptr;
+      bool fPendingCondOn = true;
       uint8_t fNotes[16];
       int fNoteCount = 0;
       static constexpr int MAX_SLOTS = 4; // paraphonic voices

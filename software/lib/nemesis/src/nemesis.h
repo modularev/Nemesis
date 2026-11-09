@@ -116,7 +116,8 @@ namespace nemesis
       bool run = true;       // also switched by MIDI Start/Stop
       int clockOffsetMs = 0; // shifts the transport position, -50..+50 ms
       int clockPpqn = 4;     // clock on IN 8: pulses per quarter, 1, 2, 4 (sixteenths) or 24
-      int blockSize = 0;     // audio block: 0 auto (the program's, else 64), 32, 64, 128
+      int blockSize = 0;     // audio block: 0 auto (the program's, else 64), 32, 64, 128;
+                             // not stored: every power up starts with auto
    };
 
    SystemSettings &systemSettings();
