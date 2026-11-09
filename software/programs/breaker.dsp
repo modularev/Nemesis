@@ -2,6 +2,7 @@ declare name "breaker";
 declare description "Beat slice repeat and reverse for breakbeats, bit crush, comb filter and drive, plus six drum trigger outputs from a 2D pattern map; MIDI clock or internal tempo";
 declare author "Arev Imer";
 declare version "0.3";
+declare block_size "32";   // audio block (system setting block size: auto)
 declare output "clip";     // output setting default: hard clip is part of the sound
 
 // Stereo in 1/2, out 1/2. Outs 3-8: drum triggers (5 V) kick, snare, closed
@@ -9,8 +10,10 @@ declare output "clip";     // output setting default: hard clip is part of the s
 // lights while a slice repeats.
 //
 // The slice grid and the drum steps follow the module's transport
-// (nemesis.lib): the MIDI clock or the internal tempo, set in the system
-// settings (press and hold the encoder). While the transport is stopped the
+// (nemesis.lib): the MIDI clock, a clock or gate on audio IN 8 (clock
+// "IN 8", 1/4 to 1/16 or 24 pulses per quarter) or the internal tempo, set
+// in the system settings (press and hold the encoder). While the transport
+// is stopped the
 // input passes through and the triggers are silent.
 //
 // Slicer: at every slice boundary the program decides whether that slice

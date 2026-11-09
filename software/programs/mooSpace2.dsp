@@ -2,6 +2,7 @@ declare name "mooSpace2";
 declare description "Moving spaces: mooSpace with wider controls and glide (pitch) or crossfade (no pitch) when the space moves";
 declare author "Arev Imer";
 declare version "2.1";
+declare block_size "128";   // audio block (system setting block size: auto)
 
 // mooSpace v1's algorithm (input diffusion, a figure eight tank with
 // diffusers in the feedback, multi tap allpasses), with:
