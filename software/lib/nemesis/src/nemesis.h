@@ -64,6 +64,13 @@ namespace nemesis
    void begin(Program &program);
    // audio block size, latency and late output writes (nemesis_tdm.h)
    void printAudioStatus(Print &out);
+   // the block size in use, and the one the setting and program ask for
+   int blockSize();
+   int wantedBlockSize();
+   // CPU load of the audio update in % of the block's time (the Audio
+   // library's figures assume AUDIO_BLOCK_SAMPLES)
+   float cpuLoad();
+   float cpuLoadMax();
 
    // several programs in one firmware: the last selected one is restored at
    // power up, on rev2 the encoder selects (turn) and loads (push) a program
@@ -104,11 +111,14 @@ namespace nemesis
       int brightness = 10;   // rev2: display, 1..10
       int cvRangeVolts = 8;  // rev2: CV A-D read 0..1 = 0..5 V or 0..8 V
       // transport
-      int clockSource = 0;   // TransportCore::AUTO (MIDI clock when there is one), INTERNAL, MIDI
+      int clockSource = 0;   // TransportCore::AUTO (MIDI clock when there is one), INTERNAL, MIDI, CV (audio IN 8)
       float tempo = 120;     // internal clock, BPM
       bool run = true;       // also switched by MIDI Start/Stop
       int clockOffsetMs = 0; // shifts the transport position, -50..+50 ms
+      int clockPpqn = 4;     // clock on IN 8: pulses per quarter, 1, 2, 4 (sixteenths) or 24
+      int blockSize = 0;     // audio block: 0 auto (the program's, else 64), 32, 64, 128
    };
+
    SystemSettings &systemSettings();
    // schedule saving to the SD card
    void systemSettingsChanged();

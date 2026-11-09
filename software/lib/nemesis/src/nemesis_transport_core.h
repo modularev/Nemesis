@@ -16,6 +16,10 @@
 // MIDI Start: the first clock after it is position 0. Continue resumes,
 // Song Position sets the position while stopped.
 //
+// CV clock (source CV): the same loop with pulses of tickSize ticks each
+// (6 for sixteenths); an analog clock has no Start, so pulses that appear
+// after a pause start at position 0, and the transport stops with them.
+//
 // Copyright © 2021 Arev Imer if not mentioned elsewise
 // released under GNU GPL v3
 //
@@ -32,14 +36,15 @@ namespace nemesis
       double position = 0;   // ticks at the start of the block, wrapped to WRAP
       double increment = 0;  // ticks per sample during the block, 0 while stopped
       bool running = false;
-      bool external = false; // following the MIDI clock
+      bool external = false; // following the MIDI clock (or the CV clock)
+      bool cvClock = false;  // following the CV clock
       float bpm = 120;
    };
 
    class TransportCore
    {
    public:
-      enum Source { AUTO = 0, INTERNAL = 1, MIDI = 2 };
+      enum Source { AUTO = 0, INTERNAL = 1, MIDI = 2, CV = 3 };
       static constexpr double TICKS_PER_QUARTER = 24;
       static constexpr double WRAP = 1536; // 16 bars, a multiple of every note value
 
@@ -55,13 +60,23 @@ namespace nemesis
       // how far the position may run past the next expected tick: ticks are
       // only seen at the next block, and a stopped clock holds after this
       double LEAD = 1;
+      // ticks per clock event: 1 for MIDI, 24 / pulses per quarter for CV
+      double tickSize = 1;
 
       // MIDI events, t in samples on the same time base as block()
       void clock(double t)
       {
          bool wasActive = lastTick >= 0 && t - lastTick < clockTimeout();
          if (!wasActive && !pendingStart)
+         {
             resync = true; // a clock (re)appears: join it from the current position
+            if (source == CV && running)
+            {
+               pendingStart = true; // no Start in an analog clock: begin at 0
+               interval = 0;        // and measure its tempo afresh
+               lastTick = -1;
+            }
+         }
          if (lastTick >= 0)
          {
             double d = t - lastTick;
@@ -79,7 +94,8 @@ namespace nemesis
          }
          else if (resync)
          {
-            expected = std::ceil(outPos - 1e-6); // join a running clock without a jump back
+            // join a running clock without a jump back
+            expected = std::ceil(outPos / tickSize - 1e-6) * tickSize;
          }
          if (interval <= 0)
          {
@@ -88,27 +104,27 @@ namespace nemesis
             inc = 0;
             locked = false;
             resync = false;
-            expected += 1;
+            expected += tickSize;
             return;
          }
          double raw = pos + (t - anchor) * inc;
-         double err = expected - raw;
+         double err = (expected - raw) / tickSize; // in clock events
          if (resync || !locked || std::fabs(err) > 2)
          {
             pos = expected;
-            freq = 1 / interval;
+            freq = tickSize / interval;
             inc = freq;
             locked = true;
             resync = false;
          }
          else
          {
-            pos = std::fmin(raw, expected + LEAD);
+            pos = std::fmin(raw, expected + LEAD * tickSize);
             freq *= 1 + KI * err;
             inc = freq * (1 + KP * err);
          }
          anchor = t;
-         expected += 1;
+         expected += tickSize;
       }
 
       void start()
@@ -168,11 +184,20 @@ namespace nemesis
             locked = false;
             resync = true; // rejoin when the clock comes back
          }
-         bool external = (source == MIDI) || (source == AUTO && midiActive);
+         bool external = (source == MIDI) || (source == CV) || (source == AUTO && midiActive);
          if (source != lastSource)
+         {
             resync = true; // join the other clock from the current position
+            if (source == CV || lastSource == CV)
+            {
+               lastTick = -1; // the other clock's tempo is in other units
+               interval = 0;
+               locked = false;
+            }
+         }
          lastSource = source;
          state.external = external;
+         state.cvClock = source == CV;
 
          double increment = 0;
          if (external)
@@ -180,10 +205,11 @@ namespace nemesis
             if (running && locked && !pendingStart)
             {
                double raw = pos + (t - anchor) * inc;
-               outPos = std::fmin(raw, expected + LEAD); // hold when the clock stops
-               increment = std::fmax(0.0, std::fmin(inc, (expected + LEAD - outPos) / n));
+               double lead = expected + LEAD * tickSize;
+               outPos = std::fmin(raw, lead); // hold when the clock stops
+               increment = std::fmax(0.0, std::fmin(inc, (lead - outPos) / n));
             }
-            state.bpm = interval > 0 ? (float)(sampleRate * 60 / (TICKS_PER_QUARTER * interval)) : 0;
+            state.bpm = interval > 0 ? (float)(sampleRate * 60 * tickSize / (TICKS_PER_QUARTER * interval)) : 0;
          }
          else
          {
@@ -211,7 +237,8 @@ namespace nemesis
 
    private:
       bool usesMidi() const { return source != INTERNAL; }
-      double clockTimeout() const { return sampleRate * 0.3; } // 30 BPM has 83 ms per tick
+      // 30 BPM has 83 ms per MIDI tick; CV pulses are longer (at most 3 s)
+      double clockTimeout() const { return std::fmin(sampleRate * 0.3 * tickSize, sampleRate * 3.0); }
 
       TransportState state;
       int lastSource = AUTO;

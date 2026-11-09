@@ -12,7 +12,9 @@
 // [midi:clock]) is queued for the program's MIDI handler.
 //
 // The transport (nemesis_transport_core.h) advances once per audio block,
-// called by the program before it computes the block.
+// called by the program before it computes the block. With the clock source
+// CV, rising edges on audio IN 8 are the clock, found in its samples, so
+// they are timed to the sample; MIDI clock and Start/Stop are ignored.
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
 // released under GNU GPL v3
@@ -21,6 +23,7 @@
 #include "nemesis.h"
 #include "nemesis_transport.h"
 #include "nemesis_transport_core.h"
+#include "nemesis_tdm.h"
 
 namespace nemesis
 {
@@ -175,6 +178,33 @@ namespace nemesis
          poll_timer.begin(poll, POLL_US);
       }
 
+      // clock on IN 8: rising edges with hysteresis, in input full scale
+      // (+-2.77 V at the jack, a 1 Hz high-pass in front of the codec)
+      constexpr int CLOCK_CHANNEL = 7;
+      constexpr float CLOCK_HIGH = 0.3f, CLOCK_LOW = 0.15f;
+      bool clock_high = false;
+
+      void scanClockInput(double block_start)
+      {
+         const int32_t *frames = tdm::input();
+         if (!frames)
+            return;
+         // this block's input was recorded during the previous block
+         float scale = 4.656612873077392578125e-10f * inputScale(CLOCK_CHANNEL);
+         int n = tdm::blockSize();
+         for (int i = 0; i < n; i++)
+         {
+            float v = frames[i * tdm::CHANNELS + CLOCK_CHANNEL] * scale;
+            if (!clock_high && v > CLOCK_HIGH)
+            {
+               clock_high = true;
+               core.clock(block_start - n + i);
+            }
+            else if (clock_high && v < CLOCK_LOW)
+               clock_high = false;
+         }
+      }
+
       // once per audio block, before the program computes it
       const TransportState &block()
       {
@@ -184,6 +214,8 @@ namespace nemesis
          SystemSettings &s = systemSettings();
          core.sampleRate = AUDIO_SAMPLE_RATE_EXACT;
          core.source = s.clockSource;
+         bool cv = s.clockSource == TransportCore::CV;
+         core.tickSize = cv ? TransportCore::TICKS_PER_QUARTER / max(1, s.clockPpqn) : 1.0;
          core.tempo = s.tempo;
          core.offsetSamples = s.clockOffsetMs * 0.001 * AUDIO_SAMPLE_RATE_EXACT;
          if (s.run != last_run_setting) // run switched in the menu
@@ -193,6 +225,8 @@ namespace nemesis
          while (events.pop(e))
          {
             double t = block_time - (double)(uint32_t)(now - e.cycles) / CYCLES_PER_SAMPLE;
+            if (cv)
+               continue; // following IN 8: MIDI clock, Start/Stop and Song Position don't count
             switch (e.type)
             {
             case 0xF8:
@@ -212,11 +246,14 @@ namespace nemesis
                break;
             }
          }
+         if (cv)
+            scanClockInput(block_time);
          // MIDI Start/Stop show in the menu (not stored)
          s.run = last_run_setting = core.isRunning();
 
-         const TransportState &state = core.block(block_time, AUDIO_BLOCK_SAMPLES);
-         block_time += AUDIO_BLOCK_SAMPLES;
+         int n = tdm::blockSize();
+         const TransportState &state = core.block(block_time, n);
+         block_time += n;
          return state;
       }
    }
@@ -230,7 +267,7 @@ namespace nemesis
       const TransportState &s = core.current();
       out.printf("MIDI: %lu bytes on the MIDI jack (last status 0x%02X), %lu USB messages, %lu dropped\n",
                  (unsigned long)serial_bytes, last_status, (unsigned long)usb_messages, (unsigned long)dropped);
-      out.printf("transport: %s %.1f BPM, %s, position %.2f ticks\n", s.external ? "MIDI" : "internal",
+      out.printf("transport: %s %.1f BPM, %s, position %.2f ticks\n", s.cvClock ? "IN 8" : s.external ? "MIDI" : "internal",
                  s.bpm, s.running ? "running" : "stopped", s.position);
    }
 }

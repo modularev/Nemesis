@@ -36,6 +36,9 @@ namespace nemesis
    void outputCorrection(int output, float &scale, float &offset);
    // input polarity, applied by the architecture file to every input sample
    float inputScale(int input);
+   // the transport's clock comes from audio IN 8 (clock source CV); that
+   // input then reads silence in the program
+   bool clockOnInput8();
 
    // fast RAM for the delay lines of the running program: a fixed area in
    // RAM1, filled in order and emptied as a whole when the program stops
@@ -70,7 +73,8 @@ namespace nemesis
       bool changed;       // settings: value still to be written to zone
       bool log;           // [scale:log]: input 0..1 maps exponentially from min to max
       const char *unit;   // [unit:Hz], or null
-      bool volts;         // [volts:1]: the input in volts instead of 0..1 (V/Oct)
+      bool volts;         // [volts:1]: the input in volts instead of 0..1 (V/Oct), also routed CV
+      bool listed;        // settings: shown in the settings list ([setting:0]: only a CV target)
 
       // parameter value <-> position 0..1 of the knob
       float fromPosition(float v) const
@@ -135,8 +139,17 @@ namespace nemesis
       // parameters, called by the architecture file before every block
       void beginBlock();
       // [mono:note|gate|velocity] parameters: monophonic MIDI, last note
-      // priority, the note stays after note off (drones); called by the
-      // architecture file for every MIDI message
+      // priority, the note stays after note off (drones); [mono:note1..4] and
+      // [mono:gate1..4]: notes for up to 4 voices of a paraphonic program
+      // (a new note takes the lowest free voice, else the oldest note is
+      // stolen); [mono:rr1..4]: four pitches, a note pressed alone sets all
+      // four, notes added while keys are held go to the next one in turn
+      // (2, 3, 4, 1 ..) and stay; [mono:sp1..4]: four pitches spread over
+      // the notes played together: one note all four, two notes 1+2 / 3+4,
+      // three notes 1+2 / 3 / 4, four notes one each (the lowest note gets
+      // the first ones), recalculated on every key press, lifting keeps it,
+      // a note played alone starts anew; called by the architecture file for
+      // every MIDI message
       void handleMidi(const MidiMessage &message);
       // output clipping, counted by the architecture file
       void countClip(int output, uint32_t samples);
@@ -167,6 +180,9 @@ namespace nemesis
       // output stage of the audio outputs (nemesis_output.h), applied by
       // the architecture file
       int outputMode() const { return (int)fOutputMode; }
+      // 'declare block_size "32";': the block size the program asks for
+      // (system setting block size auto), 0 if it doesn't say
+      int blockSizeHint() const { return fBlockSize; }
       bool isAudioOutput(int output) const { return output >= 0 && output < 32 && (fAudioOutputs >> output) & 1; }
 
    protected:
@@ -190,8 +206,20 @@ namespace nemesis
       std::vector<TransportZone> fMono; // what: MONO_* in nemesis_program.cpp
       int fPendingMono = -1;
       bool fPendingVolts = false;
+      bool fPendingUnlisted = false;
       uint8_t fNotes[16];
       int fNoteCount = 0;
+      static constexpr int MAX_SLOTS = 4; // paraphonic voices
+      uint8_t fSlotNote[MAX_SLOTS] = {255, 255, 255, 255}; // 255: no note yet (the program's default stays)
+      bool fSlotOn[MAX_SLOTS] = {};
+      uint32_t fSlotAge[MAX_SLOTS] = {}; // when the slot was last started or released
+      uint32_t fSlotClock = 0;
+      int fSlots = 0;                    // voices the program asks for
+      uint8_t fRR[MAX_SLOTS] = {255, 255, 255, 255}; // round robin pitches, 255: none yet
+      int fRRNext = 1;
+      uint8_t fChord[MAX_SLOTS];         // spread: the notes played together, in order
+      int fChordCount = 0;
+      uint8_t fSpread[MAX_SLOTS] = {255, 255, 255, 255};
       volatile uint32_t fClips[8] = {};
       std::vector<std::pair<const char *, float>> fKeptValues;
       int8_t fKeptRoute[MAX_INPUTS];
@@ -211,6 +239,7 @@ namespace nemesis
       float fOutputMode = output::SOFT;    // zone of the "output" setting
       int fOutputDefault = output::SOFT;
       uint32_t fAudioOutputs = output::DEFAULT_OUTPUTS;
+      int fBlockSize = 0;
    };
 }
 

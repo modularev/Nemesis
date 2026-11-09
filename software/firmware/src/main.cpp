@@ -7,7 +7,8 @@
 // one is restored at power up. Over USB serial: "PROG <n>" selects program n
 // (1 based), "CONTROLS" lists its hardware bindings, "MEM" the PSRAM size,
 // "GET /breaker/bpm" a parameter or meter of the running program, "STATUS" shows MIDI
-// traffic, voices and NaN resets; the CPU load is reported every 2 s.
+// traffic, voices and NaN resets, "CAL" the CV and output calibration; the
+// CPU load is reported every 2 s.
 //
 
 #include <nemesis.h>
@@ -46,6 +47,10 @@ void readCommands()
       else if (strcmp(command, "MEM") == 0)
          Serial.printf("PSRAM %u MB, heap free %u kB (top %u kB)\n", external_psram_size,
                        (unsigned)(heapTop() + mallinfo().fordblks) / 1024, (unsigned)heapTop() / 1024);
+#if NEMESIS_HW_REV == 2
+      else if (strcmp(command, "CAL") == 0)
+         nemesis::printVoltCalibration(Serial);
+#endif
       else if (strcmp(command, "STATUS") == 0)
       {
          nemesis::program(nemesis::currentProgram())->printStatus(Serial);
@@ -77,7 +82,7 @@ void loop()
       sinceReport = 0;
       Serial.printf("PROGRAM %d %s  CPU %.1f%% (max %.1f%%)  audio blocks %d (max %d)\n",
                     nemesis::currentProgram() + 1, nemesis::program(nemesis::currentProgram())->name(),
-                    AudioProcessorUsage(), AudioProcessorUsageMax(), AudioMemoryUsage(), AudioMemoryUsageMax());
+                    nemesis::cpuLoad(), nemesis::cpuLoadMax(), AudioMemoryUsage(), AudioMemoryUsageMax());
       AudioProcessorUsageMaxReset();
    }
 }

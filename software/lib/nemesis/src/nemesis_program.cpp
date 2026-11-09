@@ -19,11 +19,16 @@
 // [transport:position|increment|running|bpm|external] parameters get the
 // transport at the start of every block (see faust/nemesis.lib).
 // [volts:1] gives a bound CV input in volts (calibrated on rev2), for V/Oct.
-// [mono:note|gate|velocity] parameters follow monophonic MIDI notes.
+// [mono:note|gate|velocity] parameters follow monophonic MIDI notes,
+// [mono:note1..4] and [mono:gate1..4] the voices of a paraphonic program,
+// [mono:rr1..4] four pitches set in turn, [mono:sp1..4] four pitches spread
+// over the notes played together (see nemesis_program.h).
 // Bargraph [limit:1]: a limiter's gain (0..1), shown in dB on the home screen.
 // [cv:CV_A] adds a CV input to the parameter (knob + CV, clipped to 0..1),
 // ignored where it names the same input (rev1 knobs are summed in hardware).
-// This default routing can be changed in the menu.
+// This default routing can be changed in the menu. [setting:0] makes a
+// parameter only a CV target, left out of the settings list (with
+// [volts:1] a routed CV gives it volts, e.g. V/Oct on any CV A-D).
 // Every program also gets the setting "output" (clip/soft/tape/fold) for its
 // audio outputs, see nemesis_output.h.
 //
@@ -32,6 +37,7 @@
 //
 
 #include "nemesis.h"
+#include <algorithm>
 
 namespace nemesis
 {
@@ -39,7 +45,7 @@ namespace nemesis
    {
       enum { TRANSPORT_POSITION, TRANSPORT_INCREMENT, TRANSPORT_RUNNING, TRANSPORT_BPM, TRANSPORT_EXTERNAL };
       const char *const transportNames[] = {"position", "increment", "running", "bpm", "external"};
-      enum { MONO_NOTE, MONO_GATE, MONO_VELOCITY };
+      enum { MONO_NOTE, MONO_GATE, MONO_VELOCITY, MONO_SLOT_NOTE = 10, MONO_SLOT_GATE = 20, MONO_RR = 30, MONO_SPREAD = 40 }; // + voice
       const char *const monoNames[] = {"note", "gate", "velocity"};
 
       const char revisionKey[] = {'r', 'e', 'v', '0' + NEMESIS_HW_REV, '\0'};
@@ -109,10 +115,30 @@ namespace nemesis
          for (int i = 0; i < 3; i++)
             if (strcmp(value, monoNames[i]) == 0)
                fPendingMono = i;
+         // note1..note4, gate1..gate4, rr1..rr4
+         int len = strlen(value);
+         if (len == 3 && strncmp(value, "rr", 2) == 0 && value[2] >= '1' && value[2] < '1' + MAX_SLOTS)
+            fPendingMono = MONO_RR + value[2] - '1';
+         if (len == 3 && strncmp(value, "sp", 2) == 0 && value[2] >= '1' && value[2] < '1' + MAX_SLOTS)
+            fPendingMono = MONO_SPREAD + value[2] - '1';
+         if (len == 5 && value[4] >= '1' && value[4] < '1' + MAX_SLOTS)
+         {
+            int slot = value[4] - '1';
+            if (strncmp(value, "note", 4) == 0)
+               fPendingMono = MONO_SLOT_NOTE + slot;
+            else if (strncmp(value, "gate", 4) == 0)
+               fPendingMono = MONO_SLOT_GATE + slot;
+            if (slot + 1 > fSlots)
+               fSlots = slot + 1;
+         }
       }
       else if (strcmp(key, "volts") == 0)
       {
          fPendingVolts = strcmp(value, "0") != 0;
+      }
+      else if (strcmp(key, "setting") == 0)
+      {
+         fPendingUnlisted = strcmp(value, "0") == 0;
       }
       else if (strcmp(key, "limit") == 0)
       {
@@ -160,7 +186,7 @@ namespace nemesis
       const char *displayLabel = label;
       int input = fPendingInput ? inputIndex(fPendingInput) : inputFromLabel(label, &displayLabel);
       int cv = fPendingCV ? inputIndex(fPendingCV) : -1;
-      if (cv == input)
+      if (cv == input || NUM_ROUTABLE_CV == 0) // rev1 sums knob and CV in hardware
          cv = -1;
       bool voiceParameter = strcmp(label, "freq") == 0 || strcmp(label, "gain") == 0 || strcmp(label, "gate") == 0;
       bool setting = input < 0 && kind != BUTTON && !voiceParameter && !fPendingHidden;
@@ -168,7 +194,8 @@ namespace nemesis
       {
          bool gate = kind != SLIDER;
          bool log = fPendingLog && !gate && min > 0 && max > 0;
-         fControls.push_back({zone, min, max, step, input, 0, gate, displayLabel, fPendingMenu, init, false, log, fPendingUnit, fPendingVolts && input >= 0});
+         fControls.push_back({zone, min, max, step, input, 0, gate, displayLabel, fPendingMenu, init, false, log, fPendingUnit,
+                              fPendingVolts, !fPendingUnlisted});
          if (cv >= 0 && cv < MAX_INPUTS)
             fRoute[cv] = fControls.size() - 1;
          updateMasks();
@@ -180,6 +207,7 @@ namespace nemesis
       fPendingLog = false;
       fPendingUnit = nullptr;
       fPendingVolts = false;
+      fPendingUnlisted = false;
       fPendingLimit = false;
       fPendingHidden = false;
       fPendingStatus = false;
@@ -198,6 +226,10 @@ namespace nemesis
       else if (strcmp(key, "audio_outputs") == 0)
       {
          fAudioOutputs = output::parseOutputs(value);
+      }
+      else if (strcmp(key, "block_size") == 0)
+      {
+         fBlockSize = atoi(value);
       }
    }
 
@@ -265,6 +297,72 @@ namespace nemesis
          fNotes[fNoteCount++] = m.data1;
       }
 
+      // round robin: a note alone sets all four, added notes go in turn
+      if (on)
+      {
+         if (fNoteCount == 1)
+         {
+            memset(fRR, m.data1, sizeof(fRR));
+            fRRNext = 1;
+         }
+         else
+         {
+            fRR[fRRNext] = m.data1;
+            fRRNext = (fRRNext + 1) % MAX_SLOTS;
+         }
+      }
+
+      // spread: the notes played together share the four pitches
+      if (on)
+      {
+         if (fNoteCount == 1)
+            fChordCount = 0; // played alone: start anew
+         if (fChordCount == MAX_SLOTS)
+         {
+            memmove(fChord, fChord + 1, MAX_SLOTS - 1); // the oldest goes
+            fChordCount--;
+         }
+         fChord[fChordCount++] = m.data1;
+         uint8_t sorted[MAX_SLOTS];
+         memcpy(sorted, fChord, fChordCount);
+         std::sort(sorted, sorted + fChordCount);
+         // which note each pitch plays, by the number of notes
+         static const uint8_t SPREAD[MAX_SLOTS][MAX_SLOTS] = {{0, 0, 0, 0}, {0, 0, 1, 1}, {0, 0, 1, 2}, {0, 1, 2, 3}};
+         for (int i = 0; i < MAX_SLOTS; i++)
+            fSpread[i] = sorted[SPREAD[fChordCount - 1][i]];
+      }
+
+      // paraphonic voices
+      if (fSlots > 0)
+      {
+         int slot = -1;
+         for (int i = 0; i < fSlots; i++) // the voice holding this note
+            if (fSlotNote[i] == m.data1 && fSlotOn[i])
+               slot = i;
+         if (on && slot < 0)
+         {
+            // the lowest free voice (keys fill voices 1, 2, 3 .. in order),
+            // else the oldest note is stolen
+            for (int i = 0; i < fSlots && slot < 0; i++)
+               if (!fSlotOn[i])
+                  slot = i;
+            if (slot < 0)
+            {
+               slot = 0;
+               for (int i = 1; i < fSlots; i++)
+                  if (fSlotAge[i] < fSlotAge[slot])
+                     slot = i;
+            }
+         }
+         if (slot >= 0)
+         {
+            if (on)
+               fSlotNote[slot] = m.data1;
+            fSlotOn[slot] = on;
+            fSlotAge[slot] = ++fSlotClock;
+         }
+      }
+
       for (const TransportZone &z : fMono)
       {
          switch (z.what)
@@ -278,6 +376,22 @@ namespace nemesis
          case MONO_VELOCITY:
             if (on)
                *z.zone = m.data2 / 127.0f;
+            break;
+         default:
+            if (z.what >= MONO_SPREAD)
+            {
+               if (fSpread[z.what - MONO_SPREAD] < 128)
+                  *z.zone = fSpread[z.what - MONO_SPREAD];
+            }
+            else if (z.what >= MONO_RR)
+            {
+               if (fRR[z.what - MONO_RR] < 128)
+                  *z.zone = fRR[z.what - MONO_RR];
+            }
+            else if (z.what >= MONO_SLOT_GATE)
+               *z.zone = fSlotOn[z.what - MONO_SLOT_GATE] ? 1 : 0;
+            else if (z.what >= MONO_SLOT_NOTE && fSlotNote[z.what - MONO_SLOT_NOTE] < 128)
+               *z.zone = fSlotNote[z.what - MONO_SLOT_NOTE];
             break;
          }
       }
@@ -304,6 +418,13 @@ namespace nemesis
       fTransport.clear();
       fMono.clear();
       fNoteCount = 0;
+      fSlots = 0;
+      memset(fSlotOn, 0, sizeof(fSlotOn));
+      memset(fSlotNote, 255, sizeof(fSlotNote));
+      memset(fRR, 255, sizeof(fRR));
+      fRRNext = 1;
+      memset(fSpread, 255, sizeof(fSpread));
+      fChordCount = 0;
       memset(fRoute, -1, sizeof(fRoute));
    }
 

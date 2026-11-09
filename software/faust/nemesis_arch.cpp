@@ -332,6 +332,8 @@ FLASHMEM void NemesisAudio::stop()
 void NemesisAudio::update(void)
 {
     if (!fReady) return;  // not started, or start() is still allocating
+    // samples in this block (set at runtime, at most the buffers' 128)
+    const int n = nemesis::tdm::blockSize();
     // transport position for this block ([transport:..] parameters)
     beginBlock();
     // MIDI received in the background: mono note parameters, then FAUST's MIDI
@@ -364,27 +366,28 @@ void NemesisAudio::update(void)
     // frame (24 bit audio, left justified), see nemesis_tdm.h
     const int32_t* frames = nemesis::tdm::input();
     for (int channel = 0; channel < FAUST_INPUTS; channel++) {
-        if (!frames || channel >= nemesis::tdm::CHANNELS) {
-            memset(fInChannel[channel], 0, AUDIO_BLOCK_SAMPLES * sizeof(float));
+        // IN 8 is the transport's clock: silent here
+        if (!frames || channel >= nemesis::tdm::CHANNELS || (channel == 7 && nemesis::clockOnInput8())) {
+            memset(fInChannel[channel], 0, n * sizeof(float));
             continue;
         }
         // input polarity of the module
         float scale = DIV_32 * nemesis::inputScale(channel);
         const int32_t* src = frames + channel;
-        for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+        for (int i = 0; i < n; i++) {
             fInChannel[channel][i] = src[i * nemesis::tdm::CHANNELS] * scale;
         }
     }
 
-    fDSP->compute(AUDIO_BLOCK_SAMPLES, fInChannel, fOutChannel);
+    fDSP->compute(n, fInChannel, fOutChannel);
 
     // safety net: an unstable filter can leave inf/NaN in the DSP state, which
     // would silence the program for good, so clear the state and drop the block
     for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS; channel++) {
-        if (!std::isfinite(fOutChannel[channel][AUDIO_BLOCK_SAMPLES - 1])) {
+        if (!std::isfinite(fOutChannel[channel][n - 1])) {
             fDSP->instanceClear();
             for (int c = 0; c < NEMESIS_NUM_OUTPUTS; c++) {
-                memset(fOutChannel[c], 0, AUDIO_BLOCK_SAMPLES * sizeof(float));
+                memset(fOutChannel[c], 0, n * sizeof(float));
             }
             fResets++;
             break;
@@ -395,7 +398,7 @@ void NemesisAudio::update(void)
     int mode = outputMode();
     if (mode != nemesis::output::CLIP) {
         for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS; channel++) {
-            if (isAudioOutput(channel)) nemesis::output::shapeBlock(mode, fOutChannel[channel], AUDIO_BLOCK_SAMPLES);
+            if (isAudioOutput(channel)) nemesis::output::shapeBlock(mode, fOutChannel[channel], n);
         }
     }
 
@@ -409,7 +412,7 @@ void NemesisAudio::update(void)
         nemesis::outputCorrection(channel, scale, offset);
         int32_t* dest = out + channel;
         uint32_t clipped = 0;  // samples beyond the DAC range, shown as CLIP
-        for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+        for (int i = 0; i < n; i++) {
             float sample = fOutChannel[channel][i] * scale + offset;
             int32_t val;
             if (sample >= 1.0f) {

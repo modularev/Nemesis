@@ -9,8 +9,9 @@
 // per channel. No Audio library blocks: no splitting into 16 bit MSB/LSB
 // blocks, no queues, no repacking, (almost) no AudioMemory.
 //
-// Round trip: two audio blocks (256 samples, 5.3 ms at 48 kHz) plus the
-// codec, instead of four with AudioInputTDM/AudioOutputTDM:
+// Round trip: two audio blocks plus the codec, instead of four with
+// AudioInputTDM/AudioOutputTDM. The block size is set at runtime (32..128,
+// setBlockSize(): the DMA loops are made shorter):
 //
 //  - the receive DMA interrupt marks the half just filled and starts the
 //    update, so a program always reads this cycle's input (with the Audio
@@ -52,6 +53,12 @@ namespace nemesis
 
       uint32_t lateWrites();
       uint32_t writes();
+
+      // samples per block (per update): 32, 64 or 128 (AUDIO_BLOCK_SAMPLES,
+      // the size of the DMA buffers, is the maximum); switching stops the
+      // audio for a moment
+      int blockSize();
+      bool setBlockSize(int samples);
    }
 
    class InputTDM : public AudioInputTDM
@@ -59,6 +66,7 @@ namespace nemesis
    public:
       InputTDM();
       void update() override {}
+      static DMAChannel &channel() { return dma; }
 
    private:
       static void isr();

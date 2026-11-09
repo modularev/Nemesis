@@ -51,6 +51,16 @@ namespace nemesis
          for (int i = 0; i < numPrograms; i++)
             programs[i]->setActive(programs[i] == &program);
       }
+
+      constexpr int DEFAULT_BLOCK_SIZE = 64;
+
+      // the block size of the setting, or the running program's (auto)
+      void applyBlockSize()
+      {
+         int wanted = wantedBlockSize();
+         if (wanted != tdm::blockSize())
+            tdm::setBlockSize(wanted); // the audio stops for a moment
+      }
    }
 
    FLASHMEM void begin(Program &program)
@@ -77,12 +87,27 @@ namespace nemesis
       settings::load(*active);
       run(*active);
       hw::begin(*active);
+      applyBlockSize();
    }
+
+   int blockSize() { return tdm::blockSize(); }
+
+   int wantedBlockSize()
+   {
+      int setting = systemSettings().blockSize;
+      if (setting)
+         return setting;
+      int hint = active ? active->blockSizeHint() : 0;
+      return (hint == 32 || hint == 64 || hint == 128) ? hint : DEFAULT_BLOCK_SIZE;
+   }
+
+   float cpuLoad() { return AudioProcessorUsage() * AUDIO_BLOCK_SAMPLES / tdm::blockSize(); }
+   float cpuLoadMax() { return AudioProcessorUsageMax() * AUDIO_BLOCK_SAMPLES / tdm::blockSize(); }
 
    FLASHMEM void printAudioStatus(Print &out)
    {
       out.printf("audio: block %d samples, round trip %d samples; output written late %lu of %lu blocks\n",
-                 AUDIO_BLOCK_SAMPLES, 2 * AUDIO_BLOCK_SAMPLES, (unsigned long)tdm::lateWrites(),
+                 tdm::blockSize(), 2 * tdm::blockSize(), (unsigned long)tdm::lateWrites(),
                  (unsigned long)tdm::writes());
    }
 
@@ -124,6 +149,7 @@ namespace nemesis
          hw::setLed(i, false);
       AudioNoInterrupts();
       run(*next); // the old program is no longer updated
+      applyBlockSize();
       active = next;
       current = index;
       AudioInterrupts();
@@ -178,6 +204,8 @@ namespace nemesis
          EEPROM.write(PROGRAM_EEPROM_ADDRESS + 1, current);
       }
       settings::service();
+      if (active)
+         applyBlockSize(); // the setting may have changed
       hw::scan();
       if (active)
       {
@@ -186,7 +214,11 @@ namespace nemesis
             float v;
             if (c.volts)
             {
-               *c.zone = hw::inputVolts(c.input); // V/Oct: volts, no scaling or CV routing
+               // V/Oct: volts of the bound input and the routed CV inputs, no scaling
+               float volts = c.input >= 0 ? hw::inputVolts(c.input) : 0.0f;
+               for (uint32_t mask = c.cvMask; mask; mask &= mask - 1)
+                  volts += hw::inputVolts(__builtin_ctz(mask));
+               *c.zone = volts;
                continue;
             }
             if (c.input >= 0)
@@ -206,6 +238,11 @@ namespace nemesis
                hw::setLed(i.led, *i.zone > 0.5f * (i.min + i.max));
          hw::service(*active);
       }
+   }
+
+   bool clockOnInput8()
+   {
+      return systemSettings().clockSource == TransportCore::CV;
    }
 
    float input(int index)

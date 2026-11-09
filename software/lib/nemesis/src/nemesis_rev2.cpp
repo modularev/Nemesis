@@ -145,13 +145,17 @@ namespace nemesis
          // screens: home (program, CPU load), program settings (turn the
          // encoder), program list (click), system settings (press and hold)
          enum Screen { HOME, SETTINGS, PROGRAMS, SYSTEM };
-         constexpr uint32_t MENU_TIMEOUT_MS = 8000;
+         constexpr uint32_t MENU_TIMEOUT_MS = 2000; // program settings and list close after this without input
          constexpr uint32_t PUSH_DEBOUNCE_MS = 30;
          constexpr uint32_t HOLD_MS = 600;
          constexpr uint32_t FAST_TURN_MS = 40; // detents closer than this: bigger steps
          Screen screen = HOME;
          bool editing = false;
          int cursor = 0;
+         // where the lists were left: program settings per program, system
+         constexpr int REMEMBERED = 32;
+         int settings_cursor[REMEMBERED] = {};
+         int system_cursor = 0;
          int32_t last_encoder = 0;
          bool last_push = false;
          bool hold_fired = false;
@@ -161,14 +165,18 @@ namespace nemesis
          int brightness_shown = -1;
 
          // entries of the settings lists
-         enum ItemKind { ITEM_SETTING, ITEM_ROUTE, ITEM_RUN, ITEM_CLOCK, ITEM_TEMPO, ITEM_OFFSET,
-                         ITEM_MIDI, ITEM_POPUP, ITEM_BRIGHTNESS, ITEM_CV_RANGE };
+         enum ItemKind { ITEM_SETTING, ITEM_ROUTE, ITEM_RUN, ITEM_CLOCK, ITEM_CLOCK_PULSES,
+                         ITEM_TEMPO, ITEM_OFFSET, ITEM_MIDI, ITEM_POPUP, ITEM_BRIGHTNESS, ITEM_CV_RANGE,
+                         ITEM_BLOCK };
+         constexpr int BLOCK_CHOICES[] = {0, 32, 64, 128}; // 0: auto
+         constexpr int PPQN_CHOICES[] = {1, 2, 4, 24};
          struct Item
          {
             ItemKind kind;
             int index; // control index (setting) or CV input (route)
          };
          constexpr int MAX_ITEMS = 64;
+         constexpr int SCROLL_BAR_W = 4; // values end left of it
          Item items[MAX_ITEMS];
          int item_count = 0;
          int items_program = -1;
@@ -306,9 +314,9 @@ namespace nemesis
             display.setTextSize(1);
             display.setTextColor(WHITE);
             display.setFont(&SourceCodePro_ExtraLight6pt7b);
-            display.setCursor(0, 7);
+            display.setCursor(0, 8);
             display.print(F("say hello to"));
-            display.setCursor(0, 31);
+            display.setCursor(0, 29);
             display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
             display.print(F(">NEMESIS"));
             display.display();
@@ -316,9 +324,9 @@ namespace nemesis
 
             display.clearDisplay();
             display.setFont(&SourceCodePro_ExtraLight6pt7b);
-            display.setCursor(0, 7);
+            display.setCursor(0, 8);
             display.print(F("running"));
-            display.setCursor(0, 31);
+            display.setCursor(0, 29);
             display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
             display.print(programName);
             display.display();
@@ -376,7 +384,7 @@ namespace nemesis
             display.clearDisplay();
             display.setFont(&SourceCodePro_ExtraLight6pt7b); // a sketch may have changed it
             display.setTextColor(WHITE);
-            display.setCursor(0, 7);
+            display.setCursor(0, 8);
             display.print(F("CAL  B2 save  B1 cancel"));
             for (int p = 0; p < POT_NUM; p++)
             {
@@ -525,13 +533,13 @@ namespace nemesis
             display.clearDisplay();
             display.setTextColor(WHITE);
             display.setFont(&SourceCodePro_ExtraLight6pt7b);
-            display.setCursor(0, 7);
+            display.setCursor(0, 8); // 6pt reaches 8 px above the baseline
             if (!sdCardPresent())
                display.print(F("no SD "));
             if (activeProgram().usesTransport())
             {
                const TransportState &t = transportState();
-               display.print(t.external ? F("MIDI ") : F("int "));
+               display.print(t.cvClock ? F("IN8 ") : t.external ? F("MIDI ") : F("int "));
                if (t.running)
                   display.printf("%.1f ", t.bpm);
                else
@@ -560,18 +568,18 @@ namespace nemesis
             else if (limit_db < -0.5f)
                snprintf(text, sizeof(text), "lim %d dB", (int)roundf(limit_db));
             else
-               snprintf(text, sizeof(text), "cpu %d%%", (int)AudioProcessorUsage());
-            int16_t x = rightAligned(text, 7);
+               snprintf(text, sizeof(text), "cpu %d%%", (int)cpuLoad());
+            int16_t x = rightAligned(text, 8);
             if (clip)
             {
-               display.fillRect(x - 2, 0, 130 - x, 9, WHITE);
+               display.fillRect(x - 2, 0, 130 - x, 10, WHITE);
                display.setTextColor(BLACK);
             }
-            display.setCursor(x, 7);
+            display.setCursor(x, 8);
             display.print(text);
             display.setTextColor(WHITE);
             display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
-            display.setCursor(0, 31);
+            display.setCursor(0, 29); // descenders (g, p) end 2 px below the baseline
             display.print(activeProgram().name());
             display.setFont(&SourceCodePro_ExtraLight6pt7b);
             display.display();
@@ -628,14 +636,15 @@ namespace nemesis
             display.clearDisplay();
             display.setTextColor(WHITE);
             display.setFont(&SourceCodePro_ExtraLightItalic14pt7b);
-            display.getTextBounds(c.label, 0, 17, &x1, &y1, &w, &h);
+            // 14pt ascenders (b, d, f, l) reach 20 px above the baseline
+            display.getTextBounds(c.label, 0, 20, &x1, &y1, &w, &h);
             if (x1 + w > 128)
             {
                display.setFont(&SourceCodePro_ExtraLight6pt7b);
                display.setCursor(0, 14);
             }
             else
-               display.setCursor(0, 17);
+               display.setCursor(0, 20);
             display.print(c.label);
 
             float position = constrain(c.position(*c.zone), 0.0f, 1.0f);
@@ -660,7 +669,7 @@ namespace nemesis
             {
                const std::vector<Control> &controls = activeProgram().controls();
                for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV; i++)
-                  if (controls[i].input < 0)
+                  if (controls[i].input < 0 && controls[i].listed)
                      items[item_count++] = {ITEM_SETTING, (int)i};
                for (int i = 0; i < NUM_ROUTABLE_CV; i++)
                   items[item_count++] = {ITEM_ROUTE, routableCV(i)};
@@ -669,12 +678,15 @@ namespace nemesis
             {
                items[item_count++] = {ITEM_RUN, 0};
                items[item_count++] = {ITEM_CLOCK, 0};
+               if (systemSettings().clockSource == TransportCore::CV)
+                  items[item_count++] = {ITEM_CLOCK_PULSES, 0};
                items[item_count++] = {ITEM_TEMPO, 0};
                items[item_count++] = {ITEM_OFFSET, 0};
                items[item_count++] = {ITEM_MIDI, 0};
                items[item_count++] = {ITEM_POPUP, 0};
                items[item_count++] = {ITEM_BRIGHTNESS, 0};
                items[item_count++] = {ITEM_CV_RANGE, 0};
+               items[item_count++] = {ITEM_BLOCK, 0};
             }
          }
 
@@ -691,6 +703,8 @@ namespace nemesis
                return "run";
             case ITEM_CLOCK:
                return "clock";
+            case ITEM_CLOCK_PULSES:
+               return "IN 8 pulses";
             case ITEM_TEMPO:
                return "tempo";
             case ITEM_OFFSET:
@@ -703,6 +717,8 @@ namespace nemesis
                return "brightness";
             case ITEM_CV_RANGE:
                return "CV A-D range";
+            case ITEM_BLOCK:
+               return "block size";
             }
             return "";
          }
@@ -729,13 +745,26 @@ namespace nemesis
                break;
             case ITEM_CLOCK:
             {
-               static const char *const names[] = {"auto", "internal", "MIDI"};
-               snprintf(text, size, "%s", names[constrain(s.clockSource, 0, 2)]);
+               static const char *const names[] = {"auto", "internal", "MIDI", "IN 8"};
+               snprintf(text, size, "%s", names[constrain(s.clockSource, 0, 3)]);
                break;
             }
-            case ITEM_TEMPO:
-               snprintf(text, size, "%.0f", s.tempo);
+            case ITEM_CLOCK_PULSES:
+               if (s.clockPpqn == 24)
+                  snprintf(text, size, "24 ppqn");
+               else
+                  snprintf(text, size, "1/%d", 4 * s.clockPpqn);
                break;
+            case ITEM_TEMPO:
+            {
+               // following a clock: its tempo, marked with *
+               const TransportState &t = transportState();
+               if (t.external)
+                  snprintf(text, size, "%.1f*", t.bpm);
+               else
+                  snprintf(text, size, "%.0f", s.tempo);
+               break;
+            }
             case ITEM_OFFSET:
                snprintf(text, size, "%+d ms", s.clockOffsetMs);
                break;
@@ -753,6 +782,13 @@ namespace nemesis
                break;
             case ITEM_CV_RANGE:
                snprintf(text, size, "0-%dV", s.cvRangeVolts);
+               break;
+            case ITEM_BLOCK:
+               // auto: the running program's (or 64)
+               if (s.blockSize == 0)
+                  snprintf(text, size, "auto %d", wantedBlockSize());
+               else
+                  snprintf(text, size, "%d", s.blockSize);
                break;
             }
          }
@@ -808,8 +844,17 @@ namespace nemesis
                s.run = delta > 0;
                break;
             case ITEM_CLOCK:
-               s.clockSource = constrain(s.clockSource + delta, 0, 2);
+               s.clockSource = constrain(s.clockSource + delta, 0, 3);
+               buildItems(); // the CV clock items come and go
                break;
+            case ITEM_CLOCK_PULSES:
+            {
+               int k = 0;
+               while (k < 3 && PPQN_CHOICES[k] != s.clockPpqn)
+                  k++;
+               s.clockPpqn = PPQN_CHOICES[constrain(k + delta, 0, 3)];
+               break;
+            }
             case ITEM_TEMPO:
                s.tempo = constrain(roundf(s.tempo) + delta * (fast ? 5 : 1), 20.0f, 300.0f);
                break;
@@ -828,11 +873,31 @@ namespace nemesis
             case ITEM_CV_RANGE:
                s.cvRangeVolts = delta > 0 ? 8 : 5;
                break;
+            case ITEM_BLOCK:
+            {
+               int k = 0;
+               while (k < 3 && BLOCK_CHOICES[k] != s.blockSize)
+                  k++;
+               s.blockSize = BLOCK_CHOICES[constrain(k + delta, 0, 3)]; // applied by the library
+               break;
+            }
             }
             systemSettingsChanged();
          }
 
-         // three rows around the cursor: label left, value right (inverted while editing)
+         // scroll bar at the right edge when a list has more than three rows
+         void drawScrollBar(int first, int count)
+         {
+            if (count <= 3)
+               return;
+            int h = max(4, 32 * 3 / count);
+            int y = (32 - h) * first / (count - 3);
+            display.drawFastVLine(127, 0, 32, WHITE);
+            display.fillRect(125, y, 3, h, WHITE);
+         }
+
+         // three rows around the cursor: label left, value right (inverted
+         // while editing), the scroll bar at the edge
          FLASHMEM void drawList()
          {
             char label[24], value[24];
@@ -854,14 +919,15 @@ namespace nemesis
                display.print(selected ? '>' : ' ');
                display.print(itemLabel(items[index], label, sizeof(label)));
                itemValue(items[index], value, sizeof(value));
-               int x = rightAligned(value, y);
+               int x = rightAligned(value, y) - SCROLL_BAR_W;
                bool inverted = selected && editing;
-               display.fillRect(x - 4, y - 9, 132 - x, 11, inverted ? WHITE : BLACK);
+               display.fillRect(x - 3, y - 9, 128 - SCROLL_BAR_W - (x - 3), 11, inverted ? WHITE : BLACK);
                display.setTextColor(inverted ? BLACK : WHITE);
                display.setCursor(x, y);
                display.print(value);
                display.setTextColor(WHITE);
             }
+            drawScrollBar(first, item_count);
             display.display();
          }
 
@@ -872,15 +938,17 @@ namespace nemesis
             display.setTextColor(WHITE);
             display.setFont(&SourceCodePro_ExtraLight6pt7b);
             int n = programCount();
+            int first = constrain(cursor - 1, 0, max(0, n - 3));
             for (int row = 0; row < 3; row++)
             {
-               int index = cursor - 1 + row;
+               int index = first + row;
                if (index < 0 || index >= n)
                   continue;
                display.setCursor(0, 9 + row * 11);
                display.printf("%c%c %s", index == cursor ? '>' : ' ',
                               index == currentProgram() ? '*' : ' ', program(index)->name());
             }
+            drawScrollBar(first, n);
             display.display();
          }
 
@@ -890,8 +958,14 @@ namespace nemesis
          {
             screen = next;
             editing = false;
-            cursor = next == PROGRAMS ? currentProgram() : 0;
             buildItems();
+            if (next == PROGRAMS)
+               cursor = currentProgram();
+            else if (next == SETTINGS)
+               cursor = currentProgram() < REMEMBERED ? settings_cursor[currentProgram()] : 0;
+            else
+               cursor = system_cursor;
+            cursor = constrain(cursor, 0, max(0, (next == PROGRAMS ? programCount() : item_count) - 1));
          }
 
          void onTurn(int delta, bool fast)
@@ -914,6 +988,10 @@ namespace nemesis
                   changeItem(items[cursor], delta, fast);
                else
                   cursor = constrain(cursor + delta, 0, max(0, item_count - 1));
+               if (screen == SYSTEM)
+                  system_cursor = cursor;
+               else if (currentProgram() >= 0 && currentProgram() < REMEMBERED)
+                  settings_cursor[currentProgram()] = cursor;
                break;
             }
          }
@@ -1001,9 +1079,11 @@ namespace nemesis
                since_menu_input = 0;
                since_display = DISPLAY_INTERVAL_MS; // redraw now
             }
-            // back home after a while, or when the program was changed elsewhere
+            // back home after a while (not from the system settings or while
+            // editing a value), or when the program was changed elsewhere
             bool stale = screen == SETTINGS && items_program != currentProgram();
-            if (screen != HOME && (since_menu_input > MENU_TIMEOUT_MS || stale))
+            bool idle = (screen == SETTINGS || screen == PROGRAMS) && !editing && since_menu_input > MENU_TIMEOUT_MS;
+            if (screen != HOME && (idle || stale))
             {
                screen = HOME;
                editing = false;
@@ -1109,9 +1189,16 @@ namespace nemesis
          }
       }
 
+      // CV A-D can't read below 0 V: on some of them 0 V itself lies just
+      // beyond the end of the ADC range (calibrated zero outside 0..1), so an
+      // unpatched jack would read a few 10 mV. A reading at that end is 0 V.
+      constexpr float ADC_EDGE = 2.0f / 16383.0f;
       float cvVolts(int index)
       {
-         return (raw(index) - volts.cv_zero[index]) / volts.cv_per_volt[index];
+         float r = raw(index), zero = volts.cv_zero[index];
+         if (index >= CV_BIPOLAR && ((zero < ADC_EDGE && r < ADC_EDGE) || (zero > 1.0f - ADC_EDGE && r > 1.0f - ADC_EDGE)))
+            return 0.0f;
+         return (r - zero) / volts.cv_per_volt[index];
       }
 
       float input(int index)
