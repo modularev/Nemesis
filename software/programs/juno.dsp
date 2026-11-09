@@ -1,10 +1,13 @@
 declare name "juno";
 declare description "Juno style polysynth: DCO saw/pulse/sub/noise, HPF, 4 pole VCF, ADSR, LFO, chorus I/II";
 declare author "Arev Imer";
-declare version "0.3";
+declare version "0.4";
 declare options "[midi:on][nvoices:6]";
 
 // Play it over MIDI (USB or the MIDI jack), stereo out on outputs 1/2.
+// Every voice sits at its own place in the stereo field (spread): each
+// semitone a fixed position, neighbouring notes far apart (golden ratio
+// steps), so chords open up; the chorus then works on both sides.
 //
 // hardware controls            rev2            rev1
 // cutoff resonance env amount  POT_A B C       knob A B C
@@ -35,10 +38,12 @@ saw_lvl   = hslider("Saw [midi:ctrl 70]", 1, 0, 1, 0.001) : si.smoo;
 pulse_lvl = hslider("Pulse [midi:ctrl 71]", 0, 0, 1, 0.001) : si.smoo;
 sub_lvl   = hslider("Sub [midi:ctrl 77]", 0.3, 0, 1, 0.001) : si.smoo;
 noise_lvl = hslider("Noise [midi:ctrl 78]", 0, 0, 1, 0.001) : si.smoo;
-hpf       = hslider("HPF [midi:ctrl 81]", 0, 0, 1, 0.001) : si.smoo;
+// HPF frequency from the raw slider, smoothed last (pow once per block)
+hpf_freq  = hslider("HPF [midi:ctrl 81]", 0, 0, 1, 0.001) : \(h).(20 * pow(40, h)) : si.smoo;
 lfo_vcf   = hslider("LFO VCF [midi:ctrl 76]", 0, 0, 1, 0.001) : si.smoo;
 lfo_dco   = hslider("LFO DCO [midi:ctrl 1]", 0, 0, 1, 0.001) : si.smoo; // mod wheel: vibrato
 kbd       = hslider("Kybd [midi:ctrl 82]", 0.5, 0, 1, 0.001) : si.smoo;
+spread    = hslider("Spread [midi:ctrl 10]", 0.6, 0, 1, 0.01);
 
 lfo = os.lf_triangle(lfo_rate);
 env = en.adsr(attack, decay, sustain, release, gate);
@@ -52,7 +57,6 @@ dco   = saw_lvl * os.sawtooth(pitch)
       + noise_lvl * no.noise;
 
 // filters: one pole HPF, resonant 4 pole lowpass with env, LFO and key tracking
-hpf_freq = 20 * pow(40, hpf);
 vcf_oct  = 10 * cutoff + 6 * env_amt * env + 2 * lfo_vcf * lfo + kbd * log(freq / 261.6) / log(2);
 // moogLadder: zero delay feedback ladder, stable up to 20 kHz (ve.moog_vcf
 // is only valid below SR/6.3 and blew up). Its cutoff is log scaled:
@@ -60,7 +64,14 @@ vcf_oct  = 10 * cutoff + 6 * env_amt * env + 2 * lfo_vcf * lfo + kbd * log(freq 
 vcf_norm = vcf_oct * 0.30103 / 3 : max(0) : min(0.98);
 vcf_q    = 0.707 + resonance * 23; // 25 self-oscillates
 
-voice = dco * 0.25 : fi.highpass(1, hpf_freq) : ve.moogLadder(vcf_norm, vcf_q) : *(env * gain);
+mono = dco * 0.25 : fi.highpass(1, hpf_freq) : ve.moogLadder(vcf_norm, vcf_q) : *(env * gain);
+
+// pan by note (control rate: freq and spread are sliders): semitone n at
+// frac(n * 0.618), equal power, spread 0 = centre
+semitone = 12 * log(freq / 27.5) / log(2) + 0.5 : floor;   // rounded: 26.9999 is 27
+place    = ma.frac(semitone * 0.618034) - 0.5;          // -0.5 .. 0.5
+angle    = (0.5 + place * spread) * ma.PI / 2;
+voice    = mono <: *(cos(angle) * sqrt(2)), *(sin(angle) * sqrt(2));   // centre: the old level
 
 // chorus after the voice mix (the 'effect' runs once, not per voice):
 // two modulated delays in opposite phase, rates and depths after the Juno 60
@@ -68,7 +79,7 @@ chorus_rate  = ba.selectn(4, chorus, 0, 0.5, 0.83, 8);
 chorus_depth = ba.selectn(4, chorus, 0, 0.0018, 0.0018, 0.0003);
 chorus_lfo   = os.lf_triangle(chorus_rate);
 tap(sign)    = de.fdelay(1024, ma.SR * (0.0035 + sign * chorus_depth * chorus_lfo));
-stereo(x)    = x * dry + tap(1, x) * wet, x * dry + tap(-1, x) * wet
+stereo(l, r) = l * dry + tap(1, l) * wet, r * dry + tap(-1, r) * wet
 with {
     wet = ba.if(chorus > 0, 0.7, 0);
     dry = ba.if(chorus > 0, 0.7, 1);
