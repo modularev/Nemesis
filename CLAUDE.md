@@ -92,8 +92,40 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   breaker (beat slice repeat/reverse, crush, comb, drive, drum triggers on
   outs 3–8 from a pattern map; on the transport),
   freqshift, superosc, growler (stereo 4-op FM bass, keys/V-Oct play the operators, 27 %); 816 MHz, 48 kHz.
-- mooSpace2 (program 3): v1 algorithm with wider controls, measured 67 %
-  (max 72 %) on the module; motion only on the tank delays (CPU). mooSpace v1
+- mooSpace2 (program 3): v1 algorithm with wider controls; smear = diffuser
+  strength (blur), drag = diffuser lengths + late taps (time stretch; was
+  smear's job, which made smear sound like a delay at short decays); tone (POT C) in
+  the tank replaces colour + filter, reverse (POT A), shimmer (POT B, pitch
+  shifter where input and feedback enter each tank half, so it works at
+  short decays too; modulate is a setting now; tank compressors replaced by
+  soft limiters (they pumped ~2 Hz at high decay + loud input), one fixed
+  allpass more per tank half (1103/1213); held tones still beat a few dB in
+  long tails, v1 too: fixed tank resonances, modulation didn't help);
+  smear: input diffuser coefficients capped at 0.6 (0.85 let 52 % of a
+  click through: allpasses pass -coeff at once), two more fixed integer
+  input allpasses 397/491/607/743 (gliding ones cost +9 %); the 4 input
+  diffusers use the moving heads too (motion 0 = no pitch when turning
+  drag/smear, +5 %), paid for by a soft clip instead of the input's 1176
+  limiter + tanh: 67 % (max ~80); lag's predelay still glides (2 heads on
+  its PSRAM buffer cost ~6 %);
+  v2.8: lag in ms or note values (library [name:]/[if:]/[ifnot:]),
+  motion on/off, crossfade fixed 25 ms, MAX_LAG 2^16;
+  v2.7 (2026-11-09): freeze (gain 1.004: interpolating reads lose treble),
+  ping-pong echoes from the reverse buffers (4 PSRAM reads), duck, clocked
+  gate, lofi in the feedback (needs a low-pass after the hold: its images
+  made long tails grow), 8 outputs (3/4 rear, 5/6 wet, 7/8 envelopes);
+  CPU 74 % (max 90-95, 0 late of 42029); was 67 %. The crossfade heads had
+  swapped take triggers (jumps while audible), fixed;
+  decay knob = tail time, RT60 0.4..60 s exponential to 0.95, gain up to
+  1.05 above (was 1.1*sqrt(knob): 1.5-4 s over the first half, endless
+  from 0.83); at decay 0 the tail is smear/drag's (~1.5 s at defaults);
+  sync setting (2026-11-09): lag on 1/16, drag's late tap on 1/32, reverse
+  pieces a note value locked to nm_position (buffer 2 x 65000, PSRAM);
+  checked on the Mac, CPU on the module unchanged with sync off (66-68 %);
+  block 64: 67-70 % (max
+  77-84 %, 111 % only in the switch report); the shimmer costs ~5-8 points
+  (its 2 x 32 kB delays don't fit the arena any more). Motion on the tank and
+  input diffuser delays. Block size setting is not stored (auto at boot). mooSpace v1
   56 % since the RAM arena. freqshift 13 %, superosc 25 %, breaker 14 %.
 - Output setting (clip/soft/tape/fold) on every program's audio outputs
   (nemesis_output.h, `declare audio_outputs`/`declare output`); breaker
@@ -120,6 +152,13 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   program settings/list close after 2 s (not while editing), system
   settings stay open, positions remembered, scroll bar; fonts on baselines
   8 (6pt) and 29/20 (14pt). Not yet looked at on the display by the user.
+- Display fonts (2026-11-09): Michroma 16 px (program names), Michroma 13 px
+  oblique (knob popup, splash), Oxanium 10 px (menus, header; list rows on
+  baselines 8/19/30); converted with lib/nemesis/src/fonts/ttf2gfx.py (PIL,
+  optional slant), OFL licenses next to them. Michroma is unreadable below
+  ~10 px (0/8 look like D/B).
+- Test scripts: octave "bands" made as x - lowpass are high-passes and hide
+  low cuts; use the difference of two low-passes.
 - 96 kHz, branch 96khz (2026-11-09, env rev2_96k, register 03h MFREQ 1xx,
   always starts program 1): runs; CPU about 2.1x (juno 3.8, freqshift 29.5,
   superosc 50.7, breaker 26.6, growler(old) 27.4 %), mooSpace overloads

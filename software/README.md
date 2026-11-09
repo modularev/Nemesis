@@ -68,12 +68,13 @@ blocks: the round trip is two audio blocks plus the codec (24 samples).
 
 The block size is set at runtime, system setting **block size**: auto (the
 program's `declare block_size "32";`, else 64), 32, 64 or 128; switching
-stops the audio for a moment. Measured OUT 1 -> IN 1: 88 samples (1.8 ms)
+stops the audio for a moment. The setting isn't stored: every power up
+starts with auto. Measured OUT 1 -> IN 1: 88 samples (1.8 ms)
 at 32, 152 (3.2 ms) at 64, 280 (5.8 ms) at 128 (16 worked too, 56 samples,
 but is left out: a program could use only ~75 % of such a block). The
 average CPU load hardly depends on it; the peaks grow with smaller blocks,
 and the output must be written before the transmit DMA (a few frames ahead)
-reaches it: a program may use about 88 % of a 32 sample block, 94 % at 64. mooSpace/mooSpace2 ask for 128, breaker and growler for 32.
+reaches it: a program may use about 88 % of a 32 sample block, 94 % at 64. mooSpace and mooSpace2 ask for 64, breaker and growler for 32.
 `STATUS` shows the block size and output blocks written too late.
 
 On rev2 the pots are converted in the background (ADC interrupt, 32x
@@ -244,6 +245,9 @@ lifting keeps it, a note played alone starts anew),
 `[setting:0]` makes a parameter only a CV target (not in the settings
 list), with `[volts:1]` a routed CV gives it volts (V/Oct on any CV A–D),
 `[scale:log]` maps a knob exponentially, `[unit:Hz]` is shown after values.
+`[name:lag]` shows a setting under another name (labels stay unique, they
+are what the SD card stores), `[if:sync]` / `[ifnot:sync]` lists it only
+while the setting "sync" is on / off (mooSpace2: lag in ms or note values).
 
 ## several programs in one firmware
 
