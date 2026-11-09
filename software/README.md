@@ -64,9 +64,17 @@ architecture files or the options change.
 Both use the CS42448 codec in TDM mode: 8 channels in and out, each a 32 bit
 slot (24 bit audio). The running program reads and writes the TDM DMA
 buffers directly (`lib/nemesis/src/nemesis_tdm.h`), without Audio library
-blocks: the round trip is two audio blocks (256 samples, 5.3 ms at 48 kHz)
-plus the codec. `STATUS` shows output blocks written too late (a program at
-almost 100 % CPU).
+blocks: the round trip is two audio blocks plus the codec (24 samples).
+
+The block size is set at runtime, system setting **block size**: auto (the
+program's `declare block_size "32";`, else 64), 32, 64 or 128; switching
+stops the audio for a moment. Measured OUT 1 -> IN 1: 88 samples (1.8 ms)
+at 32, 152 (3.2 ms) at 64, 280 (5.8 ms) at 128 (16 worked too, 56 samples,
+but is left out: a program could use only ~75 % of such a block). The
+average CPU load hardly depends on it; the peaks grow with smaller blocks,
+and the output must be written before the transmit DMA (a few frames ahead)
+reaches it: a program may use about 88 % of a 32 sample block, 94 % at 64. mooSpace/mooSpace2 ask for 128, breaker and growler for 32.
+`STATUS` shows the block size and output blocks written too late.
 
 On rev2 the pots are converted in the background (ADC interrupt, 32x
 hardware averaging) and smoothed adaptively: still when resting, no lag
@@ -147,9 +155,19 @@ so the position moves smoothly and stays within a few samples of the clock
 (simulated: 2.6 samples rms at a steady tempo, ~12 on a tempo ramp). MIDI
 Start resets it to the downbeat, Stop and Continue stop and resume, Song
 Position sets it; when the clock stops without a Stop the position holds,
-after 0.3 s the internal tempo takes over (clock `auto`). System settings:
-run, clock (auto, internal, MIDI), tempo, clock offset (±50 ms, against
-latency). FAUST programs use it with `import("nemesis.lib");`:
+after 0.3 s the internal tempo takes over (clock `auto`).
+
+Clock `IN 8`: a clock or gate on audio IN 8 (rising above 30 % of its
+±2.77 V full scale, back below 15 %; any Eurorack clock works), 1/4, 1/8,
+1/16 or 24 pulses per quarter, tracked by the same loop. The edges are
+found in the samples, so they are timed to the sample; IN 8 is silent in
+the program meanwhile, MIDI clock and Start/Stop are ignored. Pulses after
+a pause start the transport at the downbeat, it stops when they stop. The
+system settings show a clock's tempo with a `*` (`120.0*`).
+
+System settings: run, clock (auto, internal, MIDI, IN 8), IN 8 pulses,
+tempo, clock offset (±50 ms, against latency). FAUST programs use it with
+`import("nemesis.lib");`:
 
 ```faust
 import("nemesis.lib");
@@ -215,6 +233,16 @@ reduction the home screen shows ("lim -3 dB").
 More label metadata: `[volts:1]` gives a CV input in volts (calibrated on
 rev2, for V/Oct), `[mono:note]`, `[mono:gate]` and `[mono:velocity]` follow
 monophonic MIDI (last note priority, the note stays after release),
+`[mono:note1]`…`[mono:note4]` and `[mono:gate1]`…`[mono:gate4]` give the
+notes of up to 4 paraphonic voices (a new note takes the lowest free voice,
+else the oldest note is stolen), `[mono:rr1]`…`[mono:rr4]` four pitches:
+a note played alone sets all four, notes added while keys are held go to
+the next one in turn (2, 3, 4, 1 …) and stay, `[mono:sp1]`…`[mono:sp4]` four
+pitches spread over the notes played together (one note all four, two
+1+2 / 3+4, three 1+2 / 3 / 4, four one each, the lowest note first;
+lifting keeps it, a note played alone starts anew),
+`[setting:0]` makes a parameter only a CV target (not in the settings
+list), with `[volts:1]` a routed CV gives it volts (V/Oct on any CV A–D),
 `[scale:log]` maps a knob exponentially, `[unit:Hz]` is shown after values.
 
 ## several programs in one firmware

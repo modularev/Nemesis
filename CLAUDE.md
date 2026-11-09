@@ -91,7 +91,7 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 - Firmware programs: juno (6 voice MIDI poly, chorus effect), mooSpace,
   breaker (beat slice repeat/reverse, crush, comb, drive, drum triggers on
   outs 3–8 from a pattern map; on the transport),
-  freqshift, superosc, growler (mono FM bass, 14 %); 816 MHz, 48 kHz.
+  freqshift, superosc, growler (stereo 4-op FM bass, keys/V-Oct play the operators, 27 %); 816 MHz, 48 kHz.
 - mooSpace2 (program 3): v1 algorithm with wider controls, measured 67 %
   (max 72 %) on the module; motion only on the tank delays (CPU). mooSpace v1
   56 % since the RAM arena. freqshift 13 %, superosc 25 %, breaker 14 %.
@@ -113,10 +113,34 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   60 % with it, 56 % without): access counts don't predict cost, PSRAM
   reads in order are cheap. Not yet checked: other channels' mapping,
   calibration with the HP, hwtest, rev1.
-- Idea, parked: 96 kHz. CS42448 TDM supports double speed (MCLK 512x = 49.2 MHz,
-  register 0x03 MFREQ needs 1xx), but the datasheet warns ADC_SDOUT may miss
-  timing in TDM double speed: measure the inputs first (a rev2_96k build).
-  CPU doubles (mooSpace won't fit). Block size 128 is compile time and the max.
+- Clock source "IN 8" (2026-11-06): clock/gate on audio IN 8, edges found in
+  the samples (nemesis_transport.cpp), 1/4..1/16 or 24 ppqn, restarts at the
+  downbeat after a pause; tested on the module with the Fireface (out 23 ->
+  ES-10 out 1 -> IN 8, scratchpad cvclock.py): 120 and 97 BPM exact. Menus:
+  program settings/list close after 2 s (not while editing), system
+  settings stay open, positions remembered, scroll bar; fonts on baselines
+  8 (6pt) and 29/20 (14pt). Not yet looked at on the display by the user.
+- 96 kHz, branch 96khz (2026-11-09, env rev2_96k, register 03h MFREQ 1xx,
+  always starts program 1): runs; CPU about 2.1x (juno 3.8, freqshift 29.5,
+  superosc 50.7, breaker 26.6, growler(old) 27.4 %), mooSpace overloads
+  (no serial output). Audio quality and the inputs (ADC_SDOUT timing in TDM
+  double speed) not checked. Block size 128 is compile time and the max.
+- 64 sample blocks, branch block64 (2026-11-09, env rev2_block64,
+  -D AUDIO_BLOCK_SAMPLES=64): CPU within ~1 point of 128 for every program
+  (mooSpace 57.6, mooSpace2 58.8 max 70 %), no late output blocks; round trip
+  128 samples + codec, latency not measured on the loopback yet.
+- Block size per program / system setting (branch block-size, 2026-11-09):
+  nemesis_tdm.cpp stops the SAI at a frame end, shortens both DMA loops
+  (buffers stay 128) and restarts in sync; `declare block_size`, setting
+  auto/16/32/64/128. Loopback: 56/88/152/280 samples at 16/32/64/128, level
+  identical after 9 switches (slots kept), no late blocks in 64663.
+- 32 sample blocks, branch block32 (env rev2_block32): averages again within
+  ~1 point (juno 2.4, mooSpace 57.7, mooSpace2 59.7 %), peaks higher
+  (mooSpace2 max 74, 83 right after starting), no late output blocks in
+  82569. Late-write margin: the transmit DMA leads by a few frames, ~12 % of
+  a 32 sample block.
+- juno, 6 voices playing (2026-11-09, stereo by note): 65 % CPU, peak 85 %
+  at note on (6 moogLadders with per-sample tan/pow); idle 2 %.
 - Open: juno stress test with cutoff/resonance/env at max (NaN counter),
   rev1 never tested with the unified code, the 0x44 register mode for DC on
   IN 5/6 untested.

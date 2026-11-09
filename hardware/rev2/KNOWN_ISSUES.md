@@ -86,6 +86,11 @@ No bytes arrived from a MIDI keyboard on the test unit; USB MIDI works.
 - X/Y/Z: main knob summed with the CV (through the attenuverter), ±4.2 V;
   their path is 4–5 mV nonlinear vs. ~1 mV for A–D (same ADC).
 - A–D: 0…8.4 V, unipolar, readings below 0 V clip.
+  On the test unit 0 V itself lies just below the ADC range on B, C and D
+  (calibrated zero −0.003…−0.006 of full scale): unpatched they read the
+  clipped end, 0.03–0.05 V after calibration. The library reads that end as
+  0 V (`cvVolts`); 0…0.05 V can't be told apart on these inputs (V/Oct: up
+  to ~0.6 semitones above C). `CAL` prints the calibration.
 - The LTC1867L must run SPI mode 0 at ≤ 10 MHz with ≥ 5.7 µs per channel
   (datasheet limits); the original 24 MHz mode 1 timing caused a flat spot at
   mid scale (fixed in software).
