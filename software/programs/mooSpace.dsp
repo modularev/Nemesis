@@ -3,7 +3,7 @@ declare description "variable space reverberation audio effect";
 declare author "Arev Imer (arev.imer@students.fhnw.ch)";
 declare copyright "Arev";
 declare version "0.4";
-declare block_size "128";   // audio block (system setting block size: auto)
+declare block_size "64";    // audio block (system setting block size: auto)
 
 // hardware controls   rev1 (knob + CV)    rev2
 // smear decay drag    CV_X CV_Y CV_Z      knobs X Y Z (+ CV X Y Z)
