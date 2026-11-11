@@ -102,3 +102,27 @@ No bytes arrived from a MIDI keyboard on the test unit; USB MIDI works.
 - Pot ADC noise: 24–33 LSB single reading; handled with 32x averaging and
   adaptive smoothing in software, a RC filter or a reference with less noise
   at the pot wipers would help.
+- Pot spikes (2026-11-11, Teensy VIN from the bus +5 V): single
+  conversions ~30 LSB off on POT D now and then (one per 30–60 s), which
+  the adaptive smoothing passes as a turn and which opened the parameter
+  popup (threshold 0.01 ≈ 40 LSB). A median of the last 3 conversions per
+  pot removes them (max 4–10 LSB in 90 s). Not known whether the bus
+  supply made them worse.
+
+## Teensy 5 V supply
+
+The 1117-5.0 that feeds the Teensy's VIN is too weak (2026-11-11). strike
+(dense FPU code from ITCM at 816 MHz, the highest current draw so far) reset
+the module after 5–30 s: reset cause 0x1 (power-on), no CrashReport. Just
+before each reset all four pots read 6–7 % high together (the ADC reference,
+the Teensy's 3.3 V, sagged). The display showed every pot-bound parameter
+jumping, and pots that caught their setting wrote it, so a reset during an
+SD write was likely (a damaged FAT on the card, 2026-11-10). With a larger
+output capacitor it ran for minutes and then froze without a reset (the
+watchdog didn't fire either): 3.30 V on the Teensy, 5.55 V on VIN.
+Feeding VIN from the case's +5 V directly fixed it.
+
+**Next revision:** a stronger 5 V regulator for the Teensy (switching from
++12 V, or the bus +5 V with a fuse/diode), with its output capacitor as its
+datasheet asks (the 1117 needs a minimum ESR/capacitance). Check for a sag
+under load: the pots all reading high at once in the `RAW` serial command.

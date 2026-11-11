@@ -77,6 +77,35 @@ and the output must be written before the transmit DMA (a few frames ahead)
 reaches it: a program may use about 88 % of a 32 sample block, 94 % at 64. mooSpace and mooSpace2 ask for 64, breaker and growler for 32.
 `STATUS` shows the block size and output blocks written too late.
 
+The sample rate is set at runtime too, system setting **sample rate**: auto
+(the program's `declare sample_rate "96000";`, else 48 kHz), 48k or 96k
+(not stored). MCLK is 49.152 MHz at both rates (MFREQ 100 in register
+03h, set at boot): the switch stops the SAI at a frame end, sets the bit
+clock divider (MCLK / 4 or / 2) and starts it again in sync, like a block
+size change; the codec detects the speed from MCLK / LRCK (1024 / 512) and
+isn't powered down (that popped on the DC coupled outputs). The i.MX RT SAI
+has no bit clock bypass, so MCLK 24.576 MHz (256 fs at 96 kHz) can't be kept. A program reads its
+metadata before its DSP is initialized (`nemesis::applySampleRate()`), so
+FAUST's `ma.SR` is the new rate; changing the setting restarts the running
+program. A frozen pollen loop saved at the other rate loads too (it plays an
+octave up or down). growler,
+breaker and pollen ask for 96 kHz (CPU about 2x: growler 53 %, breaker 29 %,
+pollen 74 %); mooSpace/mooSpace2 don't fit at 96 kHz. `[nvoices:N]` are the
+voices at 48 kHz: at 96 kHz half of them take notes (juno: 12 / 6).
+
+Every program switch, block size and sample rate change fades the outputs
+out (5 ms) and in again (10 ms) (`nemesis::outputTarget`, applied by the
+architecture file); a rate change also mutes the codec's DACs (register 07h)
+for ~30 ms while the codec follows the new clocks.
+Test command: `RATE <Hz>` (the setting, 0 auto).
+
+The processor runs at 816 MHz (`board_build.f_cpu`). A program can ask for
+less with `declare cpu_mhz "600";`: the library sets the clock before the
+program's first block and back to 816 MHz for the next program (no program
+uses it now; it was a workaround for a weak 5 V supply on rev2, see
+`hardware/rev2/KNOWN_ISSUES.md`). Serial test commands: `CLOCK <MHz>`,
+`RAW` (all control inputs unfiltered, for logging).
+
 On rev2 the pots are converted in the background (ADC interrupt, 32x
 hardware averaging) and smoothed adaptively: still when resting, no lag
 while turning. `nemesis::encoderPosition()` and `nemesis::encoderPressed()`
@@ -127,9 +156,29 @@ declare options "[midi:on][nvoices:8]";
 
 MIDI is read from the MIDI jack (`Serial1`, the rev2 jack is wired as TRS
 type B) and, when the Teensy USB type includes MIDI (`-D USB_MIDI_SERIAL`),
-from USB. When any program is polyphonic, all programs are compiled with
-RTTI (FAUST's `poly-dsp.h` needs `dynamic_cast`; mixing RTTI and non-RTTI
-copies of the shared FAUST header code crashed).
+from USB. The programs stay standard FAUST, but FAUST's `MidiUI` and
+`poly-dsp.h` aren't used (a program using them could never be freed, and
+they cost a lot of RAM: juno ~230 kB). Instead:
+
+- the library maps FAUST's MIDI metadata as FAUST's MidiUI does:
+  `[midi:ctrl N]` (and `ctrl N C`), `keyon N`, `keyoff N`, `key N`,
+  `keypress N`, `pgm`, `chanpress`, `pitchwheel`/`pitchbend`, `start`,
+  `stop`, `clock`. A setting or knob takes the value as its own (shown in
+  the menu, saved; a knob catches it like a loaded value);
+- `[nvoices:N]` programs run on `faust/faust/dsp/nemesis-poly.h`: N voices
+  from the program's `create()` (the memory manager, fast RAM arena),
+  `freq`/`key`, `gain`/`vel`/`velocity` and `gate` set per voice, the other
+  parameters shared (the first voice's UI, copied to the others every
+  block). A voice is computed from its note on until it stayed below
+  -66 dB for 10 ms after the note off (juno idle: 2 %); a new note takes a
+  free voice, else the oldest releasing, else the oldest playing one. A
+  voice that still sounds fades out in 3 ms (gate off), takes the new note
+  and fades in over 3 ms; the envelopes go on from their level, as a
+  retrigger (a block of gate off alone clicked). CC 120/123 release all
+  voices.
+
+`[midi:on]` is kept for FAUST compatibility; the library reads the
+metadata of every program.
 
 A polyphonic program can define an `effect` next to `process`; it runs once
 after the voices are mixed (juno's chorus):
@@ -146,8 +195,8 @@ The architecture clears a program's DSP state if it ever outputs inf/NaN
 
 The library reads the MIDI jack and USB MIDI in a 100 µs timer interrupt
 (both revisions). Note, controller and other channel messages are queued
-for the program's MIDI handler (FAUST `[midi:on]` programs), filtered by the
-MIDI channel setting.
+for the running program (its `[midi:..]`, `[mono:..]` parameters and
+voices), filtered by the MIDI channel setting.
 
 The transport is system wide: a position in MIDI clock ticks (24 per
 quarter) that runs on the internal tempo or follows the MIDI clock. Clock
@@ -247,7 +296,43 @@ list), with `[volts:1]` a routed CV gives it volts (V/Oct on any CV A–D),
 `[scale:log]` maps a knob exponentially, `[unit:Hz]` is shown after values.
 `[name:lag]` shows a setting under another name (labels stay unique, they
 are what the SD card stores), `[if:sync]` / `[ifnot:sync]` lists it only
-while the setting "sync" is on / off (mooSpace2: lag in ms or note values).
+while the setting "sync" is on / off (mooSpace2: lag in ms or note values),
+`[if:voice=3]` while "voice" is 3. `[edit:v{voice} pitch]` on a knob makes
+turning it set the setting "v3 pitch" (with "voice" at 3; strike's POT A-D
+edit the selected voice), the popup shows that setting.
+`[mono:trig]` counts note-ons (every note a change, also repeated ones);
+`[chan:N]` on a mono parameter follows MIDI channel base + N - 1 only (base:
+the MIDI channel setting, omni 1), `[note:N]` only that note (strike: a
+voice per channel, or notes 36-41).
+`[pager:1]` on a setting: button 1 steps it (on release; held while
+turning `[edit:]` knobs it moves that setting on every page by the same
+amount), the home screen shows the page with `[pagename:v{voice} type]` and
+an activity strip of `[activity:N]` bargraphs, the settings list starts with
+the page's settings. `[section:name]` adds header rows to the settings list,
+`[button:N]` is 1 while button N is held. Rolling (random sounds): an `[action:roll]` setting shows the position in
+a history of the last 16 rolls (#0: before rolling); in the list click it,
+then every detent right is a new roll, left goes back one. `[action:target]`
+(menu: page / all) says what a roll changes, `[action:amount]` how far
+(100 % fully random), `[random:0]` keeps a setting out. Button 1 held +
+button 2: a new roll of the current page (the program can play it on
+`[button:2]`); the header shows "roll #n" for a moment. Edit knobs let go
+of a setting that changed elsewhere and catch it again. A roll leaves alone
+what is played: settings an edit knob sets (on any page) and settings with a
+routed CV A-D that carries a signal (above ~0.2 V). `[title:x]` on a knob
+names its popup after the value of setting "x" (assignable knobs). Build options per program: `declare options "[itcm:on]"` runs
+compute() from ITCM (for loops bigger than the 32 kB instruction cache),
+`[optimize:Os]`, `[faust:...]` extra FAUST options.
+
+Robustness: a hardware watchdog resets the module when loop() stalls for
+4 s. Starts that end within 10 s are counted; after two in a row the module
+starts program 1 and leaves the SD card alone ("SD off" on the home
+screen). Settings files are read at most 32 kB (a longer one is renamed to
+`BAD_<name>` and the program keeps its defaults: "SD bad"), and written to
+`<name>.NEW` first. A program is remembered for the next power up after it
+has run for 10 s. If "SD off" or "SD bad" shows, repair the card on a
+computer (e.g. Disk Utility, First Aid) or reformat it (FAT32). On rev2 every knob keeps its last
+value with the program's settings and catches it after a start or program
+switch (the popup marks the knob's place until it reaches the value).
 
 ## several programs in one firmware
 
