@@ -140,7 +140,21 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   user's editor library (~/Downloads/Juno-106-Factory.106, Java serialized),
   made by software/tools/juno106_presets.py. Serial WRITE <path> <bytes>
   puts a file on the SD card.
-- Firmware programs: juno (0.12: X/Y/Z cutoff/resonance/env, POT A-D
+- Firmware programs: juno (0.15: fitted to a recording of A11 (the user's
+  ~/Desktop/juno-a11.wav, chords rendered locally with FAUST and compared
+  by spectral centroid): RC envelope (linear attack, exponential decay and
+  release; slider time = 2 time constants), cutoff slider 0 = 113 Hz at C4;
+  brightness curve within 0.28 oct (first 0.2 s still brighter: the 106's
+  attack at slider 3 seems slower). Presets in factory order A11..B88
+  (names from synthmania's factory recordings, juno106_presets.py);
+  0.14, from the Juno-106 service notes 1984:
+  filter 5 Hz-50 kHz, env +14 oct, LFO VCF +-3.5 oct, DCO LFO +-400 cents;
+  the FREQ slider spans 248 Hz at C4 (calibration: C4 -> 248 Hz) .. 50 kHz,
+  only modulation reaches 5 Hz (slider 0 = 5 Hz made the factory brass
+  plucky/silent); envelope 1.5 ms + max * v^3 (exponential made decay
+  44/127 34 ms; the curve is an assumption). All but 2 presets reach the
+  level target now (before: 7-9 patches with closed filters stayed quiet);
+  0.12: X/Y/Z cutoff/resonance/env, POT A-D
   attack/decay/sustain/release, LFO rate and PWM settings; limiter removed
   (the user found it sounded bad); 0.11, from the Juno-106 owner's manual: LFO
   0.1-30 Hz exponential, HPF a menu 0 boost / 1 flat / 2 / 3 (240/720 Hz
