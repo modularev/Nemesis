@@ -21,6 +21,7 @@ Patch bytes (Juno-106 owner's manual, as quoted in ST-Log 33, June 1989):
 usage: juno106_presets.py <patches.106|*.syx> [-o juno.PRE]
 """
 import argparse
+import re
 import struct
 import sys
 
@@ -58,6 +59,169 @@ def read_syx(data):
         i += 24
 
 
+# The factory order (A11..B88) with the names of the factory recordings at
+# synthmania.com (Juno-106 Factory Preset Group A/B); a library whose names
+# match all 128 is written in this order, numbered ("A11 Brass").
+FACTORY = [
+    ("A11", "Brass"),
+    ("A12", "Brass Swell"),
+    ("A13", "Trumpet"),
+    ("A14", "Flutes"),
+    ("A15", "Moving Strings"),
+    ("A16", "Brass & Strings"),
+    ("A17", "Choir"),
+    ("A18", "Piano I"),
+    ("A21", "Organ I"),
+    ("A22", "Organ II"),
+    ("A23", "Combo Organ"),
+    ("A24", "Calliope"),
+    ("A25", "Donald Pluck"),
+    ("A26", "Celeste"),
+    ("A27", "Elect. Piano I"),
+    ("A28", "Elect. Piano II"),
+    ("A31", "Clock Chimes"),
+    ("A32", "Steel Drums"),
+    ("A33", "Xylophone"),
+    ("A34", "Brass III"),
+    ("A35", "Fanfare"),
+    ("A36", "Strings III"),
+    ("A37", "Pizzicato"),
+    ("A38", "High Strings"),
+    ("A41", "Bass Clarinet"),
+    ("A42", "English Horn"),
+    ("A43", "Brass Ensemble"),
+    ("A44", "Guitar"),
+    ("A45", "Koto"),
+    ("A46", "Dark Pluck"),
+    ("A47", "Funky I"),
+    ("A48", "Synth Bass I"),
+    ("A51", "Lead I"),
+    ("A52", "Lead II"),
+    ("A53", "Lead III"),
+    ("A54", "Funky II"),
+    ("A55", "Synth Bass II"),
+    ("A56", "Funky III"),
+    ("A57", "Thud Wah"),
+    ("A58", "Going Up"),
+    ("A61", "Piano II"),
+    ("A62", "Clav."),
+    ("A63", "Frontier Organ"),
+    ("A64", "Snare Drum"),
+    ("A65", "Tom Toms"),
+    ("A66", "Timpani"),
+    ("A67", "Shaker"),
+    ("A68", "Synth Pad"),
+    ("A71", "Sweep I"),
+    ("A72", "Pluck Sweep"),
+    ("A73", "Repeater"),
+    ("A74", "Sweep II"),
+    ("A75", "Pluck Bell"),
+    ("A76", "Dark Synth Piano"),
+    ("A77", "Sustainer"),
+    ("A78", "Wah Release"),
+    ("A81", "Gong"),
+    ("A82", "Resonance Funk"),
+    ("A83", "Drum Booms"),
+    ("A84", "Dust Storm"),
+    ("A85", "Rocket Men"),
+    ("A86", "Hand Claps"),
+    ("A87", "FX Sweep"),
+    ("A88", "Caverns"),
+    ("B11", "Strings"),
+    ("B12", "Violin"),
+    ("B13", "Chorus Vibes"),
+    ("B14", "Organ I"),
+    ("B15", "Harpsichord I"),
+    ("B16", "Recorder"),
+    ("B17", "Perc. Pluck"),
+    ("B18", "Noise Sweep"),
+    ("B21", "Space Chimes"),
+    ("B22", "Nylon Guitar"),
+    ("B23", "Orchestral Pad"),
+    ("B24", "Bright Pluck"),
+    ("B25", "Organ Bell"),
+    ("B26", "Accordion"),
+    ("B27", "FX Rise 1"),
+    ("B28", "FX Rise 2"),
+    ("B31", "Brass"),
+    ("B32", "Helicopter"),
+    ("B33", "Lute"),
+    ("B34", "Chorus Funk"),
+    ("B35", "Tomita"),
+    ("B36", "FX Sweep 1"),
+    ("B37", "Sharp Reed"),
+    ("B38", "Bass Pluck"),
+    ("B41", "Resonant Rise"),
+    ("B42", "Harpsichord 2"),
+    ("B43", "Dark Ensemble"),
+    ("B44", "Contact Wah"),
+    ("B45", "Noise Sweep 2"),
+    ("B46", "Glassy Wah"),
+    ("B47", "Phase Ensemble"),
+    ("B48", "Chorused Bell"),
+    ("B51", "Clav"),
+    ("B52", "Organ 2"),
+    ("B53", "Bassoon"),
+    ("B54", "Auto Release Noise Sweep"),
+    ("B55", "Brass Ensemble"),
+    ("B56", "Ethereal"),
+    ("B57", "Chorus Bell 2"),
+    ("B58", "Blizzard"),
+    ("B61", "E. Piano with Tremolo"),
+    ("B62", "Clarinet"),
+    ("B63", "Thunder"),
+    ("B64", "Reedy Organ"),
+    ("B65", "Flute - Horn"),
+    ("B66", "Toy Rhodes"),
+    ("B67", "Surf's Up"),
+    ("B68", "OW Bass"),
+    ("B71", "Piccolo"),
+    ("B72", "Melodic Taps"),
+    ("B73", "Meow Bass"),
+    ("B74", "Violin (high)"),
+    ("B75", "High Bells"),
+    ("B76", "Rolling Wah"),
+    ("B77", "Ping Bell"),
+    ("B78", "Brassy Organ"),
+    ("B81", "Low Dark Strings"),
+    ("B82", "Piccolo Trumpet"),
+    ("B83", "Cello"),
+    ("B84", "High Strings"),
+    ("B85", "Rocket Men"),
+    ("B86", "Forbidden Planet"),
+    ("B87", "Froggy"),
+    ("B88", "Owgan"),
+]
+# names in editor libraries that differ: (A)/(B) variants go to group A/B
+ALIASES = {"String III": "A36", "Brass Set 1": "B31", "Meow Brass": "B73",
+           "Brass Ensemble (A)": "A43", "Brass Ensemble (B)": "B55", "Clav (A)": "A62", "Clav (B)": "B51",
+           "High Strings (A)": "A38", "High Strings (B)": "B84", "Rocket Men (A)": "A85", "Rocket Men (B)": "B85"}
+
+
+def simple(name):
+    s = re.sub(r"\*?\s*\(.*?\)", "", name.lower())
+    for roman, digit in (("iii", "3"), ("ii", "2"), ("i", "1")):
+        s = re.sub(r"\b%s\b" % roman, digit, s)
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def factory_order(patches):
+    """The patches in factory order with numbered names, or None if they aren't the factory set."""
+    left = list(patches)
+    result = []
+    for number, name in FACTORY:
+        match = [p for p in left if ALIASES.get(p[0]) == number]
+        if not match:  # the exact name first ("Organ I" and "Organ 1" are A21 and B14)
+            match = [p for p in left if p[0] not in ALIASES and p[0] == name][:1]
+        if not match:
+            match = [p for p in left if p[0] not in ALIASES and simple(p[0]) == simple(name)]
+        if len(match) != 1:
+            return None
+        left.remove(match[0])
+        result.append(("%s %s" % (number, name), match[0][1]))
+    return result
+
+
 def convert(p):
     v = [x / 127 for x in p[:16]]
     sw1, sw2 = p[16], p[17]
@@ -89,6 +253,10 @@ def main():
         patches += read_106(data) if data[:2] == b"\xac\xed" else read_syx(data)
     if not patches:
         sys.exit("no patches found")
+    ordered = factory_order(patches)
+    if ordered:
+        patches = ordered
+        print("factory patches: in the order A11 .. B88")
     with open(args.output, "w") as out:
         out.write("# juno presets: name|label=value|... (software/tools/juno106_presets.py)\n")
         for name, p in patches[:128]:

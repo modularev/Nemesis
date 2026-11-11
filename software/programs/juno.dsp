@@ -1,7 +1,7 @@
 declare name "juno";
 declare description "Juno style polysynth: DCO saw/pulse/sub/noise, HPF, 4 pole VCF, ADSR, LFO, chorus I/II";
 declare author "Arev Imer";
-declare version "0.12";
+declare version "0.15";
 declare options "[midi:on][nvoices:12]";   // 12 at 48 kHz, 6 at 96 kHz (the library halves them)
 
 // Play it over MIDI (USB or the MIDI jack), stereo out on outputs 1/2.
@@ -30,9 +30,11 @@ vs(x)     = x : si.smooth(ba.if(note_on, 0, ba.tau2pole(0.005)));
 cutoff    = hslider("Cutoff [hw:CV_X]", 0.6, 0, 1, 0.001) : vs;
 resonance = hslider("Resonance [hw:CV_Y]", 0.2, 0, 1, 0.001) : vs;
 env_amt   = hslider("Env [hw:CV_Z]", 0.4, 0, 1, 0.001) : vs;
-// envelope times exponential like the Juno-106's sliders: attack 1.5 ms ..
-// 3 s, decay and release 1.5 ms .. 12 s (control rate: pow once per block)
-release   = hslider("Release [hw:POT_D]", 0.6, 0, 1, 0.001) : \(v).(0.0015 * pow(8000, v));
+// envelope times: attack 1.5 ms .. 3 s, decay and release 1.5 ms .. 12 s
+// (owner's manual, service notes); between them 1.5 ms + max * v^3, an
+// assumption: exponential made decay 44/127 34 ms, the factory brass plucky
+// (control rate)
+release   = hslider("Release [hw:POT_D]", 0.4, 0, 1, 0.001) : \(v).(0.0015 + 12 * v * v * v);
 // 0.1 .. 30 Hz as the 106 (owner's manual), exponential
 lfo_rate  = hslider("LFO Rate", 0.4, 0, 1, 0.001) : \(v).(0.1 * pow(300, v)) : vs;
 pwm       = hslider("PWM", 0.3, 0, 1, 0.001) : vs;
@@ -40,8 +42,8 @@ chorus    = hslider("Chorus [style:menu{'off':0;'I':1;'II':2;'I+II':3}]", 1, 0, 
 // pitch bend: +-2 semitones (the ratio once per block, then smoothed)
 bend      = hslider("bend [midi:pitchwheel] [hidden:1]", 0, -2, 2, 0.001) : \(b).(pow(2, b / 12)) : vs;
 
-attack    = hslider("Attack [hw:POT_A] [midi:ctrl 73]", 0.01, 0, 1, 0.001) : \(v).(0.0015 * pow(2000, v));
-decay     = hslider("Decay [hw:POT_B] [midi:ctrl 75]", 0.6, 0, 1, 0.001) : \(v).(0.0015 * pow(8000, v));
+attack    = hslider("Attack [hw:POT_A] [midi:ctrl 73]", 0.01, 0, 1, 0.001) : \(v).(0.0015 + 3 * v * v * v);
+decay     = hslider("Decay [hw:POT_B] [midi:ctrl 75]", 0.4, 0, 1, 0.001) : \(v).(0.0015 + 12 * v * v * v);
 sustain   = hslider("Sustain [hw:POT_C] [midi:ctrl 79]", 0.7, 0, 1, 0.001);
 saw_lvl   = hslider("Saw [midi:ctrl 70]", 1, 0, 1, 0.001) : vs;
 pulse_lvl = hslider("Pulse [midi:ctrl 71]", 0, 0, 1, 0.001) : vs;
@@ -90,14 +92,31 @@ drift_ct   = drift_on * (3.0 * hash(voice_no) + 2.0 * note_rand + 2.0 * wander);
 // the filter drifts like the DCOs (in cents, its own offsets per voice): a
 // self-oscillating filter stays playable
 drift_oct  = drift_on * (3.0 * hash(voice_no + 31) + 2.0 * note_rand + 2.0 * wander) / 1200;
-env = en.adsr(attack, decay, sustain, release, gate);
+// the 106's envelope: a straight attack, decay and release as RC curves
+// (exponential towards the sustain level / zero, as the manual draws them;
+// en.adsr's straight decay made the filter fall late and abruptly). The
+// slider's time is ENV_TC time constants (fitted to a recording of A11).
+ENV_TC   = 2;
+env_rc(t) = exp(-1 / max(1, t / ENV_TC * ma.SR));      // per sample factor (control rate)
+env = loop ~ (_, _) : (_, !)
+with {
+    loop(e, ph) = e2, ph2
+    with {
+        ph2 = ba.if(gate > 0.5, ba.if(note_on, 0, ba.if(e >= 1, 1, ph)), 2);  // 0 attack, 1 decay, 2 release
+        e2  = ba.selectn(3, ph2, min(1, e + 1 / max(1, attack * ma.SR)),
+                         sustain + (e - sustain) * env_rc(decay), e * env_rc(release));
+    };
+};
 
 // DCO: one ramp for saw and pulse, a ramp at half the rate for the sub
 // (one octave down, flipping with the main ramp as the DCO's divider), noise.
 // polyBLEP: the steps' aliasing removed in the two samples around them
 // (was os.sawtooth/pulsetrain/square: five DPW saws with divisions each)
+// the DCO's LFO: +-400 cents (service notes); 2^y for |y| <= 1/3 as a
+// polynomial (a pow per sample costs)
+exp2s(y) = 1 + t * (1 + t * (0.5 + t * 0.1666667)) with { t = y * 0.6931472; };
 pitch = freq * bend * ba.selectn(3, range, 0.5, 1, 2)
-      * (1 + 0.03 * lfo_dco * lfo_d) * (1 + drift_ct * 0.000577623);   // 2^(c/1200) ~ 1 + c ln2/1200
+      * exp2s(4 / 12 * lfo_dco * lfo_d) * (1 + drift_ct * 0.000577623);   // 2^(c/1200) ~ 1 + c ln2/1200
 duty  = 0.5 - 0.45 * pwm * ba.if(pwm_man > 0.5, 1, 0.5 + 0.5 * lfo);
 dt    = pitch / ma.SR;
 idt   = ma.SR / pitch;
@@ -115,24 +134,31 @@ dco   = saw_lvl * saw + pulse_lvl * pulse + sub_lvl * sub + noise_lvl * no.noise
 // VCF: 4 pole lowpass as the 80017A/IR3109's four OTA stages with global
 // feedback: a zero delay feedback (TPT) ladder (Zavalishin), its input soft
 // saturated like an OTA (also bounds high resonance). The cutoff in octaves
-// above 20 Hz (env, LFO, key tracking per sample) gives the stage
+// above 5 Hz (env, LFO, key tracking per sample) gives the stage
 // coefficient g = tan(w) / (1 + tan(w)) from a table (16 points per octave,
 // filled for the sample rate), interpolated: no pow/tan per sample.
-// The knob spans 20 Hz .. 54 kHz (11.4 octaves, the Juno's range); the
-// table stops at 0.45 SR (21.6 kHz at 48 kHz, 43.2 kHz at 96 kHz), so
-// every rate uses all of its spectrum.
-VCF_OCT = 11.4;
-// the envelope at full depth sweeps the whole range, as the 106's (6
-// octaves left the factory brass at cutoff 0 / env 94 dark and quiet)
-vcf_oct = VCF_OCT * cutoff + VCF_OCT * env_amt * env * (1 - 2 * env_neg) + 2 * lfo_vcf * lfo_d + kbd * log(freq / 261.6) / log(2) + drift_oct
+// From the service notes: the filter spans 5 Hz .. 50 kHz (13.3 octaves),
+// envelope +14 octaves, LFO +-3.5 octaves, key follow 1:1 around middle C.
+// The slider's 0 sits at 113 Hz at C4 (fitted with ENV_TC to a recording
+// of factory patch A11: its brightness curve within 0.28 octaves; slider 0
+// at 5 Hz left that brass dark and silent in its sustain, 248 Hz, the
+// service notes' calibration point, too bright); the slider goes up to
+// 50 kHz, only the modulation reaches down to 5 Hz. The table stops at
+// 0.45 SR.
+VCF_BASE = 5;
+VCF_OCT  = 13.29;                                       // 5 Hz .. 50 kHz
+VCF_ZERO = 4.5;                                         // 113 Hz: 4.5 octaves above 5 Hz
+VCF_SPAN = VCF_OCT - VCF_ZERO;                          // the slider: 8.8 octaves
+vcf_oct = VCF_ZERO + VCF_SPAN * cutoff + 14 * env_amt * env * (1 - 2 * env_neg) + 3.5 * lfo_vcf * lfo_d
+        + kbd * log(freq / 261.6) / log(2) + drift_oct
         : max(0) : min(VCF_OCT);
 STEPS   = 16;
-TN      = 12 * STEPS + 2;
+TN      = 14 * STEPS + 2;
 gtab(i) = rdtable(TN, ba.time : gen, i)
 with {
     gen(k) = w / (1 + w)
     with {
-        fc = min(20 * pow(2, k / STEPS), 0.45 * ma.SR);
+        fc = min(VCF_BASE * pow(2, k / STEPS), 0.45 * ma.SR);
         w  = tan(ma.PI * fc / ma.SR);
     };
 };
