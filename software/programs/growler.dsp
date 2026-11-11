@@ -3,6 +3,7 @@ declare description "Stereo 4-operator FM bass built around cross modulation, op
 declare author "Arev Imer";
 declare version "0.7";
 declare block_size "32";   // audio block (system setting block size: auto)
+declare sample_rate "96000";   // system setting sample rate: auto (FM, crush and grains alias less)
 declare options "[midi:on]";
 declare audio_outputs "1 2";   // outs 3/4 are CVs (output setting leaves them exact)
 

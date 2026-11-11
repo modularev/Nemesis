@@ -3,6 +3,7 @@ declare description "Beat slice repeat and reverse for breakbeats, bit crush, co
 declare author "Arev Imer";
 declare version "0.3";
 declare block_size "32";   // audio block (system setting block size: auto)
+declare sample_rate "96000";   // system setting sample rate: auto (FM, crush and grains alias less)
 declare output "clip";     // output setting default: hard clip is part of the sound
 
 // Stereo in 1/2, out 1/2. Outs 3-8: drum triggers (5 V) kick, snare, closed
