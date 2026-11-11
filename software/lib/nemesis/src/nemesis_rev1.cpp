@@ -79,10 +79,12 @@ namespace nemesis
          {
             while (digitalRead(switch_pin[index]) == HIGH)
             {
+               watchdogFeed(); // the calibration waits for the user
             }
             delay(50);
             while (digitalRead(switch_pin[index]) == LOW)
             {
+               watchdogFeed();
             }
          }
 
@@ -162,7 +164,7 @@ namespace nemesis
 
          codec.enable();
          codecWrite(0x02, 0xFF);        // power down while configuring
-         codecWrite(0x03, 0xF4 | 0x01); // functional mode
+         codecWrite(0x03, codecFunctionalMode()); // functional mode
          codecWrite(0x05, 0x00);        // ADC control
          codecWrite(0x02, 0x00);        // power up
          codec.volume(1.0);
@@ -253,6 +255,9 @@ namespace nemesis
       void setLed(int index, bool on) { digitalWrite(led_pin[index], on ? HIGH : LOW); }
 
       bool buttonPressed(int index) { return digitalRead(switch_pin[index]) == LOW; }
+      // rev1 sums knob and CV in hardware and has no display to show a
+      // pending catch: knobs act immediately
+      bool isKnob(int index) { return false; }
    }
 }
 

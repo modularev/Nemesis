@@ -59,6 +59,12 @@ namespace nemesis
       // audio for a moment
       int blockSize();
       bool setBlockSize(int samples);
+      // the sample rate (48000 or 96000), set at runtime: the bit clock is
+      // MCLK / 4 or / 2, MCLK stays 49.152 MHz (the codec detects the speed)
+      int sampleRate();
+      // the clocks for runtime rate changes, before the codec is set up
+      bool begin();
+      bool setSampleRate(int fs);
    }
 
    class InputTDM : public AudioInputTDM

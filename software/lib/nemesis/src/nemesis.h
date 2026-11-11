@@ -67,6 +67,13 @@ namespace nemesis
    // the block size in use, and the one the setting and program ask for
    int blockSize();
    int wantedBlockSize();
+   // the sample rate in use (48000 or 96000), and the one the setting and a
+   // program ('declare sample_rate "96000";', null: the running one) ask for
+   int sampleRate();
+   int wantedSampleRate(const Program *program);
+   // applySampleRate(): see nemesis_program.h
+   // CS42448 register 03h for the sample rate: MFREQ of MCLK = 512 fs
+   uint8_t codecFunctionalMode();
    // CPU load of the audio update in % of the block's time (the Audio
    // library's figures assume AUDIO_BLOCK_SAMPLES)
    float cpuLoad();
@@ -118,6 +125,7 @@ namespace nemesis
       int clockPpqn = 4;     // clock on IN 8: pulses per quarter, 1, 2, 4 (sixteenths) or 24
       int blockSize = 0;     // audio block: 0 auto (the program's, else 64), 32, 64, 128;
                              // not stored: every power up starts with auto
+      int sampleRate = 0;    // 0 auto (the program's, else 48000), 48000, 96000; not stored
    };
 
    SystemSettings &systemSettings();
@@ -125,6 +133,18 @@ namespace nemesis
    void systemSettingsChanged();
    void programSettingsChanged(Program &program);
    bool sdCardPresent();
+   // why the SD card is not in use: "no SD" (missing), "SD off" (left alone
+   // after a hang at start), "SD bad" (a damaged file); nullptr when in use
+   const char *sdProblem();
+
+   // a hardware watchdog resets the module when loop() stops for 4 s
+   // (feed it in long blocking work); starts that end before 10 s are
+   // counted, after SAFE_AFTER_FAILURES of them the next one starts
+   // program 1 and leaves the SD card alone
+   constexpr int SAFE_AFTER_FAILURES = 2;
+   void watchdogBegin();
+   void watchdogFeed();
+   int bootFailures();
 
    // CV inputs whose routing to a parameter can be changed (rev2: CV A-D)
 #if NEMESIS_HW_REV == 2

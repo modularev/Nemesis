@@ -18,6 +18,30 @@ namespace nemesis
       constexpr uint32_t WORDS = AUDIO_BLOCK_SAMPLES * tdm::CHANNELS * 2;
       volatile int block = AUDIO_BLOCK_SAMPLES; // samples per half (per update)
       volatile uint32_t half_words = AUDIO_BLOCK_SAMPLES * tdm::CHANNELS;
+      volatile int rate = (int)AUDIO_SAMPLE_RATE_EXACT; // set by AudioOutputTDM's config_tdm()
+
+      // MCLK is 49.152 MHz at both rates (config_tdm made 24.576 MHz: the
+      // SAI clock divider 14 becomes 7, PLL4 stays 688.128 MHz), so the codec
+      // keeps its clock range (MFREQ 100) and needn't be powered down (that
+      // popped on the DC coupled outputs). The bit clock (256 fs: 8 slots of
+      // 32 bits) is MCLK / 4 at 48 kHz, MCLK / 2 at 96 kHz; the codec detects
+      // the speed from MCLK / LRCK (1024 single, 512 double speed). The SAI
+      // receiver makes the clocks (RCR2), the transmitter follows it. (The
+      // i.MX RT SAI has no bit clock bypass for MCLK = 256 fs.)
+      const int BASE_RATE = (int)AUDIO_SAMPLE_RATE_EXACT;
+      bool mclk_doubled = false;
+      void setDividers(int fs)
+      {
+         if (!mclk_doubled)
+         {
+            CCM_CS1CDR = (CCM_CS1CDR & ~(CCM_CS1CDR_SAI1_CLK_PRED_MASK | CCM_CS1CDR_SAI1_CLK_PODF_MASK)) |
+                         CCM_CS1CDR_SAI1_CLK_PRED(1) | CCM_CS1CDR_SAI1_CLK_PODF(6);
+            mclk_doubled = true;
+         }
+         uint32_t div = I2S_RCR2_DIV(fs == BASE_RATE ? 1 : 0); // / 4 or / 2
+         I2S1_RCR2 = (I2S1_RCR2 & ~0xFFu) | div;
+         I2S1_TCR2 = (I2S1_TCR2 & ~0xFFu) | div;
+      }
 
       // the DMA buffers of AudioInputTDM/AudioOutputTDM (private there)
       uint32_t *rxBuffer = nullptr;
@@ -83,22 +107,18 @@ namespace nemesis
 
       // the SAI stops at the end of a frame (transmitter first: it runs
       // synchronous to the receiver), both DMA channels get the new loop
-      // length, the FIFOs are reset, and receiver and transmitter start again
-      // together at slot 0, so the channels keep their places
-      FLASHMEM bool setBlockSize(int samples)
+      // length, the FIFOs are reset, the clock divider is set for the rate,
+      // and receiver and transmitter start again together at slot 0, so the
+      // channels keep their places
+      FLASHMEM bool restart(int samples, int fs, bool force = false)
       {
-         // 16 would leave a program only ~75 % of the block (the transmit DMA
-         // reads a few frames ahead): too risky
-         if (samples != 32 && samples != 64 && samples != 128)
-            return false;
          if (samples > AUDIO_BLOCK_SAMPLES || !rxBuffer || !txBuffer)
             return false;
-         if (samples == block)
+         if (samples == block && fs == rate && !force)
             return true;
          DMAChannel &rx = InputTDM::channel();
          DMAChannel &tx = OutputTDM::channel();
          uint32_t words = samples * CHANNELS * 2; // both halves
-
          __disable_irq();
          I2S1_TCSR &= ~I2S_TCSR_TE;
          for (int i = 0; i < 100000 && (I2S1_TCSR & I2S_TCSR_TE); i++)
@@ -110,7 +130,6 @@ namespace nemesis
          tx.disable();
          rx.clearInterrupt();
          tx.clearInterrupt();
-
          rx.TCD->DADDR = rxBuffer;
          rx.TCD->CITER_ELINKNO = words;
          rx.TCD->BITER_ELINKNO = words;
@@ -119,14 +138,17 @@ namespace nemesis
          tx.TCD->CITER_ELINKNO = words;
          tx.TCD->BITER_ELINKNO = words;
          tx.TCD->SLAST = -(int32_t)(words * 4);
-
          memset(txBuffer, 0, WORDS * 4);
          arm_dcache_flush_delete(txBuffer, WORDS * 4);
          ready = nullptr;
          writing = nullptr;
          block = samples;
          half_words = samples * CHANNELS;
-
+         if (fs != rate || force)
+         {
+            setDividers(fs);
+            rate = fs;
+         }
          I2S1_TCSR = I2S_TCSR_FR; // empty the FIFOs
          I2S1_RCSR = I2S_RCSR_FR;
          rx.enable();
@@ -135,6 +157,26 @@ namespace nemesis
          I2S1_TCSR = I2S_TCSR_TE | I2S_TCSR_BCE | I2S_TCSR_FRDE;
          __enable_irq();
          return true;
+      }
+
+      FLASHMEM bool setBlockSize(int samples)
+      {
+         // 16 would leave a program only ~75 % of the block (the transmit DMA
+         // reads a few frames ahead): too risky
+         if (samples != 32 && samples != 64 && samples != 128)
+            return false;
+         return restart(samples, rate);
+      }
+
+      int sampleRate() { return rate; }
+      // before the codec starts: MCLK 49.152 MHz (see setDividers())
+      FLASHMEM bool begin() { return restart(block, rate, true); }
+      // 48000 or 96000 (the same audio PLL); the codec must be told too
+      FLASHMEM bool setSampleRate(int fs)
+      {
+         if (fs != BASE_RATE && fs != 2 * BASE_RATE)
+            return false;
+         return restart(block, fs);
       }
    }
 

@@ -13,7 +13,11 @@
 // tempo, clock offset, MIDI channel, knob
 // popup, brightness, CV A-D range). In a list a click edits the highlighted
 // entry, turn to change it, click again when done. Settings are stored on
-// the SD card. Turning a knob shows its parameter for a moment. Programs
+// the SD card. Turning a knob shows its parameter for a moment (a tick marks
+// the knob while it has not caught the stored value). Knob values are saved
+// per program and caught again after a switch. Programs with pages
+// ([pager:1]): button 1 next page, the home screen shows the page and an
+// activity strip, the list starts with the page's settings. Programs
 // that use the transport show its clock and tempo on the home screen; run,
 // clock source, tempo and offset are system settings.
 //
@@ -122,6 +126,8 @@ namespace nemesis
             int count = 0;
             int current = 0;
             float filtered[POT_NUM]; // in LSB
+            float last[POT_NUM][2];  // the two conversions before, for the median
+            bool primed[POT_NUM];
             float rest_coeff = 0.0f;
             elapsedMicros since_start;
          };
@@ -130,7 +136,19 @@ namespace nemesis
          void potConverted(PotScanner &s)
          {
             int pot = s.pots[s.current];
-            float x = s.module->readSingle();
+            float now = s.module->readSingle();
+            // median of the last 3 conversions: a single spike (pot D reached
+            // ~30 LSB now and then, 2026-11-11) doesn't count as turning and
+            // can't open the popup; a real movement arrives a conversion later
+            float *h = s.last[s.current];
+            if (!s.primed[s.current])
+            {
+               h[0] = h[1] = now;
+               s.primed[s.current] = true;
+            }
+            float x = max(min(h[0], h[1]), min(max(h[0], h[1]), now));
+            h[0] = h[1];
+            h[1] = now;
             float d = x - s.filtered[s.current];
             float snap = min(fabsf(d) / POT_SNAP_LSB, 1.0f);
             float a = s.rest_coeff + (1.0f - s.rest_coeff) * snap * snap;
@@ -172,7 +190,7 @@ namespace nemesis
          // entries of the settings lists
          enum ItemKind { ITEM_SETTING, ITEM_ROUTE, ITEM_RUN, ITEM_CLOCK, ITEM_CLOCK_PULSES,
                          ITEM_TEMPO, ITEM_OFFSET, ITEM_MIDI, ITEM_POPUP, ITEM_BRIGHTNESS, ITEM_CV_RANGE,
-                         ITEM_BLOCK };
+                         ITEM_BLOCK, ITEM_RATE, ITEM_SECTION };
          constexpr int BLOCK_CHOICES[] = {0, 32, 64, 128}; // 0: auto
          constexpr int PPQN_CHOICES[] = {1, 2, 4, 24};
          struct Item
@@ -185,11 +203,13 @@ namespace nemesis
          Item items[MAX_ITEMS];
          int item_count = 0;
          int items_program = -1;
+         int validCursor(int index); // the nearest entry that is not a section header
 
          // parameter overlay: a bound input that moves shows its parameter.
          // X/Y/Z sum knob and CV, so an input that keeps moving (patched
          // modulation) is ignored until it rests again.
          constexpr uint32_t PARAM_SHOW_MS = 1500;
+         constexpr uint32_t ROLL_SHOW_MS = 1500;   // "roll #n" in the header after a roll
          constexpr uint32_t CLIP_SHOW_MS = 500;
          constexpr uint32_t PARAM_REDRAW_MS = 40;
          constexpr float PARAM_MOVE = 0.01f;       // change that counts as turning, ~40x the pot noise
@@ -379,7 +399,10 @@ namespace nemesis
          FLASHMEM void waitForRelease()
          {
             while (buttonPressed(0) || buttonPressed(1))
+            {
+               watchdogFeed();
                scan();
+            }
             delay(50);
          }
 
@@ -419,6 +442,7 @@ namespace nemesis
             bool store = false;
             while (true)
             {
+               watchdogFeed(); // the calibration waits for the user
                scan();
                if (since_start > 300) // let the smoothing settle first
                {
@@ -510,6 +534,11 @@ namespace nemesis
          void formatValue(const Control &c, float v, char *text, size_t size)
          {
             float a = fabsf(c.max) > fabsf(c.min) ? fabsf(c.max) : fabsf(c.min);
+            if (c.action == Program::ACTION_ROLL)
+            {
+               snprintf(text, size, "#%d", (int)lroundf(v)); // position in the roll history
+               return;
+            }
             if (c.menu && menuName(c.menu, v, text, size))
                return;
             if (c.gate)
@@ -531,6 +560,47 @@ namespace nemesis
             return 128 - w - x1;
          }
 
+         // a program with pages: the page number (Michroma), its name (the
+         // value of the [pagename:] setting, e.g. "drumhead") and a strip of
+         // the pages' activity at the right, the current one underlined
+         FLASHMEM void drawPage(const Program &program)
+         {
+            const std::vector<Control> &controls = program.controls();
+            int page = program.page();
+            display.print(page);
+            int x = display.getCursorX() + 6;
+            const Control &pager = controls[program.pagerIndex()];
+            int named = pager.pageName ? program.templateTarget(pager.pageName) : -1;
+            display.setFont(&Oxanium10);
+            if (named >= 0)
+            {
+               char text[24];
+               formatValue(controls[named], controls[named].value, text, sizeof(text));
+               display.setCursor(x, 29);
+               display.print(text);
+            }
+            // strip: one bar per page with an [activity:N] bargraph
+            int count = 0;
+            for (const Indicator &i : program.indicators())
+               if (i.activity >= 0)
+                  count++;
+            int k = 0;
+            for (const Indicator &i : program.indicators())
+            {
+               if (i.activity < 0)
+                  continue;
+               int bx = 128 - (count - k) * 7;
+               bool lit = *i.zone > 0.5f * (i.min + i.max);
+               if (lit)
+                  display.fillRect(bx, 17, 5, 10, WHITE);
+               else
+                  display.drawRect(bx, 17, 5, 10, WHITE);
+               if (i.activity == page)
+                  display.fillRect(bx, 29, 5, 2, WHITE);
+               k++;
+            }
+         }
+
          // current program, its status values and the CPU load, a note when there is no SD card
          FLASHMEM void drawHome()
          {
@@ -539,8 +609,20 @@ namespace nemesis
             display.setTextColor(WHITE);
             display.setFont(&Oxanium10);
             display.setCursor(0, 8); // 6pt reaches 8 px above the baseline
-            if (!sdCardPresent())
-               display.print(F("no SD "));
+            const Program &program = activeProgram();
+            bool paged = program.pagerIndex() >= 0;
+            if (paged) // the big line shows the page: the program's name moves up
+            {
+               display.print(program.name());
+               display.print(' ');
+            }
+            if (program.lastRollMillis() && millis() - program.lastRollMillis() < ROLL_SHOW_MS)
+               display.printf("roll #%d ", program.rollPosition());
+            if (sdProblem())
+            {
+               display.print(sdProblem());
+               display.print(' ');
+            }
             if (activeProgram().usesTransport())
             {
                const TransportState &t = transportState();
@@ -555,7 +637,7 @@ namespace nemesis
             {
                if (i.limit) // linear gain of the limiter
                   limit_db = min(limit_db, 20.0f * log10f(max(*i.zone, 0.001f)));
-               if (i.led >= 0 || i.limit)
+               if (i.led >= 0 || i.limit || i.activity >= 0)
                   continue;
                Control c = {};
                c.min = i.min;
@@ -585,7 +667,10 @@ namespace nemesis
             display.setTextColor(WHITE);
             display.setFont(&Michroma16);
             display.setCursor(0, 29); // descenders (g, j, p) end 3 px below the baseline
-            display.print(activeProgram().name());
+            if (!paged)
+               display.print(program.name());
+            else
+               drawPage(program);
             display.setFont(&Oxanium10);
             display.display();
          }
@@ -633,15 +718,29 @@ namespace nemesis
             watch_valid = true;
          }
 
-         // parameter name (large if it fits), a bar and the value
-         FLASHMEM void drawParameter(const Control &c)
+         // parameter name (large if it fits), a bar and the value; a page's
+         // setting is named with its page ("3 decay"); knob >= 0: where a
+         // knob that has not caught the value yet stands (a tick)
+         FLASHMEM void drawParameter(const Control &c, float knob = -1.0f)
          {
             int16_t x1, y1;
             uint16_t w, h;
+            char name[40];
+            int titled = c.title ? activeProgram().controlIndex(c.title) : -1;
+            if (titled >= 0)
+            {
+               // an assignable knob: named after what it controls
+               const Control &t = activeProgram().controls()[titled];
+               formatValue(t, t.value, name, sizeof(name));
+            }
+            else if (c.condEquals)
+               snprintf(name, sizeof(name), "%d %s", (int)lroundf(c.condValue), c.shown());
+            else
+               snprintf(name, sizeof(name), "%s", c.shown());
             display.clearDisplay();
             display.setTextColor(WHITE);
             display.setFont(&Michroma13Oblique); // names up to ~11 characters, else the small font
-            display.getTextBounds(c.shown(), 0, 20, &x1, &y1, &w, &h);
+            display.getTextBounds(name, 0, 20, &x1, &y1, &w, &h);
             if (x1 + w > 128)
             {
                display.setFont(&Oxanium10);
@@ -649,14 +748,23 @@ namespace nemesis
             }
             else
                display.setCursor(0, 20);
-            display.print(c.shown());
+            display.print(name);
 
-            float position = constrain(c.position(*c.zone), 0.0f, 1.0f);
+            // settings show their value (the zone follows only later)
+            float shown = c.input < 0 ? c.value : *c.zone;
+            float position = constrain(c.position(shown), 0.0f, 1.0f);
             display.drawRect(0, 26, 92, 6, WHITE);
             display.fillRect(1, 27, (int)(position * 90.0f + 0.5f), 4, WHITE);
+            if (knob >= 0.0f)
+            {
+               // the knob's place: turn it there to take over
+               int x = 1 + (int)(constrain(knob, 0.0f, 1.0f) * 89.0f + 0.5f);
+               display.drawFastVLine(x, 23, 3, WHITE);
+               display.drawFastVLine(x, 27, 4, INVERSE);
+            }
 
             char text[16];
-            formatValue(c, *c.zone, text, sizeof(text));
+            formatValue(c, shown, text, sizeof(text));
             display.setFont(&Oxanium10);
             display.setCursor(rightAligned(text, 31), 31);
             display.print(text);
@@ -671,10 +779,38 @@ namespace nemesis
             items_program = currentProgram();
             if (screen == SETTINGS)
             {
-               const std::vector<Control> &controls = activeProgram().controls();
-               for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV; i++)
-                  if (controls[i].input < 0 && controls[i].listed && activeProgram().visible(controls[i]))
+               // a program with pages lists the current page's settings first,
+               // then the others; [section:] starts a header row (a setting
+               // without one stays in the section before it)
+               const Program &p = activeProgram();
+               const std::vector<Control> &controls = p.controls();
+               bool paged = p.pagerIndex() >= 0;
+               // a preset choice ([action:preset]) comes first
+               for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV - 1; i++)
+                  if (controls[i].action == Program::ACTION_PRESET && controls[i].input < 0 && p.visible(controls[i]))
                      items[item_count++] = {ITEM_SETTING, (int)i};
+               for (int pass = paged ? 0 : 1; pass < 2; pass++)
+               {
+                  const char *section = nullptr;
+                  bool any = false;
+                  for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV - 1; i++)
+                  {
+                     const Control &c = controls[i];
+                     if (c.input >= 0 || !c.listed || !p.visible(c) || c.action == Program::ACTION_PRESET)
+                        continue;
+                     bool onPage = paged && c.condEquals && p.isCondition(controls[p.pagerIndex()], c);
+                     if (onPage != (pass == 0) && paged)
+                        continue;
+                     const char *name = c.section ? c.section : section;
+                     if (!any && !name && pass == 1 && paged)
+                        name = "global";
+                     if (name && (!section || strcmp(name, section) != 0))
+                        items[item_count++] = {ITEM_SECTION, c.section ? (int)i : -1};
+                     section = name;
+                     any = true;
+                     items[item_count++] = {ITEM_SETTING, (int)i};
+                  }
+               }
                for (int i = 0; i < NUM_ROUTABLE_CV; i++)
                   items[item_count++] = {ITEM_ROUTE, routableCV(i)};
             }
@@ -691,6 +827,7 @@ namespace nemesis
                items[item_count++] = {ITEM_BRIGHTNESS, 0};
                items[item_count++] = {ITEM_CV_RANGE, 0};
                items[item_count++] = {ITEM_BLOCK, 0};
+               items[item_count++] = {ITEM_RATE, 0};
             }
          }
 
@@ -700,6 +837,8 @@ namespace nemesis
             {
             case ITEM_SETTING:
                return activeProgram().controls()[item.index].shown();
+            case ITEM_SECTION:
+               return item.index >= 0 ? activeProgram().controls()[item.index].section : "global";
             case ITEM_ROUTE:
                snprintf(text, size, "CV %c", 'A' + item.index - routableCV(0));
                return text;
@@ -723,6 +862,8 @@ namespace nemesis
                return "CV A-D range";
             case ITEM_BLOCK:
                return "block size";
+            case ITEM_RATE:
+               return "sample rate";
             }
             return "";
          }
@@ -732,6 +873,17 @@ namespace nemesis
             const SystemSettings &s = systemSettings();
             switch (item.kind)
             {
+            case ITEM_SECTION:
+            {
+               // a page's section: the page ("3"), else nothing
+               const Program &p = activeProgram();
+               const Control *c = item.index >= 0 ? &p.controls()[item.index] : nullptr;
+               if (c && p.pagerIndex() >= 0 && c->condEquals)
+                  snprintf(text, size, "%d", p.page());
+               else
+                  text[0] = '\0';
+               break;
+            }
             case ITEM_SETTING:
             {
                const Control &c = activeProgram().controls()[item.index];
@@ -794,6 +946,13 @@ namespace nemesis
                else
                   snprintf(text, size, "%d", s.blockSize);
                break;
+            case ITEM_RATE:
+               // auto: the running program's (or 48 kHz)
+               if (s.sampleRate == 0)
+                  snprintf(text, size, "auto %dk", wantedSampleRate(nullptr) / 1000);
+               else
+                  snprintf(text, size, "%dk", s.sampleRate / 1000);
+               break;
             }
          }
 
@@ -801,11 +960,10 @@ namespace nemesis
          void rebuildIfConditional(const Program &p, const Control &c)
          {
             for (const Control &other : p.controls())
-               if (other.cond && strcmp(other.cond, c.label) == 0)
+               if (p.isCondition(c, other))
                {
                   buildItems();
-                  if (cursor >= item_count)
-                     cursor = item_count > 0 ? item_count - 1 : 0;
+                  cursor = validCursor(cursor);
                   return;
                }
          }
@@ -820,6 +978,17 @@ namespace nemesis
             case ITEM_SETTING:
             {
                Control &c = p.controls()[item.index];
+               if (c.action == Program::ACTION_ROLL)
+               {
+                  // every detent right a new roll, left one back
+                  for (int k = 0; k < abs(delta); k++)
+                     if (delta > 0)
+                        p.roll(p.rollTarget());
+                     else
+                        p.rollBack();
+                  programSettingsChanged(p);
+                  return;
+               }
                if (c.gate)
                   c.value = delta > 0 ? 1.0f : 0.0f;
                else if (c.log) // even steps along the knob travel
@@ -891,12 +1060,23 @@ namespace nemesis
             case ITEM_CV_RANGE:
                s.cvRangeVolts = delta > 0 ? 8 : 5;
                break;
+            case ITEM_SECTION:
+               return;
             case ITEM_BLOCK:
             {
                int k = 0;
                while (k < 3 && BLOCK_CHOICES[k] != s.blockSize)
                   k++;
                s.blockSize = BLOCK_CHOICES[constrain(k + delta, 0, 3)]; // applied by the library
+               break;
+            }
+            case ITEM_RATE:
+            {
+               static const int RATES[] = {0, 48000, 96000}; // 0: auto
+               int k = 0;
+               while (k < 2 && RATES[k] != s.sampleRate)
+                  k++;
+               s.sampleRate = RATES[constrain(k + delta, 0, 2)]; // the library restarts the program
                break;
             }
             }
@@ -932,6 +1112,23 @@ namespace nemesis
             {
                int index = first + row;
                int y = 8 + row * 11; // Oxanium: 8 px above, 2 below: rows 0..31
+               if (items[index].kind == ITEM_SECTION)
+               {
+                  // header: name, a rule, the page number at the right
+                  itemValue(items[index], value, sizeof(value));
+                  display.setCursor(2, y);
+                  display.print(itemLabel(items[index], label, sizeof(label)));
+                  int x0 = display.getCursorX() + 3;
+                  int x1 = (value[0] ? rightAligned(value, y) - SCROLL_BAR_W : 128 - SCROLL_BAR_W) - 3;
+                  if (x1 > x0)
+                     display.drawFastHLine(x0, y - 3, x1 - x0, WHITE);
+                  if (value[0])
+                  {
+                     display.setCursor(rightAligned(value, y) - SCROLL_BAR_W, y);
+                     display.print(value);
+                  }
+                  continue;
+               }
                bool selected = index == cursor;
                display.setCursor(0, y);
                display.print(selected ? '>' : ' ');
@@ -972,6 +1169,38 @@ namespace nemesis
 
          // ---- encoder ----------------------------------------------------
 
+         // the cursor moves over settings, not section headers
+         int skipSections(int index, int direction)
+         {
+            while (index >= 0 && index < item_count && items[index].kind == ITEM_SECTION)
+               index += direction;
+            return index;
+         }
+
+         int moveCursor(int from, int delta)
+         {
+            int direction = delta > 0 ? 1 : -1;
+            int at = from;
+            for (int k = 0; k < abs(delta); k++)
+            {
+               int next = skipSections(at + direction, direction);
+               if (next < 0 || next >= item_count)
+                  break;
+               at = next;
+            }
+            return at;
+         }
+
+         int validCursor(int index)
+         {
+            index = constrain(index, 0, max(0, item_count - 1));
+            int down = skipSections(index, 1);
+            if (down < item_count)
+               return down;
+            int up = skipSections(index, -1);
+            return up >= 0 ? up : 0;
+         }
+
          void open(Screen next)
          {
             screen = next;
@@ -984,6 +1213,8 @@ namespace nemesis
             else
                cursor = system_cursor;
             cursor = constrain(cursor, 0, max(0, (next == PROGRAMS ? programCount() : item_count) - 1));
+            if (next != PROGRAMS)
+               cursor = validCursor(cursor);
          }
 
          void onTurn(int delta, bool fast)
@@ -1005,7 +1236,7 @@ namespace nemesis
                if (editing)
                   changeItem(items[cursor], delta, fast);
                else
-                  cursor = constrain(cursor + delta, 0, max(0, item_count - 1));
+                  cursor = moveCursor(cursor, delta);
                if (screen == SYSTEM)
                   system_cursor = cursor;
                else if (currentProgram() >= 0 && currentProgram() < REMEMBERED)
@@ -1035,9 +1266,20 @@ namespace nemesis
                break;
             case SETTINGS:
             case SYSTEM:
-               if (item_count == 0)
+               if (item_count == 0 || items[cursor].kind == ITEM_SECTION)
                   break;
                editing = !editing;
+               if (!editing && items[cursor].kind == ITEM_SETTING)
+               {
+                  // confirmed: an action setting acts (randomize) and resets
+                  Program &p = activeProgram();
+                  Control &c = p.controls()[items[cursor].index];
+                  if (c.action == Program::ACTION_RANDOMIZE)
+                  {
+                     p.actionDone(c);
+                     programSettingsChanged(p);
+                  }
+               }
                if (editing && items[cursor].kind == ITEM_SETTING)
                {
                   // start from the parameter, a MIDI CC may have changed it
@@ -1163,7 +1405,7 @@ namespace nemesis
          digitalWrite(CODEC_ENABLE_PIN, HIGH);
          AudioMemory(NEMESIS_AUDIO_MEMORY);
          codec.enable();
-         codecWrite(0x03, 0xF4 | 0x01); // functional mode
+         codecWrite(0x03, codecFunctionalMode()); // MCLK range of the sample rate the program asked for
          codecWrite(0x05, 0x00);        // ADC control
          codec.invertDAC(0xFF);         // the output stages invert, measured on rev2
          codec.volume(1.0);
@@ -1191,16 +1433,38 @@ namespace nemesis
             param_input = -1;
             since_display = DISPLAY_INTERVAL_MS;
          }
+         // button 1 changed the page: the list follows (same place), redraw
+         static int shown_page = -1;
+         if (program.page() != shown_page)
+         {
+            shown_page = program.page();
+            if (screen == SETTINGS)
+            {
+               buildItems();
+               cursor = validCursor(cursor);
+            }
+            since_display = DISPLAY_INTERVAL_MS;
+         }
          bool popup = screen == HOME && systemSettings().popup && param_input >= 0;
          const Control *param = popup ? controlOf(program, param_input) : nullptr;
-         if (since_display >= (param ? PARAM_REDRAW_MS : DISPLAY_INTERVAL_MS))
+         float knob = -1.0f; // a knob that has not caught its value yet
+         if (param && param->knob && !param->caught)
+            knob = constrain(input(param_input), 0.0f, 1.0f);
+         if (param && param->edit)
+         {
+            // an [edit:] knob shows the setting it changes
+            int target = program.editTarget(*param);
+            param = target >= 0 ? &program.controls()[target] : nullptr;
+         }
+         bool strip = screen == HOME && program.pagerIndex() >= 0; // flashes of the activity strip
+         if (since_display >= (param || strip ? PARAM_REDRAW_MS : DISPLAY_INTERVAL_MS))
          {
             if (screen == PROGRAMS)
                drawPrograms();
             else if (screen == SETTINGS || screen == SYSTEM)
                drawList();
             else if (param)
-               drawParameter(*param);
+               drawParameter(*param, knob);
             else
                drawHome();
             since_display = 0; // counted from the end of the transfer, so loop() gets time in between
@@ -1254,6 +1518,8 @@ namespace nemesis
       void setLed(int index, bool on) { digitalWrite(led_pin[index], on ? HIGH : LOW); }
 
       bool buttonPressed(int index) { return digitalRead(switch_pin[index]) == LOW; }
+      // X/Y/Z (knob + CV) and POT A-D; CV A-D are jacks only
+      bool isKnob(int index) { return (index >= 0 && index <= 2) || (index >= 7 && index <= 10); }
    }
 
    void showMonitor(bool enable) { hw::monitor = enable; }

@@ -208,16 +208,16 @@ namespace nemesis
       // once per audio block, before the program computes it
       const TransportState &block()
       {
-         const double CYCLES_PER_SAMPLE = (double)F_CPU_ACTUAL / AUDIO_SAMPLE_RATE_EXACT;
+         const double CYCLES_PER_SAMPLE = (double)F_CPU_ACTUAL / tdm::sampleRate();
          uint32_t now = ARM_DWT_CYCCNT;
 
          SystemSettings &s = systemSettings();
-         core.sampleRate = AUDIO_SAMPLE_RATE_EXACT;
+         core.sampleRate = tdm::sampleRate();
          core.source = s.clockSource;
          bool cv = s.clockSource == TransportCore::CV;
          core.tickSize = cv ? TransportCore::TICKS_PER_QUARTER / max(1, s.clockPpqn) : 1.0;
          core.tempo = s.tempo;
-         core.offsetSamples = s.clockOffsetMs * 0.001 * AUDIO_SAMPLE_RATE_EXACT;
+         core.offsetSamples = s.clockOffsetMs * 0.001 * tdm::sampleRate();
          if (s.run != last_run_setting) // run switched in the menu
             core.setRunning(s.run);
 

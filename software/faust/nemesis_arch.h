@@ -38,9 +38,6 @@
 #include <nemesis_program.h>
 
 class dsp;
-class MapUI;
-class MidiUI;
-class nemesis_midi;
 
 class NemesisAudio : public nemesis::Program
 {
@@ -50,12 +47,10 @@ class NemesisAudio : public nemesis::Program
     volatile bool fReady = false;
     float** fInChannel;
     float** fOutChannel;
-    MapUI* fUI;
-    nemesis_midi* fMIDIHandler;
-    MidiUI* fMIDIInterface;
     dsp* fDSP;
     dsp* fVoices;  // the polyphonic voice object, if any
     volatile uint32_t fResets;  // DSP state cleared after inf/NaN output
+    volatile uint64_t fSamples = 0;  // computed since start(): delay line write position
 
    public:
     NemesisAudio();
@@ -63,6 +58,14 @@ class NemesisAudio : public nemesis::Program
 
     bool start() override;
     bool started() const override { return fReady; }
+    int largeBuffers(float** buffers, uint32_t* lengths, int max) const override;
+    uint64_t samplesComputed() const override
+    {
+        __disable_irq();  // 64 bit: two loads, the audio interrupt writes it
+        uint64_t n = fSamples;
+        __enable_irq();
+        return n;
+    }
     void stop() override;
     void update(void) override;
 

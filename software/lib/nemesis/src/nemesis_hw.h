@@ -41,6 +41,8 @@ namespace nemesis
 
       void setLed(int index, bool on);
       bool buttonPressed(int index);
+      // a physical knob (catches stored values), not a CV-only input
+      bool isKnob(int index);
 
       // FlexSPI2 clock for the optional PSRAM
       void setPSRAMspeed();

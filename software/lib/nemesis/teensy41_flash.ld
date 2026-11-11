@@ -49,6 +49,13 @@ SECTIONS
 		*libc.a:*(.text*)
 		*libc_nano.a:*(.text*)
 		*libfaust_programs.a:*(.text*)
+		/* only used from loop(), never in an interrupt: SD card and display
+		   (keeps ITCM at 4 blocks: an odd count made DTCM slower, see
+		   CLAUDE.md; SPI and ADC stay, the CV and pot interrupts use them) */
+		*libSdFat.a:*(.text*)
+		*libSD.a:*(.text*)
+		*libSerialFlash.a:*(.text*)
+		*libAdafruit*:*(.text*)
 		. = ALIGN(4);
 	} > FLASH
 
@@ -61,6 +68,10 @@ SECTIONS
 		*libc.a:*(.ARM.exidx* .ARM.extab*)
 		*libc_nano.a:*(.ARM.exidx* .ARM.extab*)
 		*libfaust_programs.a:*(.ARM.exidx* .ARM.extab*)
+		*libSdFat.a:*(.ARM.exidx* .ARM.extab*)
+		*libSD.a:*(.ARM.exidx* .ARM.extab*)
+		*libSerialFlash.a:*(.ARM.exidx* .ARM.extab*)
+		*libAdafruit*:*(.ARM.exidx* .ARM.extab*)
 	}
 
 	.text.itcm : {
