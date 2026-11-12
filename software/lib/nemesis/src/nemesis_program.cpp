@@ -191,6 +191,10 @@ namespace nemesis
       {
          fPendingPager = strcmp(value, "0") != 0;
       }
+      else if (strcmp(key, "home") == 0)
+      {
+         fPendingHome = strcmp(value, "0") != 0;
+      }
       else if (strcmp(key, "action") == 0)
       {
          fPendingAction = strcmp(value, "randomize") == 0 ? ACTION_RANDOMIZE
@@ -334,6 +338,11 @@ namespace nemesis
          added.action = fPendingAction;
          added.randomizable = fPendingRandom && !fPendingAction;
          added.pageName = fPendingPageName;
+         if (fPendingHome && input < 0 && fHome < 0)
+         {
+            added.home = true;
+            fHome = fControls.size() - 1;
+         }
          if (fPendingPager && input < 0)
          {
             added.pager = true;
@@ -365,6 +374,7 @@ namespace nemesis
       fPendingRandom = true;
       fPendingPageName = nullptr;
       fPendingPager = false;
+      fPendingHome = false;
       fPendingButton = -1;
       fPendingActivity = -1;
       fPendingLimit = false;
@@ -784,6 +794,7 @@ namespace nemesis
       fLoopLength = fLoopFreeze = fLoopRestored = nullptr;
       std::vector<std::pair<float *, int>>().swap(fButtons);
       fPager = -1;
+      fHome = -1;
       std::vector<TransportZone>().swap(fTransport);
       std::vector<TransportZone>().swap(fMono);
       std::vector<MidiZone>().swap(fMidiZones);

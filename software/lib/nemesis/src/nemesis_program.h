@@ -118,6 +118,9 @@ namespace nemesis
       // type] the setting whose value names the page on the home screen
       const char *section = nullptr;
       bool pager = false;
+      // [home:1]: the setting the encoder changes on the home screen, its
+      // value shown there big (juno: the patch)
+      bool home = false;
       const char *pageName = nullptr;
       // [action:randomize]: a menu (off / page / all) acted on when its edit
       // ends; [action:amount]: how far the randomization moves (0..1);
@@ -257,6 +260,8 @@ namespace nemesis
       int templateTarget(const char *label, int page = -1) const;
       // [pager:1] setting, -1 for none; its value; the next page (button 1)
       int pagerIndex() const { return fPager; }
+      // the [home:1] setting, -1 if none
+      int homeIndex() const { return fHome; }
       int page() const;
       void nextPage();
       // [button:N] parameters: 1 while button N is held
@@ -398,6 +403,8 @@ namespace nemesis
       bool fPendingRandom = true;
       const char *fPendingPageName = nullptr;
       bool fPendingPager = false;
+      bool fPendingHome = false;
+      int fHome = -1;
       int fPendingButton = -1;
       int fPendingActivity = -1;
       int fPager = -1;

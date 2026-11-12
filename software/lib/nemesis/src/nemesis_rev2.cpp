@@ -190,7 +190,7 @@ namespace nemesis
          // entries of the settings lists
          enum ItemKind { ITEM_SETTING, ITEM_ROUTE, ITEM_RUN, ITEM_CLOCK, ITEM_CLOCK_PULSES,
                          ITEM_TEMPO, ITEM_OFFSET, ITEM_MIDI, ITEM_POPUP, ITEM_BRIGHTNESS, ITEM_CV_RANGE,
-                         ITEM_BLOCK, ITEM_RATE, ITEM_SECTION };
+                         ITEM_BLOCK, ITEM_RATE, ITEM_SYSTEM, ITEM_SECTION };
          constexpr int BLOCK_CHOICES[] = {0, 32, 64, 128}; // 0: auto
          constexpr int PPQN_CHOICES[] = {1, 2, 4, 24};
          struct Item
@@ -602,16 +602,43 @@ namespace nemesis
          }
 
          // current program, its status values and the CPU load, a note when there is no SD card
+         // the home setting's value (juno: "A11 Brass") as big as it fits:
+         // Michroma 16, else 13 oblique, else Oxanium 10 (cut at the edge)
+         FLASHMEM void drawHomeValue(const Program &program)
+         {
+            const Control &c = program.controls()[program.homeIndex()];
+            char text[48];
+            formatValue(c, c.value, text, sizeof(text));
+            const GFXfont *fonts[] = {&Michroma16, &Michroma13Oblique, &Oxanium10};
+            for (const GFXfont *f : fonts)
+            {
+               display.setFont(f);
+               int16_t x1, y1;
+               uint16_t w, h;
+               display.getTextBounds(text, 0, 29, &x1, &y1, &w, &h);
+               if (w <= 128 || f == &Oxanium10)
+                  break;
+            }
+            display.setCursor(0, 29);
+            display.print(text);
+         }
+
          FLASHMEM void drawHome()
          {
             char text[16];
             display.clearDisplay();
             display.setTextColor(WHITE);
             display.setFont(&Oxanium10);
-            display.setCursor(0, 8); // 6pt reaches 8 px above the baseline
             const Program &program = activeProgram();
+            // 6pt reaches 8 px above the baseline; a first letter that reaches
+            // left of its start (Oxanium's j) moves the line right
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.getTextBounds(program.name(), 0, 8, &x1, &y1, &w, &h);
+            display.setCursor(x1 < 0 ? -x1 : 0, 8);
             bool paged = program.pagerIndex() >= 0;
-            if (paged) // the big line shows the page: the program's name moves up
+            bool homed = !paged && program.homeIndex() >= 0;
+            if (paged || homed) // the big line shows the page or the home setting: the program's name moves up
             {
                display.print(program.name());
                display.print(' ');
@@ -667,7 +694,9 @@ namespace nemesis
             display.setTextColor(WHITE);
             display.setFont(&Michroma16);
             display.setCursor(0, 29); // descenders (g, j, p) end 3 px below the baseline
-            if (!paged)
+            if (homed)
+               drawHomeValue(program);
+            else if (!paged)
                display.print(program.name());
             else
                drawPage(program);
@@ -786,14 +815,14 @@ namespace nemesis
                const std::vector<Control> &controls = p.controls();
                bool paged = p.pagerIndex() >= 0;
                // a preset choice ([action:preset]) comes first
-               for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV - 1; i++)
+               for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV - 2; i++)
                   if (controls[i].action == Program::ACTION_PRESET && controls[i].input < 0 && p.visible(controls[i]))
                      items[item_count++] = {ITEM_SETTING, (int)i};
                for (int pass = paged ? 0 : 1; pass < 2; pass++)
                {
                   const char *section = nullptr;
                   bool any = false;
-                  for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV - 1; i++)
+                  for (size_t i = 0; i < controls.size() && item_count < MAX_ITEMS - NUM_ROUTABLE_CV - 2; i++)
                   {
                      const Control &c = controls[i];
                      if (c.input >= 0 || !c.listed || !p.visible(c) || c.action == Program::ACTION_PRESET)
@@ -813,6 +842,7 @@ namespace nemesis
                }
                for (int i = 0; i < NUM_ROUTABLE_CV; i++)
                   items[item_count++] = {ITEM_ROUTE, routableCV(i)};
+               items[item_count++] = {ITEM_SYSTEM, 0}; // last row: the system settings
             }
             else if (screen == SYSTEM)
             {
@@ -864,6 +894,8 @@ namespace nemesis
                return "block size";
             case ITEM_RATE:
                return "sample rate";
+            case ITEM_SYSTEM:
+               return "system";
             }
             return "";
          }
@@ -952,6 +984,9 @@ namespace nemesis
                   snprintf(text, size, "auto %dk", wantedSampleRate(nullptr) / 1000);
                else
                   snprintf(text, size, "%dk", s.sampleRate / 1000);
+               break;
+            case ITEM_SYSTEM:
+               snprintf(text, size, ">");
                break;
             }
          }
@@ -1217,12 +1252,44 @@ namespace nemesis
                cursor = validCursor(cursor);
          }
 
+         // number of entries of a 'name':value;.. menu
+         int menuEntries(const char *menu)
+         {
+            int n = 0;
+            for (const char *p = menu; p && *p && *p != '}'; p++)
+               if (*p == ':')
+                  n++;
+            return n;
+         }
+
+         // the home setting one step per detent (its menu entries, wrapping)
+         void changeHome(int delta)
+         {
+            Program &p = activeProgram();
+            Control &c = p.controls()[p.homeIndex()];
+            float lo = min(c.min, c.max), hi = max(c.min, c.max);
+            float step = c.step > 0.0f ? c.step : 1.0f;
+            int n = (int)lroundf((hi - lo) / step) + 1;
+            if (c.menu && menuEntries(c.menu) > 0)
+               n = min(n, menuEntries(c.menu)); // presets: as many as are loaded
+            int k = (int)lroundf((c.value - lo) / step);
+            k = ((k + delta) % n + n) % n;
+            c.value = lo + k * step;
+            c.changed = true;
+            programSettingsChanged(p);
+            since_display = DISPLAY_INTERVAL_MS; // draw now
+         }
+
          void onTurn(int delta, bool fast)
          {
             switch (screen)
             {
             case HOME:
-               open(SETTINGS);
+               // a program's [home:1] setting, else the settings list
+               if (activeProgram().homeIndex() >= 0)
+                  changeHome(delta);
+               else
+                  open(SETTINGS);
                break;
             case PROGRAMS:
             {
@@ -1250,7 +1317,7 @@ namespace nemesis
             switch (screen)
             {
             case HOME:
-               open(PROGRAMS);
+               open(SETTINGS);
                break;
             case PROGRAMS:
                if (cursor != currentProgram())
@@ -1268,6 +1335,11 @@ namespace nemesis
             case SYSTEM:
                if (item_count == 0 || items[cursor].kind == ITEM_SECTION)
                   break;
+               if (items[cursor].kind == ITEM_SYSTEM)
+               {
+                  open(SYSTEM);
+                  break;
+               }
                editing = !editing;
                if (!editing && items[cursor].kind == ITEM_SETTING)
                {
@@ -1291,15 +1363,23 @@ namespace nemesis
             }
          }
 
+         // hold: the program list from the home screen and the settings, the
+         // system settings from the program list, back home from them
          void onHold()
          {
             if (screen == SYSTEM)
                screen = HOME;
-            else
+            else if (screen == PROGRAMS)
                open(SYSTEM);
+            else
+               open(PROGRAMS);
          }
 
-         // turn: settings, click: program list (or edit in a list), hold: system settings
+
+
+         // home: turn = the program's [home:1] setting (else the settings),
+         // click = settings, hold = program list (there: hold = system
+         // settings, also the settings' last row); in a list click = edit
          void handleEncoder()
          {
             int32_t position = encoderPosition();
