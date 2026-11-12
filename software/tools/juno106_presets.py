@@ -17,6 +17,8 @@ Patch bytes (Juno-106 owner's manual, as quoted in ST-Log 33, June 1989):
  17 switches 2: bit 0 PWM manual, 1 env polarity -, 2 VCA gate,
     3..4 HPF (11 = position 0 .. 00 = position 3)
 (also the MIDI implementation in the Juno-106 owner's manual, 3.4)
+PWM bytes only reach 105 (R5/R6), the DCO LFO byte is after the slider's
+taper: both converted to slider positions as Youth106 / KR-106 do.
 
 usage: juno106_presets.py <patches.106|*.syx> [-o juno.PRE]
 """
@@ -193,7 +195,7 @@ FACTORY = [
     ("B88", "Owgan"),
 ]
 # names in editor libraries that differ: (A)/(B) variants go to group A/B
-ALIASES = {"String III": "A36", "Brass Set 1": "B31", "Meow Brass": "B73",
+ALIASES = {"String III": "A36", "Brass Set 1": "A11", "Brass": "B31", "Meow Brass": "B73",
            "Brass Ensemble (A)": "A43", "Brass Ensemble (B)": "B55", "Clav (A)": "A62", "Clav (B)": "B51",
            "High Strings (A)": "A38", "High Strings (B)": "B84", "Rocket Men (A)": "A85", "Rocket Men (B)": "B85"}
 
@@ -222,6 +224,18 @@ def factory_order(patches):
     return result
 
 
+def dco_lfo_slider(t_post):
+    """The DCO LFO byte is read after the slider's analog taper
+    (V = x / (1 + 5x - 5x^2), a 50K pot with a 10K shunt): the slider
+    position that gave it (as Youth106 / KR-106)."""
+    if t_post <= 0:
+        return 0.0
+    if t_post >= 1:
+        return 1.0
+    a, b, c = 5 * t_post, 1 - 5 * t_post, -t_post
+    return (-b + (b * b - 4 * a * c) ** 0.5) / (2 * a)
+
+
 def convert(p):
     v = [x / 127 for x in p[:16]]
     sw1, sw2 = p[16], p[17]
@@ -231,7 +245,8 @@ def convert(p):
     hpf_pos = 3 - ((sw2 >> 3) & 3)
     hpf = hpf_pos                                         # juno's menu: 0 boost, 1 flat, 2, 3
     values = [
-        ("LFO Rate", v[0]), ("LFO Delay", v[1]), ("LFO DCO", v[2]), ("PWM", v[3]), ("Noise", v[4]),
+        ("LFO Rate", v[0]), ("LFO Delay", v[1]), ("LFO DCO", dco_lfo_slider(p[2] / 127)),
+        ("PWM", min(p[3], 105) / 105), ("Noise", v[4]),
         ("Cutoff", v[5]), ("Resonance", v[6]), ("Env", v[7]), ("LFO VCF", v[8]), ("Kybd", v[9]),
         ("Level", v[10]), ("Attack", v[11]), ("Decay", v[12]), ("Sustain", v[13]), ("Release", v[14]),
         ("Sub", v[15]), ("range", rng), ("Pulse", (sw1 >> 3) & 1), ("Saw", (sw1 >> 4) & 1),

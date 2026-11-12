@@ -1,7 +1,7 @@
 declare name "juno";
 declare description "Juno style polysynth: DCO saw/pulse/sub/noise, HPF, 4 pole VCF, ADSR, LFO, chorus I/II";
 declare author "Arev Imer";
-declare version "0.15";
+declare version "0.17";
 declare options "[midi:on][nvoices:12]";   // 12 at 48 kHz, 6 at 96 kHz (the library halves them)
 
 // Play it over MIDI (USB or the MIDI jack), stereo out on outputs 1/2.
@@ -15,6 +15,9 @@ declare options "[midi:on][nvoices:12]";   // 12 at 48 kHz, 6 at 96 kHz (the lib
 // everything else: settings, MIDI CC (numbers in the labels)
 
 import("stdfaust.lib");
+// the 106's measured slider curves (cutoff, envelope times, LFO, DCO LFO,
+// sub), from Ultramaster KR-106 / Youth106 (GPL-3.0)
+import("juno106_curves.lib");
 
 // voice parameters set by the polyphony
 freq = hslider("freq", 220, 20, 10000, 0.01);
@@ -28,48 +31,54 @@ gate = button("gate");
 note_on   = gate > gate';
 vs(x)     = x : si.smooth(ba.if(note_on, 0, ba.tau2pole(0.005)));
 cutoff    = hslider("Cutoff [hw:CV_X]", 0.6, 0, 1, 0.001) : vs;
-resonance = hslider("Resonance [hw:CV_Y]", 0.2, 0, 1, 0.001) : vs;
+res_raw   = hslider("Resonance [hw:CV_Y]", 0.2, 0, 1, 0.001);
+resonance = res_raw : vs;
 env_amt   = hslider("Env [hw:CV_Z]", 0.4, 0, 1, 0.001) : vs;
-// envelope times: attack 1.5 ms .. 3 s, decay and release 1.5 ms .. 12 s
-// (owner's manual, service notes); between them 1.5 ms + max * v^3, an
-// assumption: exponential made decay 44/127 34 ms, the factory brass plucky
-// (control rate)
-release   = hslider("Release [hw:POT_D]", 0.4, 0, 1, 0.001) : \(v).(0.0015 + 12 * v * v * v);
-// 0.1 .. 30 Hz as the 106 (owner's manual), exponential
-lfo_rate  = hslider("LFO Rate", 0.4, 0, 1, 0.001) : \(v).(0.1 * pow(300, v)) : vs;
+// envelope times as measured on a 106 (seconds; control rate): attack
+// 1 ms .. 3.3 s; decay and release to -20 dB, 4 ms .. 22 s
+attack_s(v) = pow(2, curve(T_ATTACK_LOG2MS, 33, v)) * 0.001;
+decrel_s(v) = pow(2, curve(T_DECREL_LOG2MS, 33, v)) * 0.001;
+release   = hslider("Release [hw:POT_D]", 0.4, 0, 1, 0.001) : decrel_s;
+// 0.04 .. 30 Hz, the 106's measured curve
+lfo_rate  = hslider("LFO Rate", 0.4, 0, 1, 0.001) : \(v).(pow(2, curve(T_LFO_LOG2HZ, 33, v))) : vs;
 pwm       = hslider("PWM", 0.3, 0, 1, 0.001) : vs;
 chorus    = hslider("Chorus [style:menu{'off':0;'I':1;'II':2;'I+II':3}]", 1, 0, 3, 1) : int;
 // pitch bend: +-2 semitones (the ratio once per block, then smoothed)
 bend      = hslider("bend [midi:pitchwheel] [hidden:1]", 0, -2, 2, 0.001) : \(b).(pow(2, b / 12)) : vs;
 
-attack    = hslider("Attack [hw:POT_A] [midi:ctrl 73]", 0.01, 0, 1, 0.001) : \(v).(0.0015 + 3 * v * v * v);
-decay     = hslider("Decay [hw:POT_B] [midi:ctrl 75]", 0.4, 0, 1, 0.001) : \(v).(0.0015 + 12 * v * v * v);
+attack    = hslider("Attack [hw:POT_A] [midi:ctrl 73]", 0.01, 0, 1, 0.001) : attack_s;
+decay     = hslider("Decay [hw:POT_B] [midi:ctrl 75]", 0.4, 0, 1, 0.001) : decrel_s;
 sustain   = hslider("Sustain [hw:POT_C] [midi:ctrl 79]", 0.7, 0, 1, 0.001);
 saw_lvl   = hslider("Saw [midi:ctrl 70]", 1, 0, 1, 0.001) : vs;
 pulse_lvl = hslider("Pulse [midi:ctrl 71]", 0, 0, 1, 0.001) : vs;
-sub_lvl   = hslider("Sub [midi:ctrl 77]", 0.3, 0, 1, 0.001) : vs;
-noise_lvl = hslider("Noise [midi:ctrl 78]", 0, 0, 1, 0.001) : vs;
+// sub and noise levels as measured (the noise: a soft knee fit)
+sub_lvl   = hslider("Sub [midi:ctrl 77]", 0.3, 0, 1, 0.001) : curve(T_SUB, 33) : vs;
+noise_lvl = hslider("Noise [midi:ctrl 78]", 0, 0, 1, 0.001)
+          : \(t).(ba.if(t <= 0, 0, 1.0632 * (sqrt((t - 0.0594) * (t - 0.0594) + 0.0146 * 0.0146) + t - 0.0594) * 0.5)) : vs;
 // HPF after the voice mix (global, as on the Juno): in the effect. The
 // 106's four positions: 0 boosts the bass (organ), 1 passes the sound
-// unprocessed, 2 and 3 cut more (the frequencies and the boost are
-// estimates: the manual gives none)
+// unprocessed, 2 and 3 cut from 236 / 754 Hz (first order)
 hpf_pos   = hslider("HPF [style:menu{'0 boost':0;'1 flat':1;'2':2;'3':3}] [midi:ctrl 81]", 1, 0, 3, 1) : int;
-hpf_freq  = ba.selectn(4, hpf_pos, 20, 20, 240, 720) : si.smoo;
-hpf_boost = ba.if(hpf_pos == 0, 2, 1) : si.smoo;           // +6 dB below ~120 Hz
 lfo_vcf   = hslider("LFO VCF [midi:ctrl 76]", 0, 0, 1, 0.001) : vs;
-lfo_dco   = hslider("LFO DCO [midi:ctrl 1]", 0, 0, 1, 0.001) : vs; // mod wheel: vibrato
+lfo_dco   = hslider("LFO DCO [midi:ctrl 1]", 0, 0, 1, 0.001); // mod wheel: vibrato (its curve below, then smoothed)
 kbd       = hslider("Kybd [midi:ctrl 82]", 0.5, 0, 1, 0.001) : vs;
 spread    = hslider("Spread [midi:ctrl 10]", 0.6, 0, 1, 0.01);
 // the rest of a Juno-106 patch
-lfo_delay = hslider("LFO Delay", 0, 0, 1, 0.001);        // the LFO fades in after a note starts, 0 .. 3 s
-level     = hslider("Level", 0.5, 0, 2, 0.001) : vs;     // VCA level, 0.5 = unity (presets levelled up to 2)
+// the LFO fades in after a note starts: 0 .. 4.4 s as measured
+lfo_delay = hslider("LFO Delay", 0, 0, 1, 0.001) : \(v).(curve(T_LFO_DELAY_MS, 33, v) * 0.001);
+// VCA level: +-10 dB around 0.5, as the 106
+level     = hslider("Level", 0.5, 0, 1, 0.001) : \(v).(pow(10, v - 0.5)) : vs;
 range     = hslider("range [style:menu{'16':0;'8':1;'4':2}]", 1, 0, 2, 1);
 pwm_man   = hslider("PWM mode [style:menu{'LFO':0;'manual':1}]", 0, 0, 1, 1);
 env_neg   = hslider("env polarity [style:menu{'+':0;'-':1}]", 0, 0, 1, 1);
 vca_gate  = hslider("VCA [style:menu{'env':0;'gate':1}]", 0, 0, 1, 1);
 // presets: lines of /NEMESIS/juno.PRE on the SD card (the 106's factory
 // patches, made by software/tools/juno106_presets.py)
-patch     = hslider("patch [action:preset] [random:0]", 0, 0, 127, 1);
+patch     = hslider("patch [action:preset] [home:1] [random:0]", 0, 0, 127, 1);   // [home:1]: the encoder on the home screen
+// the 106's assign modes, run by the polyphony ([poly:mode]): poly 1 (release
+// tails ring out), poly 2 (only the last notes keep their release), unison
+// (every voice on the last note held)
+keys      = hslider("keys [poly:mode] [style:menu{'poly 1':0;'poly 2':1;'unison':2}]", 0, 0, 2, 1);
 // analog drift: every voice slightly detuned and its filter a bit off, a
 // small random detune per note, and a slow wander per voice
 drift_on  = hslider("drift [style:menu{'off':0;'on':1}]", 1, 0, 1, 1);
@@ -81,7 +90,7 @@ lfo = os.lf_triangle(lfo_rate);
 // the LFO delay: per voice, from the note's start (for DCO and VCF; the PWM's
 // LFO runs freely)
 since     = (+(1) : *(1 - note_on)) ~ _;
-lfo_fade  = min(1, since / max(1, lfo_delay * lfo_delay * 3 * ma.SR));
+lfo_fade  = min(1, since / max(1, lfo_delay * ma.SR));
 lfo_d     = lfo * lfo_fade;
 
 // ---- drift (per voice: [poly:voice] numbers the voices, see the pan below)
@@ -92,12 +101,10 @@ drift_ct   = drift_on * (3.0 * hash(voice_no) + 2.0 * note_rand + 2.0 * wander);
 // the filter drifts like the DCOs (in cents, its own offsets per voice): a
 // self-oscillating filter stays playable
 drift_oct  = drift_on * (3.0 * hash(voice_no + 31) + 2.0 * note_rand + 2.0 * wander) / 1200;
-// the 106's envelope: a straight attack, decay and release as RC curves
-// (exponential towards the sustain level / zero, as the manual draws them;
-// en.adsr's straight decay made the filter fall late and abruptly). The
-// slider's time is ENV_TC time constants (fitted to a recording of A11).
-ENV_TC   = 2;
-env_rc(t) = exp(-1 / max(1, t / ENV_TC * ma.SR));      // per sample factor (control rate)
+// the 106's envelope (its firmware): a straight attack, decay and release
+// exponential towards the sustain level / zero; their times are to -20 dB,
+// so ln(10) time constants
+env_rc(t) = exp(-2.302585 / max(1, t * ma.SR));        // per sample factor (control rate)
 env = loop ~ (_, _) : (_, !)
 with {
     loop(e, ph) = e2, ph2
@@ -112,11 +119,12 @@ with {
 // (one octave down, flipping with the main ramp as the DCO's divider), noise.
 // polyBLEP: the steps' aliasing removed in the two samples around them
 // (was os.sawtooth/pulsetrain/square: five DPW saws with divisions each)
-// the DCO's LFO: +-400 cents (service notes); 2^y for |y| <= 1/3 as a
-// polynomial (a pow per sample costs)
+// the DCO's LFO depth: the 106's curve, up to +-4 semitones; 2^y for
+// |y| <= 1/3 as a polynomial (a pow per sample costs)
 exp2s(y) = 1 + t * (1 + t * (0.5 + t * 0.1666667)) with { t = y * 0.6931472; };
+dco_lfo_st = lfo_dco : curve(T_DCO_LFO_ST, 33) : vs;    // from the raw slider: the table once per block
 pitch = freq * bend * ba.selectn(3, range, 0.5, 1, 2)
-      * exp2s(4 / 12 * lfo_dco * lfo_d) * (1 + drift_ct * 0.000577623);   // 2^(c/1200) ~ 1 + c ln2/1200
+      * exp2s(dco_lfo_st / 12 * lfo_d) * (1 + drift_ct * 0.000577623);   // 2^(c/1200) ~ 1 + c ln2/1200
 duty  = 0.5 - 0.45 * pwm * ba.if(pwm_man > 0.5, 1, 0.5 + 0.5 * lfo);
 dt    = pitch / ma.SR;
 idt   = ma.SR / pitch;
@@ -126,51 +134,64 @@ ramp2 = (+(0.5 * dt) : ma.frac) ~ _;
 blep(d, id, t) = ba.if(t < d, a + a - a * a - 1, 0) + ba.if(t > 1 - d, b * b + b + b + 1, 0)
 with { a = t * id; b = (t - 1) * id; };
 saw   = 2 * ramp - 1 - blep(dt, idt, ramp);
-pulse = ba.if(ramp < duty, 1, -1) + blep(dt, idt, ramp) - blep(dt, idt, ma.frac(ramp + 1 - duty))
-      - (2 * duty - 1);                                   // without its DC
+// the pulse is the 106's comparator on the ramp: its narrow low part at
+// the ramp's start, so it is in phase with the saw (inverted, the two
+// partly cancelled: factory A15 with both was 9 dB too quiet)
+pulse = ba.if(ramp < duty, -1, 1) - blep(dt, idt, ramp) + blep(dt, idt, ma.frac(ramp + 1 - duty))
+      - (1 - 2 * duty);                                   // without its DC
 sub   = ba.if(ramp2 < 0.5, 1, -1) + blep(0.5 * dt, 2 * idt, ramp2) - blep(0.5 * dt, 2 * idt, ma.frac(ramp2 + 0.5));
-dco   = saw_lvl * saw + pulse_lvl * pulse + sub_lvl * sub + noise_lvl * no.noise;
+// the 106's mix (Youth106: saw 0.6, pulse 0.5, sub 0.75, noise 1.2), scaled
+// so that the saw alone keeps its level
+dco   = (0.6 * saw_lvl * saw + 0.5 * pulse_lvl * pulse + 0.75 * sub_lvl * sub + 1.2 * noise_lvl * no.noise) / 0.6;
 
 // VCF: 4 pole lowpass as the 80017A/IR3109's four OTA stages with global
 // feedback: a zero delay feedback (TPT) ladder (Zavalishin), its input soft
-// saturated like an OTA (also bounds high resonance). The cutoff in octaves
-// above 5 Hz (env, LFO, key tracking per sample) gives the stage
-// coefficient g = tan(w) / (1 + tan(w)) from a table (16 points per octave,
-// filled for the sample rate), interpolated: no pow/tan per sample.
-// From the service notes: the filter spans 5 Hz .. 50 kHz (13.3 octaves),
-// envelope +14 octaves, LFO +-3.5 octaves, key follow 1:1 around middle C.
-// The slider's 0 sits at 113 Hz at C4 (fitted with ENV_TC to a recording
-// of factory patch A11: its brightness curve within 0.28 octaves; slider 0
-// at 5 Hz left that brass dark and silent in its sustain, 248 Hz, the
-// service notes' calibration point, too bright); the slider goes up to
-// 50 kHz, only the modulation reaches down to 5 Hz. The table stops at
-// 0.45 SR.
-VCF_BASE = 5;
-VCF_OCT  = 13.29;                                       // 5 Hz .. 50 kHz
-VCF_ZERO = 4.5;                                         // 113 Hz: 4.5 octaves above 5 Hz
-VCF_SPAN = VCF_OCT - VCF_ZERO;                          // the slider: 8.8 octaves
-vcf_oct = VCF_ZERO + VCF_SPAN * cutoff + 14 * env_amt * env * (1 - 2 * env_neg) + 3.5 * lfo_vcf * lfo_d
-        + kbd * log(freq / 261.6) / log(2) + drift_oct
-        : max(0) : min(VCF_OCT);
-STEPS   = 16;
-TN      = 14 * STEPS + 2;
+// saturated like an OTA (also bounds high resonance).
+// The cutoff as the 106's firmware adds it up, in slider units (1 = the
+// slider's travel): slider + env amount x envelope + LFO (3.5 octaves) +
+// key follow (1:1 around middle C) + drift, then the measured slider -> Hz
+// curve of a voice card (5.7 Hz .. 50 kHz, ~14 octaves). The stage
+// coefficient g = tan(w) / (1 + tan(w)) comes from a table over 0..1 (256
+// steps, filled for the sample rate), interpolated: no pow/tan per sample.
+ST_PER_UNIT = 169.33;                                   // semitones per slider unit (firmware: 96 / 16256 per semitone)
+vcf_x   = cutoff + env_amt * env * (1 - 2 * env_neg) + lfo_vcf * lfo_d * 42 / ST_PER_UNIT
+        + kbd * 12 * log(freq / 261.63) / log(2) / ST_PER_UNIT + drift_ct / 100 / ST_PER_UNIT
+        + peak_pull
+        : max(0) : min(1);
+// resonance pulls the 106's cutoff up (KR-106's fit to a hardware noise
+// grid: x exp(m(k)), up to ~ +0.25 octaves at medium resonance), here as
+// slider units: m / ln 2 octaves = m x 12 / ln 2 / ST_PER_UNIT
+peak_pull = res_raw : res_k : pull : vs
+with {
+    pull(k) = m0 * ba.if(k < 1, max(k, 0), 1) * ba.if(k > 3.7, max(0, min(1, (4.4 - k) / 0.7)), 1) * 0.102237
+    with { m0 = 0.20646 + k * (-0.04140 + k * (0.00602 - k * 0.00127)); };
+};
+// the measured slider -> log2(Hz) curve as a polynomial (degree 9, within
+// 0.012 octaves of the 1024 measured points): FAUST 2.88 doesn't fill a
+// table read while another table is generated (it stayed 0: 1 Hz)
+vcf_log2hz(x) = 2.512921 + x * (14.693375 + x * (-14.099046 + x * (155.254468 + x * (-894.285764
+              + x * (2893.606986 + x * (-5454.787850 + x * (5941.911914 + x * (-3460.546967 + x * 831.378569))))))));
+STEPS   = 256;
+TN      = STEPS + 2;
 gtab(i) = rdtable(TN, ba.time : gen, i)
 with {
     gen(k) = w / (1 + w)
     with {
-        fc = min(VCF_BASE * pow(2, k / STEPS), 0.45 * ma.SR);
+        fc = min(pow(2, vcf_log2hz(k / STEPS)), 0.45 * ma.SR);
         w  = tan(ma.PI * fc / ma.SR);
     };
 };
 vcf_g   = g0 + (x - i) * (gtab(i + 1) - g0)
 with {
-    x  = vcf_oct * STEPS;
+    x  = vcf_x * STEPS;
     i  = int(x);
     g0 = gtab(i);
 };
-// self-oscillates above k = 4 (resonance ~0.93): playable on its own with
-// the oscillators off (Kybd 1 tracks the keys); the saturation bounds it
-vcf_k   = 4.3 * resonance;
+// resonance -> feedback: the 106's measured curve (a quartic fit to a
+// hardware sweep), plus a boost above 0.9 into self-oscillation (k > 4);
+// from the raw slider, smoothed after (once per block, not per sample)
+res_k(r) = r * (4.6265 + r * (4.3866 + r * (-8.9869 + r * 3.3902))) + max(0, r - 0.9) * 10;
+vcf_k   = res_raw : res_k : vs;
 
 // tanh(x) ~ x (27 + x^2) / (27 + 9 x^2), exact at 0, 1 at |x| = 3: the OTA
 // input; its limit sets the self-oscillation's level (0.5 was quieter than
@@ -210,7 +231,7 @@ with {
 // VCA: the envelope, or the gate (2 ms edges, organ like)
 vca  = ba.if(vca_gate > 0.5, gate : si.smooth(ba.tau2pole(0.002)), env);
 // (patch is only read by the library: attached, else FAUST drops it)
-mono = dco * 0.25 + thermal + kick : ladder(vcf_g, vcf_k, bass_comp) : *(vca * gain * 2 * level) : attach(_, patch);
+mono = dco * 0.25 + thermal + kick : ladder(vcf_g, vcf_k, bass_comp) : *(vca * gain * level) : attach(_, patch) : attach(_, keys);
 
 // pan by voice: every voice has its own place in the stereo field (the
 // polyphony numbers them, [poly:voice]), neighbouring voices far apart
@@ -222,23 +243,45 @@ place    = ma.frac(voice_no * 0.618034 + 0.5) - 0.5;    // -0.5 .. 0.5
 angle    = (0.5 + place * spread) * ma.PI / 2;
 voice    = mono <: *(cos(angle) * sqrt(2)), *(sin(angle) * sqrt(2));   // centre: the old level
 
-// chorus after the voice mix (the 'effect' runs once, not per voice):
-// two modulated delays in opposite phase, rates and depths after the Juno 60
-chorus_rate  = ba.selectn(4, chorus, 0, 0.5, 0.83, 8);
-chorus_depth = ba.selectn(4, chorus, 0, 0.0018, 0.0018, 0.0003);
+// chorus after the voice mix (the 'effect' runs once, not per voice): two
+// BBD delays swept in opposite phase by one triangle, as measured on a 106
+// (Youth106/KR-106): 3.3 ms +- 2.13 ms at 0.514 Hz (I) / 0.835 Hz (II), the
+// Juno-60's I+II 7.85 Hz +- 0.236 ms; dry 0.863, wet 1.257
+chorus_rate  = ba.selectn(4, chorus, 0, 0.514, 0.835, 7.85);
+chorus_depth = ba.selectn(4, chorus, 0, 0.00213, 0.00213, 0.000236);
 chorus_lfo   = os.lf_triangle(chorus_rate);
-// the BBD's output filter: 10 kHz, 12 dB/oct, on the chorus delays only
-tap(sign)    = de.fdelay(1024, ma.SR * (0.0035 + sign * chorus_depth * chorus_lfo)) : fi.lowpass(2, 10000);
+// the BBD's output filter: 9.66 kHz, 12 dB/oct, on the chorus delays only
+tap(sign)    = de.fdelay(1024, ma.SR * (0.0033 + sign * chorus_depth * chorus_lfo)) : fi.lowpass(2, 9661);
+
+// HPF position 0, the bass boost: the 106's two stage circuit (2 poles at
+// 59/72 Hz, 2 zeros at 72/170 Hz, +10.5 dB at DC), bilinear
+boost = fi.tf2(b0, b1, b2, a1, a2)
+with {
+    t1z = 47e3 * 0.047e-6;  t1p = 47e3 * (0.047e-6 + 0.01e-6);
+    t2z = (10e3 * 100e3 / 110e3) * 0.022e-6;  t2p = 100e3 * 0.022e-6;
+    ag  = (47e3 / 220e3) * (1 + 100e3 / 10e3);  dr = 1;   // R45/R44 x stage 2 gain, R45/R43
+    d1 = t1p + t2p;  d2 = t1p * t2p;
+    n0 = dr + ag;  n1 = dr * d1 + ag * (t1z + t2z);  n2 = dr * d2 + ag * t1z * t2z;
+    k  = 2 * ma.SR;  a0 = 1 + d1 * k + d2 * k * k;
+    b0 = (n0 + n1 * k + n2 * k * k) / a0;  b1 = 2 * (n0 - n2 * k * k) / a0;  b2 = (n0 - n1 * k + n2 * k * k) / a0;
+    a1 = 2 * (1 - d2 * k * k) / a0;  a2 = (1 - d1 * k + d2 * k * k) / a0;
+};
+hpf(x) = ba.selectn(4, hpf_pos, boost(x), x, fi.highpass(1, 236, x), fi.highpass(1, 754, x));
+
 chorused(lv, rv) = l * dry + tap(1, l) * wet, r * dry + tap(-1, r) * wet
 with {
-    hpf(x) = x : fi.highpass(1, hpf_freq) : fi.low_shelf1_l(hpf_boost, 120);   // the HPF after the voices
-    l = lv : hpf;
+    l = lv : hpf;   // the HPF after the voices
     r = rv : hpf;
-    wet = ba.if(chorus > 0, 0.7, 0);
-    dry = ba.if(chorus > 0, 0.7, 1);
+    wet = ba.if(chorus > 0, 1.257, 0);
+    dry = ba.if(chorus > 0, 0.863, 1);
 };
 
-stereo = chorused;   // (a limiter here sounded bad: lower Level when chords clip)
+// output level: -16 dB puts the factory patches' chords (6 notes) at a
+// median peak of -6 dBFS, 90 % below -1 dBFS (they were +10 dBFS: nearly
+// every patch clipped); Volume as the 106's knob. (A limiter here sounded
+// bad: lower Volume or the patch's Level when chords clip.)
+volume = hslider("Volume [unit:dB]", 0, -30, 10, 0.5) : ba.db2linear : *(0.1585) : si.smoo;
+stereo = chorused : *(volume), *(volume);
 
 process = voice;
 effect = stereo;
