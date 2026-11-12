@@ -350,13 +350,13 @@ void NemesisAudio::update(void)
 #ifdef NVOICES
         int listen = nemesis::midiChannel();
         if (message.status < 0xF0 && (listen == 0 || (message.status & 0x0F) == listen - 1)) {
+            // FAUST's midi API (as a MidiUI would call it): channel 0..15
             nemesis_poly* poly = static_cast<nemesis_poly*>(fVoices);
+            int channel = message.status & 0x0F;
             switch (message.status & 0xF0) {
-                case 0x90: poly->keyOn(message.data1, message.data2); break;
-                case 0x80: poly->keyOff(message.data1); break;
-                case 0xB0:  // all sound off, reset controllers, all notes off
-                    if (message.data1 == 120 || message.data1 == 123) poly->allNotesOff();
-                    break;
+                case 0x90: poly->keyOn(channel, message.data1, message.data2); break;
+                case 0x80: poly->keyOff(channel, message.data1, message.data2); break;
+                case 0xB0: poly->ctrlChange(channel, message.data1, message.data2); break;  // CC 120/123
             }
         }
 #endif
