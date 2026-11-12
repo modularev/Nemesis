@@ -57,7 +57,7 @@ architecture files or the options change.
 | CV range (0..1) | – | calibrated: A–D 0…8 V (or 0…5 V, a system setting), X/Y/Z −4…+4 V (main knob adds an offset); hardware range A–D ~0…8.4 V, X/Y/Z ~±4.2 V, linear to ~5 mV |
 | outputs | – | 8, DC coupled, ±5 V; calibrated: 1.0 = 5 V, 0 = 0 V |
 | LEDs / buttons | 3 / 3 | 2 push buttons with LEDs, encoder with push switch |
-| display | – | 128x32 OLED: program and CPU load; encoder turn: program settings, click: program list, hold: system settings; name and value of a parameter while its knob is turned |
+| display | – | 128x32 OLED: program and CPU load; encoder on the home screen: turn = the program's `[home:1]` setting (juno: patch; else the settings), click = program settings, hold = program list (hold there: system settings, also the settings list's last row); name and value of a parameter while its knob is turned |
 | settings | – | text files on the SD card (`/NEMESIS/`): per program the parameters without a knob and the CV A–D routing, system: transport (run, clock, tempo, offset), MIDI channel, knob popup, brightness, CV A–D range (0–5 V or 0–8 V) |
 | calibration | knob min/max in EEPROM, hold button 3 at power up | POT A–D: hold both buttons for 2 s (or button 1 at power up); CV inputs and outputs in volts with `tests/cvtest` (±2.5 mV / ±2 mV), both in EEPROM |
 
@@ -348,8 +348,8 @@ board_build.ldscript = ../lib/nemesis/teensy41_flash.ld
 `faust_build.py` compiles them (plus any `src/*.dsp`) and generates
 `nemesis_programs.h`, so `main.cpp` is just
 `nemesis::begin(nemesis_programs)`. A program only takes memory once it is
-first selected. On rev2 a click on the encoder opens the program list,
-turning and clicking again loads a program; the last one is stored after it ran for 3 s
+first selected. On rev2 holding the encoder opens the program list,
+turning and clicking loads a program; the last one is stored after it ran for 3 s
 and restored at power up. Hold the encoder while powering up to start the
 first program instead (e.g. after a program crashed).
 

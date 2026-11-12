@@ -18,7 +18,9 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 
 ## Devices
 
-- rev2 test unit: `/dev/cu.usbmodem103226001`, USB MIDI port "Teensy MIDI"
+- rev2 test unit: `/dev/cu.usbmodem103226001`, USB MIDI port "Nemesis"
+  (software/firmware/src/name.c overrides the USB product name; macOS kept
+  showing "Teensy MIDI" until the old entry is removed in Audio MIDI Setup)
   when built with `-D USB_MIDI_SERIAL` (software/firmware).
 - HP 34401A multimeter: `/dev/cu.usbserial-FTEJ7S3Y` (FTDI), RS-232 9600 8N2,
   HP-IB address must not be 31 (talk only). Driver and CLI:
@@ -64,7 +66,13 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   allocated forever (juno ~230 kB heap: every FAUST dsp_voice is a MapUI) and
   needed RTTI. The library maps [midi:..] like MidiUI, nemesis-poly.h runs
   [nvoices:N] (skips silent voices, frees with the program; stealing fades
-  3 ms out/in: one block of gate off clicked audibly). Test commands
+  3 ms out/in: one block of gate off clicked audibly). nemesis-poly.h is a
+  FAUST 'midi' receiver like poly-dsp.h (registers with a MidiUI, channels,
+  CC 120/123, Panic, Polyphonic/Voices paths; a held note played again
+  retriggers its voice, setRetrigger(false) = poly-dsp.h);
+  software/tests/poly/run.sh checks it against poly-dsp.h on the Mac: same
+  paths, MIDI, bit identical audio (noteHz in double, as poly-dsp.h; never
+  name a constant VOICE_STOP_LEVEL: poly-dsp.h #defines it). Test commands
   MIDICH <n> (channel, not saved; the sequencer on the jack plays on several
   channels).
 - `ve.moog_vcf` is only valid below SR/6.3; it blew up juno. `ve.moogLadder`
@@ -140,7 +148,37 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   user's editor library (~/Downloads/Juno-106-Factory.106, Java serialized),
   made by software/tools/juno106_presets.py. Serial WRITE <path> <bytes>
   puts a file on the SD card.
-- Firmware programs: juno (0.15: fitted to a recording of A11 (the user's
+- Encoder (2026-11-12, the user's choice): home turn = [home:1] setting
+  (juno: patch, its name big; programs without one: opens the settings),
+  click = settings, hold = program list, hold in the list = system
+  settings (also the settings list's last row "system >").
+- Firmware programs: juno (0.17, 2026-11-12: pulse in phase with the saw
+  (the 106's comparator; inverted it partly cancelled: A15 9 dB quiet),
+  oscillator mix saw 0.6 / pulse 0.5 / sub 0.75 / noise 1.2 as Youth106,
+  output -16 dB (chords were +10 dBFS median) + Volume setting (dB), keys
+  setting poly 1 / poly 2 / unison ([poly:mode] in nemesis-poly.h; a voice
+  fading after Panic/CC 120/mode change takes a new note, else notes were
+  dropped for 3 ms). The user's MIDI was an octave low: with it fixed juno
+  is within +-0.1 oct of the recording for 6 of 8 patches (A15/A16 +0.2/
+  +0.3), as close as Youth106 itself (rendered locally: scratchpad
+  yrender, its src/dsp with 4 lines rewritten for the old Rust 2022 in
+  ~/.rustup; ~/.cargo/bin links are broken);
+  0.16, 2026-11-12: the 106's measured curves from
+  Ultramaster KR-106 via Youth106 (github.com/nagualcode/youth106, GPL-3):
+  programs/juno106_curves.lib (cutoff 5.7 Hz-50 kHz over the slider, env /
+  LFO / key follow added in slider units as the firmware, attack and
+  decay/release times, LFO rate/delay, DCO LFO depth, sub, noise),
+  resonance curve + peak pull, HPF 236/754 Hz + the bass boost circuit,
+  chorus 3.3 +- 2.13 ms, dry 0.863 / wet 1.257, VCA level +-10 dB. The
+  0.15 fit was wrong: the user's .106 library had A11 and B31 swapped by my
+  alias guess ("Brass Set 1" is A11). The converter now matches Youth106's
+  factory banks value for value (PWM /105, DCO LFO taper). Against the
+  user's recording of A11-A18 (Desktop, played from "juno chords.mid" at
+  ~1.6x): 0.46-0.6 oct darker (A11/A12 1.2-1.3), cause open. FAUST 2.88
+  bug: a table read while generating another table stays 0 (cutoff curve
+  now a degree 9 polynomial). Curves from raw sliders, smoothed after:
+  72 % with 12 voices at 48k, 76 % with 6 at 96k;
+  0.15: fitted to a recording of A11 (the user's
   ~/Desktop/juno-a11.wav, chords rendered locally with FAUST and compared
   by spectral centroid): RC envelope (linear attack, exponential decay and
   release; slider time = 2 time constants), cutoff slider 0 = 113 Hz at C4;
