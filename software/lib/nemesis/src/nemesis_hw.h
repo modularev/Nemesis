@@ -33,6 +33,12 @@ namespace nemesis
       // an input in volts: calibrated on rev2 CV inputs, otherwise estimated
       float inputVolts(int index);
       void resetVoltCalibration();
+#if NEMESIS_HW_REV == 1
+      // knob calibration over serial (remote page): "" prints the state as
+      // "KCAL {json}", START sweeps (turn each knob through its range),
+      // STORE keeps the swept ranges, CANCEL, RESET (uncalibrated)
+      void knobCalibration(const char *arg, Print &out);
+#endif
       // revision specific alternative input names, -1 if none matches
       int aliasIndex(const char *name);
 

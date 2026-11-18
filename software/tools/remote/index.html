@@ -7,7 +7,9 @@
   controls from the answer, so new programs and settings need no change here.
   Commands it sends: PROG <n> (1-based), PSET <index> <value>, SYS <name> <value>,
   and SCREEN ~10 times a second on rev2 (the display's framebuffer, mirrored
-  on the drawn front panel and enlarged above the settings).
+  on the drawn front panel and enlarged above the settings); rev1 knob
+  calibration: KCAL (state, polled while the section is open), KCAL START |
+  STORE | CANCEL | RESET.
   Firmware side: lib/nemesis/src/nemesis_remote.cpp, firmware/src/main.cpp.
   The panels are drawn after hardware/rev2/frontpanel/nemesis_22.ai and
   hardware/rev1/frontpanel/euro_dsp.ai (coordinates in PANELS below).
@@ -108,6 +110,20 @@
                      background: var(--accent); border-radius: 1px; }
   .meter > .target.hit { background: var(--ok); }
   .tgt { color: var(--accent); font-size: 12px; }
+  /* rev1 knob calibration */
+  details.kcal > summary { cursor: pointer; font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+                           color: var(--muted); }
+  details.kcal[open] > summary { margin-bottom: 8px; }
+  .kbar { position: relative; height: 10px; background: var(--line); border-radius: 3px; }
+  .kbar > .sweep { position: absolute; top: 0; bottom: 0; background: var(--accent-soft);
+                   border: 1px solid var(--accent); border-radius: 3px; }
+  .kbar > .sweep.wide { background: #173a25; border-color: var(--ok); }
+  .kbar > .end { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--muted); }
+  .kbar > .pos { position: absolute; top: -4px; bottom: -4px; width: 4px; margin-left: -2px;
+                 background: var(--text); border-radius: 2px; }
+  .krow { grid-template-columns: 60px 1fr 120px; }
+  .kok { color: var(--ok); } .kno { color: var(--muted); }
+  .kbtns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 10px; }
   @media (max-width: 520px) { .row { grid-template-columns: 90px 1fr 64px; } }
 </style>
 </head>
@@ -150,6 +166,20 @@
   <div id="settings"></div>
   <section id="knobs" hidden><h2>Other inputs (read only)</h2><div class="grid" id="knobgrid"></div></section>
   <section id="system" hidden><h2>System</h2><div class="grid" id="sysgrid"></div></section>
+  <section id="kcalsec" hidden>
+    <details class="kcal" id="kcal">
+      <summary>Knob calibration (rev1)</summary>
+      <p class="status" id="kcalhelp"></p>
+      <div class="kbtns">
+        <button id="kstart" class="primary">Start</button>
+        <button id="kstore" disabled>Store</button>
+        <button id="kcancel" disabled>Cancel</button>
+        <span style="flex:1"></span>
+        <button id="kreset" title="forget the stored calibration: every input reads uncalibrated">Reset…</button>
+      </div>
+      <div class="grid" id="kcalgrid"></div>
+    </details>
+  </section>
   <details><summary class="status">Serial log</summary><pre id="log"></pre></details>
 </main>
 </div>
@@ -185,7 +215,8 @@ async function disconnect() {
   try { writer && writer.releaseLock(); } catch (e) {}
   try { p && await p.close(); } catch (e) {}
   writer = null; state = null; shape = ""; waiting = 0;
-  screenWaiting = 0; noScreen = false;
+  screenWaiting = 0; noScreen = false; kcalWaiting = 0;
+  sysViews.clear(); $("sysgrid").innerHTML = "";   // the next module may be another revision
   $("connect").textContent = "Connect";
   $("program").disabled = true;
   setStatus("not connected", false);
@@ -226,6 +257,7 @@ async function send(cmd) {
   if (!writer) return;
   if (cmd === "JSON") waiting = performance.now();
   else if (cmd === "SCREEN") screenWaiting = performance.now();
+  else if (cmd === "KCAL") kcalWaiting = performance.now();
   else log("> " + cmd);
   try { await writer.write(new TextEncoder().encode(cmd + "\n")); }
   catch (e) { log("! " + (e.message || e)); }
@@ -241,6 +273,10 @@ function onLine(line) {
     const hex = line.slice(7).trim();
     if (hex === "none") { noScreen = true; showScreen(null); }
     else if (/^[0-9a-f]{1024}$/i.test(hex)) showScreen(hex);
+  } else if (line.startsWith("KCAL {")) {
+    kcalWaiting = 0;
+    try { showKcal(JSON.parse(line.slice(5))); }
+    catch (e) { log("! bad KCAL: " + e.message); }
   } else if (line.trim()) log(line);
 }
 
@@ -314,6 +350,7 @@ function update(s) {
 
   const t = s.transport || {};
   setStatus(`rev${s.rev} · CPU ${s.cpu.toFixed(1)} % · ${s.audio.sampleRate / 1000} kHz / ${s.audio.blockSize}` +
+            (s.sd ? ` · ${s.sd === "in use" ? "SD" : s.sd}` : "") +
             (t.running ? ` · ▶ ${t.bpm.toFixed(1)} BPM${t.external ? " ext" : ""}` : ""), true);
 
   const controls = s.controls || [];
@@ -324,6 +361,7 @@ function update(s) {
   for (const c of controls) { const v = views.get("c" + c.i); if (v) { v.c = c; if (!busy("c" + c.i)) v.set(c.value); } }
   buildSystem(s.system);
   $("display").hidden = s.rev !== 2 || noScreen;
+  $("kcalsec").hidden = s.rev !== 1;
   updatePanel();
 }
 
@@ -468,6 +506,7 @@ function buildSystem(sys) {
   if (!sysViews.size) {
     for (const [name, label, spec] of SYSTEM) {
       if (!(name in sys)) continue;
+      if (name === "knobJump" && state && state.rev === 1) continue;   // rev1 knobs always jump
       const key = "s" + name;
       const c = { name: label, label, min: spec.min, max: spec.max, step: spec.step, unit: spec.unit };
       const r = row(c);
@@ -874,6 +913,56 @@ $("savescreen").onclick = () => $("oled").toBlob(b => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
+
+// ---------- rev1 knob calibration ----------
+// The firmware tracks the lowest and highest (averaged, 10 bit) reading of
+// every input while sweeping; Store keeps the range of each input that moved
+// at least minSpan readings, the others keep their stored calibration. The
+// bars show knob position left = minimum (rev1 reads high at the minimum).
+let kcalWaiting = 0, kcal = null;
+const KCAL_HELP = {
+  idle: "Start, then turn each knob slowly from fully left to fully right (one at a time or all together; " +
+        "patch nothing into the CV jacks). Store keeps every input that moved; the others stay as they are.",
+  sweeping: "Turn each knob to both ends. A range turns green once it is wide enough; then Store.",
+};
+setInterval(() => {
+  if (!writer || !state || state.rev !== 1 || !$("kcal").open || document.hidden) return;
+  if (!kcalWaiting || performance.now() - kcalWaiting > 1000) send("KCAL");
+}, 150);
+function kcalCmd(arg) { send("KCAL " + arg); kcalWaiting = performance.now(); }
+function showKcal(k) {
+  kcal = k;
+  $("kcalhelp").textContent = KCAL_HELP[k.sweeping ? "sweeping" : "idle"];
+  $("kstart").disabled = k.sweeping;
+  $("kstore").disabled = !k.sweeping || !k.names.some((_, i) => k.hi[i] - k.lo[i] >= k.minSpan);
+  $("kcancel").disabled = !k.sweeping;
+  const grid = $("kcalgrid");
+  if (grid.children.length !== k.names.length) {
+    grid.innerHTML = k.names.map(n => `<div class="row krow"><label>${esc(n.replace("CV_", ""))}</label>
+      <div class="kbar"><div class="sweep"></div><div class="end"></div><div class="end"></div><div class="pos"></div></div>
+      <span class="val"></span></div>`).join("");
+  }
+  const x = r => (100 * (1023 - r) / 1023).toFixed(2) + "%";   // reading -> position, minimum left
+  k.names.forEach((n, i) => {
+    const r = grid.children[i], bar = r.querySelector(".kbar"), val = r.querySelector(".val");
+    const sw = bar.querySelector(".sweep"), ends = bar.querySelectorAll(".end");
+    sw.hidden = !k.sweeping;
+    if (k.sweeping) {
+      sw.style.left = x(k.hi[i]); sw.style.right = (100 * k.lo[i] / 1023).toFixed(2) + "%";
+      sw.classList.toggle("wide", k.hi[i] - k.lo[i] >= k.minSpan);
+    }
+    ends.forEach((e, j) => { e.hidden = !k.ok[i]; e.style.left = x(j ? k.max[i] : k.min[i]); });
+    bar.querySelector(".pos").style.left = x(k.raw[i]);
+    bar.title = `reading ${k.raw[i]}` + (k.ok[i] ? `, stored ${k.min[i]} (min) .. ${k.max[i]} (max)` : ", not calibrated") +
+                (k.sweeping ? `, swept ${k.hi[i]} .. ${k.lo[i]}` : "");
+    val.innerHTML = `${k.value[i].toFixed(3)} <span class="${k.ok[i] ? "kok" : "kno"}">${k.ok[i] ? "cal" : "uncal"}</span>`;
+  });
+}
+$("kcal").ontoggle = () => { if ($("kcal").open) send("KCAL"); else if (kcal && kcal.sweeping) kcalCmd("CANCEL"); };
+$("kstart").onclick = () => kcalCmd("START");
+$("kstore").onclick = () => kcalCmd("STORE");
+$("kcancel").onclick = () => kcalCmd("CANCEL");
+$("kreset").onclick = () => { if (confirm("Forget the knob calibration stored in the module?")) kcalCmd("RESET"); };
 
 // ---------- header ----------
 $("connect").onclick = () => (port ? disconnect() : connect());

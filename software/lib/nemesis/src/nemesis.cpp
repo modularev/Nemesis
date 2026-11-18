@@ -415,7 +415,9 @@ namespace nemesis
 
       bool catches(Control &c, float pos, float stored)
       {
-         if (systemSettings().knobJump)
+         // rev1 always jumps: without a display a knob waiting to catch
+         // looks broken
+         if (NEMESIS_HW_REV == 1 || systemSettings().knobJump)
          {
             // the knob takes over as soon as it is moved (1 %, above its
             // noise), measured from where it was when the value came

@@ -124,6 +124,8 @@ namespace nemesis
    {
       out.printf("JSON {\"rev\":%d,\"current\":%d,\"cpu\":", NEMESIS_HW_REV, currentProgram());
       num(out, cpuLoad());
+      out.print(",\"sd\":"); // "in use" or why not ("no SD", "SD off", "SD bad")
+      str(out, sdProblem() ? sdProblem() : "in use");
       out.print(",\"programs\":[");
       for (int i = 0; i < programCount(); i++)
       {

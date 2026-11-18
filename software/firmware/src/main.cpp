@@ -10,7 +10,8 @@
 // shows MIDI traffic, voices and NaN resets, "CAL" the CV and output
 // calibration; the CPU load is reported every 2 s (with uptime, reset cause
 // and chip temperature). Remote control (software/tools/remote): "JSON",
-// "PSET <index> <value>", "SYS <name> <value>". Test commands: "SET
+// "PSET <index> <value>", "SYS <name> <value>", rev1 "KCAL [START|STORE|
+// CANCEL|RESET]" (knob calibration: sweep each knob, store). Test commands: "SET
 // <setting> <value>", "RANDOM ALL|<page>", "ROLL +|-", "MUTE"/"UNMUTE" (the
 // program's DSP not computed), "SILENT"/"LOUD" (computed, outputs zeroed),
 // "CLOCK <MHz>" (processor clock), "MIDICH <n>" (MIDI channel, not saved),
@@ -299,6 +300,9 @@ void readCommands()
 #if NEMESIS_HW_REV == 2
       else if (strcmp(command, "CAL") == 0)
          nemesis::printVoltCalibration(Serial);
+#else
+      else if (strcmp(command, "KCAL") == 0 || strncmp(command, "KCAL ", 5) == 0)
+         nemesis::hw::knobCalibration(command[4] ? command + 5 : "", Serial);
 #endif
       else if (strcmp(command, "STATUS") == 0)
       {
