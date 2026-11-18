@@ -24,10 +24,16 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   Audio MIDI Setup)
   when built with `-D USB_MIDI_SERIAL` (software/firmware).
 - rev1 test unit (2026-11-12, first run of the unified code): runs juno
-  (3 % idle, no late blocks), `/dev/cu.usbmodem78279001`, no SD card.
+  (3 % idle, no late blocks), `/dev/cu.usbmodem78279001`, SD card installed (2026-11-18).
   Knob calibration in EEPROM (hold button 3 at start: min + button 1, max
   + button 2, button 3; a HANG/watchdog reset while holding works too):
   0.000 at min, 1.000 at max, noise < 0.001 p-p. CV V/Oct not calibrated.
+  Remote page (2026-11-18): "Knob calibration (rev1)" section, serial KCAL
+  [START|STORE|CANCEL|RESET]: sweep knobs, Store keeps each input that
+  moved >= 100 readings (per input validity now; ends 2 readings inside).
+  On 2026-11-18 its EEPROM held min ~ max (436-443: a button calibration
+  without turning), i.e. uncalibrated. LEDs dimmed as on rev2 (4 kHz pulse
+  density on pins 35-37, LED brightness setting).
   With both units on USB, unplug the other one for an upload (teensy-gui
   can't choose the board).
   Its PSRAM read bits wrong (2026-11-12, PSRAMTEST ~200 per 64 MB, bit 5
@@ -107,6 +113,9 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   value when it reaches it) or jump (when moved 1 % from where it was when
   the value came: Control.jumpRef, catches() in nemesis.cpp); SD key
   knob_jump, remote SYS knobJump. The user wants jump (set on rev2).
+  rev1 always jumps (2026-11-18, the user; no display to show a pending
+  catch), the page hides the setting there. rev1 knob layout (2026-11-18):
+  A-D as rev2's POT A-D in every program, extras on E/F.
 - Remote control (2026-11-12): software/tools/remote/index.html (Web Serial,
   Chrome/Edge, file:// works) polls `JSON` (one line: programs, current
   program's controls, system, transport) and sends `PROG <n>`, `PSET <index>
