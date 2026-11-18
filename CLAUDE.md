@@ -38,7 +38,10 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   180. Now 144 MHz (720 / 5; hw::setPSRAMspeed in nemesis.cpp, FlexSPI
   disabled and gated while changing). rev2 2026-11-17, mooSpace2 / pollen
   CPU: 180 MHz 77 / 78 %, 144 MHz 83 / 77 %, 132.9 MHz 86 / 87 % (mooSpace2
-  peaks 98 %), PSRAMTEST 0 errors at all three. rev1 still to test at 144.
+  peaks 98 %), PSRAMTEST 0 errors at all three. rev1 at 144 (2026-11-18,
+  SD card in now): PSRAMTEST 0 errors in 6 x 4 x 4 MB, all 12 programs
+  switch (mooSpace2 <-> mooSpace twice), CPU juno 3, mooSpace 46,
+  mooSpace2 59-61 (max 72), pollen 64, strike 48 %, heap 433 kB after.
   Changing the clock while programs run hung the module. A PSRAM block
   tracker (check the pattern at stop, leak instead of crash) made rev2 hang
   ~1 s after starting mooSpace2 (watchdog; cause not found): removed.

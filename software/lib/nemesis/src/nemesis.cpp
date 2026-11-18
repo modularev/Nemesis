@@ -374,7 +374,7 @@ namespace nemesis
       // (2026-11-12); at the core's 88 MHz it had no errors. Measured on rev2
       // (2026-11-17, mooSpace2 / pollen CPU): 180 MHz 77 / 78 %, 144 MHz
       // 83 / 77 %, 132.9 MHz (664.6 / 5) 86 / 87 % (mooSpace2 peaks 98 %).
-      // rev2 0 errors at all three; rev1 still to test at 144. The FlexSPI is
+      // rev2 0 errors at all three; rev1 0 errors at 144 (2026-11-18). The FlexSPI is
       // disabled and its clock gated while the divider changes (the old
       // code's |= with CCM_CCGR_OFF gated nothing).
       FLASHMEM void setPSRAMspeed()
