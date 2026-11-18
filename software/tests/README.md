@@ -22,3 +22,10 @@ outputs against the HP 34401A, CV inputs in loopback from those outputs
 
 MIDI tests: `mido` with the "Teensy MIDI" port when the firmware is built
 with `-D USB_MIDI_SERIAL` (as `software/firmware` is).
+
+## transport
+
+`transport/run.sh` builds and runs a host test of
+`lib/nemesis/src/nemesis_transport_core.h` on the Mac: CV clock tempo, a
+transient on the clock input, the tempo after the clock stops, bunched MIDI
+clocks. Run it after changing the transport core, before flashing.
