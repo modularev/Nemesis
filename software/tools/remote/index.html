@@ -5,8 +5,12 @@
   Open this file in Chrome or Edge (file:// works), click Connect and pick the
   Nemesis. The page asks the firmware for "JSON" once a second and builds the
   controls from the answer, so new programs and settings need no change here.
-  Commands it sends: PROG <n> (1-based), PSET <index> <value>, SYS <name> <value>.
+  Commands it sends: PROG <n> (1-based), PSET <index> <value>, SYS <name> <value>,
+  and SCREEN ~10 times a second on rev2 (the display's framebuffer, mirrored
+  on the drawn front panel and enlarged above the settings).
   Firmware side: lib/nemesis/src/nemesis_remote.cpp, firmware/src/main.cpp.
+  The panels are drawn after hardware/rev2/frontpanel/nemesis_22.ai and
+  hardware/rev1/frontpanel/euro_dsp.ai (coordinates in PANELS below).
   Close the page (or Disconnect) before uploading or using the serial monitor:
   only one program can have the port open.
 -->
@@ -15,24 +19,61 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nemesis Remote</title>
+<!-- the module's display fonts (lib/nemesis/src/fonts); offline the page falls back to system fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&family=Oxanium:wght@400;600&display=swap" rel="stylesheet">
 <style>
+  /* the module's colours: panel black, white print, red knobs, green jacks, blue buttons */
   :root {
-    --bg: #f4f3ef; --panel: #ffffff; --text: #1c1c1a; --muted: #6c6a64; --line: #dddad2;
-    --accent: #c2410c; --accent-soft: #fbe3d6; --knob: #2563eb; --ok: #15803d; --bad: #b91c1c;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #151514; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a978f; --line: #34332f;
-      --accent: #fb923c; --accent-soft: #3a2518; --knob: #60a5fa; --ok: #4ade80; --bad: #f87171;
-    }
+    --bg: #0d0d0d; --panel: #1b1b1b; --text: #ededeb; --muted: #9b9a96; --line: #353533;
+    --accent: #d23a48; --accent-soft: #3b1a1f; --knob: #2fb35f; --ok: #2fb35f; --bad: #e05561;
+    --blue: #22a6dd; --oled: #e4f4ff;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
-         font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+         font: 14px/1.4 Oxanium, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
            padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
-  h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
-  main { max-width: 980px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  h1 { font: 17px Michroma, sans-serif; margin: 0 8px 0 0; letter-spacing: .06em; }
+  .layout { max-width: 1280px; margin: 0 auto; padding: 16px; display: grid; gap: 20px;
+            grid-template-columns: minmax(280px, 430px) minmax(0, 1fr); align-items: start; }
+  aside { position: sticky; top: 64px; }
+  main { display: grid; gap: 16px; min-width: 0; }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    aside { position: static; max-width: 430px; width: 100%; margin: 0 auto; }
+  }
+
+  /* front panel */
+  .panel { position: relative; }
+  .panel svg { display: block; width: 100%; height: auto; }
+  .panel svg text { font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif; font-weight: 300; fill: #f2f2f2; }
+  .panel svg .it { font-style: italic; }
+  .panel svg .cname { font-family: Oxanium, sans-serif; font-weight: 600; fill: var(--oled); }
+  .panel svg .cval { font-family: Oxanium, sans-serif; fill: var(--muted); }
+  .panel svg .ink { stroke: #f2f2f2; stroke-width: 2.5; fill: none; }
+  .panel svg .jack { stroke: #1f9a4a; stroke-width: 3.5; fill: #101010; }
+  .panel svg .knob { stroke: #b52634; stroke-width: 3.5; fill: #131313; }
+  .panel svg .btn { stroke: #1aa3dc; stroke-width: 3.5; fill: #101010; }
+  .panel svg .slot { stroke: #b52634; stroke-width: 3; fill: none; }
+  .panel svg .ptr { stroke: #f2f2f2; stroke-width: 5; stroke-linecap: round; }
+  .panel svg .arc { stroke: var(--accent); stroke-width: 6; fill: none; stroke-linecap: round; }
+  .panel svg .jack-arc { stroke: #2fb35f; }
+  .panel svg .tmark { fill: var(--accent); }
+  .panel svg .tmark.hit { fill: var(--ok); }
+  .panel svg g.unbound .knob, .panel svg g.unbound .jack { opacity: .5; }
+  .panel svg g.unbound .ptr, .panel svg g.unbound .arc { display: none; }
+  .panel canvas { position: absolute; image-rendering: pixelated; background: #050505; border-radius: 2px;
+                  box-shadow: 0 0 0 2px #c98a2b inset; }
+
+  /* the display, enlarged */
+  .screen { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; }
+  .bezel { background: #050505; padding: 14px; border-radius: 8px; border: 1px solid var(--line);
+           max-width: 100%; }
+  #oled { display: block; width: 100%; max-width: 640px; aspect-ratio: 4 / 1; image-rendering: pixelated;
+          filter: drop-shadow(0 0 3px rgba(190, 230, 255, .35)); }
   button, select, input[type=number] { font: inherit; color: inherit; background: var(--panel);
            border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
   button { cursor: pointer; }
@@ -72,14 +113,26 @@
 </head>
 <body>
 <header>
-  <h1>NEMESIS</h1>
+  <h1>Nemesis</h1>
   <button id="connect" class="primary">Connect</button>
   <select id="program" disabled title="program"></select>
   <span class="status"><span id="dot" class="dot"></span><span id="status">not connected</span></span>
 </header>
+<div class="layout">
+<aside><div id="panel" class="panel"></div></aside>
 <main>
   <p id="hint" class="empty">Connect to a Nemesis over USB (Chrome or Edge). The page needs firmware with the
     JSON command; close other serial monitors first.</p>
+  <section id="display" hidden>
+    <h2>Display</h2>
+    <div class="screen">
+      <div class="bezel"><canvas id="oled" width="768" height="192"></canvas></div>
+      <span>
+        <label class="status"><input type="checkbox" id="mirror" checked> mirror</label>
+        <button id="savescreen" title="save the display as a PNG">Save PNG</button>
+      </span>
+    </div>
+  </section>
   <section id="presets" hidden>
     <h2>Patches</h2>
     <div class="presetbar">
@@ -95,10 +148,11 @@
     <div id="presetlist" class="plist"></div>
   </section>
   <div id="settings"></div>
-  <section id="knobs" hidden><h2>Knobs and CV (read only)</h2><div class="grid" id="knobgrid"></div></section>
+  <section id="knobs" hidden><h2>Other inputs (read only)</h2><div class="grid" id="knobgrid"></div></section>
   <section id="system" hidden><h2>System</h2><div class="grid" id="sysgrid"></div></section>
   <details><summary class="status">Serial log</summary><pre id="log"></pre></details>
 </main>
+</div>
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
@@ -131,9 +185,12 @@ async function disconnect() {
   try { writer && writer.releaseLock(); } catch (e) {}
   try { p && await p.close(); } catch (e) {}
   writer = null; state = null; shape = ""; waiting = 0;
+  screenWaiting = 0; noScreen = false;
   $("connect").textContent = "Connect";
   $("program").disabled = true;
   setStatus("not connected", false);
+  showScreen(null);
+  updatePanel();
 }
 
 let reader = null, readDone = null;
@@ -168,6 +225,7 @@ async function readLoop() {
 async function send(cmd) {
   if (!writer) return;
   if (cmd === "JSON") waiting = performance.now();
+  else if (cmd === "SCREEN") screenWaiting = performance.now();
   else log("> " + cmd);
   try { await writer.write(new TextEncoder().encode(cmd + "\n")); }
   catch (e) { log("! " + (e.message || e)); }
@@ -178,6 +236,11 @@ function onLine(line) {
     waiting = 0;
     try { update(JSON.parse(line.slice(5))); }
     catch (e) { log("! bad JSON: " + e.message); }
+  } else if (line.startsWith("SCREEN ")) {
+    screenWaiting = 0;
+    const hex = line.slice(7).trim();
+    if (hex === "none") { noScreen = true; showScreen(null); }
+    else if (/^[0-9a-f]{1024}$/i.test(hex)) showScreen(hex);
   } else if (line.trim()) log(line);
 }
 
@@ -185,6 +248,13 @@ function onLine(line) {
 setInterval(() => {
   if (writer && (!waiting || performance.now() - waiting > 3000)) send("JSON");
 }, 1000);
+
+// the display ~10 times a second (rev2; rev1 answers "SCREEN none")
+let screenWaiting = 0, noScreen = false;
+setInterval(() => {
+  if (!writer || !state || state.rev !== 2 || noScreen || !$("mirror").checked || document.hidden) return;
+  if (!screenWaiting || performance.now() - screenWaiting > 1000) send("SCREEN");
+}, 100);
 
 function log(s) {
   const el = $("log");
@@ -253,6 +323,8 @@ function update(s) {
   updatePresets();
   for (const c of controls) { const v = views.get("c" + c.i); if (v) { v.c = c; if (!busy("c" + c.i)) v.set(c.value); } }
   buildSystem(s.system);
+  $("display").hidden = s.rev !== 2 || noScreen;
+  updatePanel();
 }
 
 function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]); }
@@ -277,7 +349,9 @@ function build(controls) {
   }
   if (!shown.length) host.innerHTML = `<section><p class="empty">This program has no settings.</p></section>`;
 
-  const knobs = controls.filter(c => c.input !== null && c.visible);
+  // inputs the drawn panel shows are there; anything else gets a meter here
+  const drawn = new Set(PANELS[panelRev()].items.filter(it => it.input).map(it => it.input));
+  const knobs = controls.filter(c => c.input !== null && c.visible && !drawn.has(c.input));
   $("knobs").hidden = !knobs.length;
   const kg = $("knobgrid");
   kg.innerHTML = "";
@@ -518,6 +592,7 @@ function applyPreset(i) {
     }
     if (missing.length) log("patch values without a setting: " + missing.join(", "));
     for (const c of state.controls) if (targets.has(c.i)) views.get("c" + c.i)?.set(c.value);
+    updatePanel();
   }
   setTimeout(() => send("JSON"), 300);
 }
@@ -547,6 +622,259 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); $("prevp").click(); }
 });
 
+// ---------- front panel ----------
+// Drawn after the panel artwork (rev2: hardware/rev2/frontpanel/nemesis_22.ai,
+// rev1: hardware/rev1/frontpanel/euro_dsp.ai), coordinates in units of its
+// 1400 px Quick Look rendering, origin at the panel's top left. A knob or jack
+// with an input shows the control bound to it: pointer and arc at its
+// position, name and value next to it, the patch's value (rev1) as a marker.
+const SWEEP = 120;   // knob travel each side of top, as the panel's scale dots
+const PANELS = {
+  2: {
+    w: 791, h: 1255,
+    lines: [[0, 60, 791, 60], [0, 352, 791, 352], [261, 60, 261, 352], [657, 60, 657, 352],
+            [0, 1045, 791, 1045], [526, 1045, 526, 1195], [0, 1195, 791, 1195]],
+    slots: [[63, 31], [727, 31], [63, 1225], [727, 1225]],
+    title: [115, 47, 38], foot: [675, 1238, 27],
+    arrows: [[94, 138, 152, 138]],
+    oled: [266, 426, 332, 83],
+    items: [
+      { t: "jack", x: 62, y: 138, label: "input 1", ly: 207 },
+      { t: "jack", x: 190, y: 138, label: "input 2", ly: 207 },
+      { t: "jack", x: 331, y: 138, label: "X", ly: 207 },
+      { t: "jack", x: 459, y: 138, label: "Y", ly: 207 },
+      { t: "jack", x: 586, y: 138, label: "Z", ly: 207 },
+      { t: "jack", x: 727, y: 138, label: "midi in", ly: 207 },
+      { t: "usb", x: 727, y: 277, label: "usb", ly: 333 },
+      { t: "trim", x: 62, y: 287, r: 30 }, { t: "trim", x: 190, y: 287, r: 30 },
+      { t: "trim", x: 331, y: 287, r: 30, pm: true }, { t: "trim", x: 459, y: 287, r: 30, pm: true },
+      { t: "trim", x: 586, y: 287, r: 30, pm: true },
+      { t: "btn", x: 62, y: 466, r: 27 }, { t: "btn", x: 190, y: 466, r: 27 },
+      { t: "trim", x: 683, y: 466, r: 36 },                       // encoder
+      { t: "star", x: 134, y: 700, s: 124, label: "X", lx: 235, ly: 612 },
+      { t: "star", x: 395, y: 700, s: 124, label: "Y", lx: 496, ly: 612 },
+      { t: "star", x: 656, y: 700, s: 124, label: "Z", lx: 757, ly: 612 },
+      { t: "knob", x: 134, y: 700, r: 36, input: "CV_X", ny: 772, vy: 794 },
+      { t: "knob", x: 395, y: 700, r: 36, input: "CV_Y", ny: 772, vy: 794 },
+      { t: "knob", x: 656, y: 700, r: 36, input: "CV_Z", ny: 772, vy: 794 },
+      { t: "text", x: 38, y: 888, label: "A" }, { t: "text", x: 231, y: 888, label: "B" },
+      { t: "text", x: 423, y: 888, label: "C" }, { t: "text", x: 615, y: 888, label: "D" },
+      { t: "knob", x: 107, y: 946, r: 36, input: "POT_A", ny: 1008, vy: 1030 },
+      { t: "knob", x: 299, y: 946, r: 36, input: "POT_B", ny: 1008, vy: 1030 },
+      { t: "knob", x: 491, y: 946, r: 36, input: "POT_C", ny: 1008, vy: 1030 },
+      { t: "knob", x: 683, y: 946, r: 36, input: "POT_D", ny: 1008, vy: 1030 },
+      { t: "jack", x: 62, y: 1106, label: "CV A", ly: 1176, input: "CV_A", ny: 1066 },
+      { t: "jack", x: 190, y: 1106, label: "CV B", ly: 1176, input: "CV_B", ny: 1066 },
+      { t: "jack", x: 317, y: 1106, label: "CV C", ly: 1176, input: "CV_C", ny: 1066 },
+      { t: "jack", x: 445, y: 1106, label: "CV D", ly: 1176, input: "CV_D", ny: 1066 },
+      { t: "jack", x: 606, y: 1106, label: "output 1", ly: 1176 },
+      { t: "jack", x: 727, y: 1106, label: "output 2", ly: 1176 },
+    ],
+  },
+  1: {
+    w: 882, h: 1400,
+    lines: [[0, 68, 882, 68], [0, 368, 882, 368], [288, 68, 288, 368], [732, 68, 732, 368],
+            [0, 1032, 423, 1032], [423, 1032, 423, 1335], [423, 1152, 882, 1152], [600, 1152, 600, 1335],
+            [0, 1335, 882, 1335], [67, 189, 67, 288], [209, 189, 209, 288], [368, 189, 368, 288],
+            [510, 189, 510, 288], [652, 189, 652, 288]],
+    slots: [[67, 35], [810, 35], [67, 1368], [810, 1368]],
+    title: [125, 52, 40], foot: [756, 1381, 28],
+    arrows: [[101, 155, 163, 155]],
+    oled: null,
+    items: [
+      { t: "jack", x: 67, y: 155, label: "input 1", ly: 104 },
+      { t: "jack", x: 209, y: 155, label: "input 2", ly: 104 },
+      { t: "jack", x: 368, y: 155, label: "X", ly: 104 },
+      { t: "jack", x: 510, y: 155, label: "Y", ly: 104 },
+      { t: "jack", x: 652, y: 155, label: "Z", ly: 104 },
+      { t: "jack", x: 810, y: 155, label: "t1", ly: 104 },
+      { t: "jack", x: 810, y: 302, label: "t2", ly: 246 },
+      { t: "trim", x: 67, y: 321, r: 33 }, { t: "trim", x: 209, y: 321, r: 33 },
+      { t: "trim", x: 368, y: 321, r: 33 }, { t: "trim", x: 510, y: 321, r: 33 },
+      { t: "trim", x: 652, y: 321, r: 33 },
+      { t: "star", x: 147, y: 532, s: 137, label: "X", lx: 260, ly: 420 },
+      { t: "star", x: 439, y: 532, s: 137, label: "Y", lx: 552, ly: 420 },
+      { t: "star", x: 731, y: 532, s: 137, label: "Z", lx: 843, ly: 420 },
+      { t: "knob", x: 147, y: 532, r: 41, input: "CV_X", ny: 610, vy: 632 },
+      { t: "knob", x: 439, y: 532, r: 41, input: "CV_Y", ny: 610, vy: 632 },
+      { t: "knob", x: 731, y: 532, r: 41, input: "CV_Z", ny: 610, vy: 632 },
+      { t: "text", x: 40, y: 716, label: "A" }, { t: "text", x: 255, y: 716, label: "B" },
+      { t: "text", x: 470, y: 716, label: "C" }, { t: "text", x: 684, y: 716, label: "D" },
+      { t: "knob", x: 117, y: 783, r: 41, input: "CV_A", ny: 848, vy: 870 },
+      { t: "knob", x: 331, y: 783, r: 41, input: "CV_B", ny: 848, vy: 870 },
+      { t: "knob", x: 547, y: 783, r: 41, input: "CV_C", ny: 848, vy: 870 },
+      { t: "knob", x: 761, y: 783, r: 41, input: "CV_D", ny: 848, vy: 870 },
+      { t: "btn", x: 112, y: 948, r: 50 }, { t: "text", x: 185, y: 930, label: "T1" },
+      { t: "btn", x: 331, y: 948, r: 50 }, { t: "text", x: 407, y: 930, label: "T2" },
+      { t: "text", x: 623, y: 951, label: "E" }, { t: "text", x: 838, y: 951, label: "F" },
+      { t: "knob", x: 547, y: 1018, r: 41, input: "CV_E", ny: 1083, vy: 1105 },
+      { t: "knob", x: 761, y: 1018, r: 41, input: "CV_F", ny: 1083, vy: 1105 },
+      { t: "jack", x: 67, y: 1094, label: "A", ly: 1180 }, { t: "jack", x: 209, y: 1094, label: "B", ly: 1180 },
+      { t: "jack", x: 352, y: 1094, label: "C", ly: 1180 }, { t: "jack", x: 67, y: 1228, label: "D", ly: 1316 },
+      { t: "jack", x: 209, y: 1228, label: "E", ly: 1316 }, { t: "jack", x: 352, y: 1228, label: "F", ly: 1316 },
+      { t: "btn", x: 512, y: 1227, r: 50, label: "button", ly: 1316 },
+      { t: "jack", x: 674, y: 1228, label: "output 1", ly: 1316 },
+      { t: "jack", x: 809, y: 1228, label: "output 2", ly: 1316 },
+    ],
+  },
+};
+const JACK_R = 30;
+let shownRev = 0, panelEls = [], oledSmall = null;
+
+function panelRev() { return state && PANELS[state.rev] ? state.rev : 2; }
+function polar(x, y, r, a) { const t = a * Math.PI / 180; return [x + r * Math.sin(t), y - r * Math.cos(t)]; }
+function arcPath(x, y, r, a0, a1) {
+  const [x0, y0] = polar(x, y, r, a0), [x1, y1] = polar(x, y, r, a1);
+  return `M${x0.toFixed(1)} ${y0.toFixed(1)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+}
+
+function renderPanel(rev) {
+  const P = PANELS[rev], o = [];
+  const text = (x, y, s, size, cls = "", anchor = "middle") =>
+    `<text x="${x}" y="${y}" font-size="${size}" text-anchor="${anchor}" class="${cls}">${s}</text>`;
+  o.push(`<svg viewBox="0 0 ${P.w} ${P.h}" role="img" aria-label="Nemesis rev${rev} front panel">`,
+         `<rect width="${P.w}" height="${P.h}" rx="8" fill="#1b1b1b"/>`,
+         `<path class="ink" d="${P.lines.map(([a, b, c, d]) => `M${a} ${b}L${c} ${d}`).join("")}"/>`);
+  for (const [x, y] of P.slots) o.push(`<rect class="slot" x="${x - 31}" y="${y - 14}" width="62" height="28" rx="14"/>`);
+  o.push(text(P.title[0], P.title[1], "Nemesis", P.title[2], "", "start"),
+         `<text x="${P.foot[0]}" y="${P.foot[1]}" font-size="${P.foot[2]}" text-anchor="end">programmable <tspan font-weight="600">dsp</tspan></text>`);
+  for (const [x0, y, x1] of P.arrows)
+    o.push(`<path class="ink" d="M${x0} ${y}H${x1 - 10}"/><path fill="#f2f2f2" d="M${x1} ${y}l-14 -6v12z"/>`);
+  if (P.oled) { const [x, y, w, h] = P.oled; o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="#050505"/>`); }
+  const live = [];
+  for (const it of P.items) {
+    const { x, y } = it;
+    if (it.t === "star") {
+      for (const a of [30, 90, 150]) {
+        const [x0, y0] = polar(x, y, it.s, a), [x1, y1] = polar(x, y, it.s, a + 180);
+        o.push(`<path class="ink" d="M${x0.toFixed(1)} ${y0.toFixed(1)}L${x1.toFixed(1)} ${y1.toFixed(1)}"/>`);
+      }
+      for (let a = -SWEEP; a <= SWEEP; a += SWEEP / 2) {
+        const [dx, dy] = polar(x, y, it.s, a);
+        o.push(`<circle cx="${dx.toFixed(1)}" cy="${dy.toFixed(1)}" r="6" fill="#f2f2f2"/>`);
+      }
+      o.push(text(it.lx, it.ly, it.label, 40));
+    } else if (it.t === "text") o.push(text(it.x, it.y, it.label, 38, "", "start"));
+    else if (it.t === "trim") {
+      o.push(`<circle class="knob" cx="${x}" cy="${y}" r="${it.r}"/>`);
+      if (it.pm) o.push(text(x - 30, y - 42, "−", 26), text(x + 30, y - 42, "+", 26));
+    } else if (it.t === "btn") o.push(`<circle class="btn" cx="${x}" cy="${y}" r="${it.r}"/>`);
+    else if (it.t === "usb") o.push(`<rect class="jack" x="${x - 46}" y="${y - 17}" width="92" height="34" rx="17"/>`);
+    if (it.label && (it.t === "jack" || it.t === "usb" || it.t === "btn")) o.push(text(x, it.ly, it.label, 27, "it"));
+    if (it.t === "jack" && !it.input)
+      o.push(`<circle class="jack" cx="${x}" cy="${y}" r="${JACK_R}"/><circle cx="${x}" cy="${y}" r="11" fill="#050505"/>`);
+    if (it.input) {
+      // a knob or jack that shows a control: filled in by updatePanel
+      const knob = it.t === "knob", r = knob ? it.r : JACK_R;
+      o.push(`<g class="live unbound" data-n="${live.length}"><title></title>`,
+             knob ? `<circle class="knob" cx="${x}" cy="${y}" r="${r}"/>`
+                  : `<circle class="jack" cx="${x}" cy="${y}" r="${r}"/><circle cx="${x}" cy="${y}" r="11" fill="#050505"/>`,
+             `<path class="arc${knob ? "" : " jack-arc"}"/>`,
+             knob ? `<path class="ptr" d="M${x} ${y - 6}V${y - r + 7}"/>` : "",
+             `<path class="tmark" d="M${x} ${y - r - 8}l-9 -15h18z" style="display:none"/>`,
+             text(x, it.ny, "", knob ? 21 : 17, "cname"),
+             it.vy ? text(x, it.vy, "", 19, "cval") : "",
+             `</g>`);
+      live.push(it);
+    }
+  }
+  o.push("</svg>");
+  const host = $("panel");
+  host.innerHTML = o.join("");
+  // text over the panel's lines stays readable with a panel-coloured outline
+  for (const t of host.querySelectorAll(".cname, .cval"))
+    Object.assign(t.style, { stroke: "#1b1b1b", strokeWidth: "7px", paintOrder: "stroke", strokeLinejoin: "round" });
+  panelEls = [...host.querySelectorAll("g.live")].map(g => ({
+    it: live[+g.dataset.n], g, title: g.querySelector("title"), arc: g.querySelector(".arc"),
+    ptr: g.querySelector(".ptr"), mark: g.querySelector(".tmark"),
+    name: g.querySelector(".cname"), val: g.querySelector(".cval"),
+  }));
+  oledSmall = null;
+  if (P.oled) {
+    const [x, y, w, h] = P.oled;
+    oledSmall = document.createElement("canvas");
+    oledSmall.width = 128; oledSmall.height = 32;
+    Object.assign(oledSmall.style, { left: 100 * x / P.w + "%", top: 100 * y / P.h + "%",
+                                     width: 100 * w / P.w + "%", height: 100 * h / P.h + "%" });
+    oledSmall.title = "the module's display";
+    host.appendChild(oledSmall);
+  }
+  shownRev = rev;
+  showScreen(lastScreen);
+}
+
+function clip(s, n) { return s.length > n ? s.slice(0, n - 1) + "…" : s; }
+
+function updatePanel() {
+  const rev = panelRev();
+  if (rev !== shownRev) renderPanel(rev);
+  for (const el of panelEls) {
+    const { it } = el, knob = it.t === "knob", r = knob ? it.r : JACK_R;
+    const cs = state ? (state.controls || []).filter(c => c.input === it.input && c.visible) : [];
+    el.g.classList.toggle("unbound", !cs.length);
+    if (!cs.length) {
+      el.name.textContent = ""; if (el.val) el.val.textContent = "";
+      el.mark.style.display = "none"; el.title.textContent = it.input.replace("_", " ") + ": not used";
+      continue;
+    }
+    const c = cs[0], a = -SWEEP + 2 * SWEEP * toPos(c, c.value) / 1000;
+    el.arc.setAttribute("d", arcPath(it.x, it.y, r + 9, -SWEEP, a));
+    if (el.ptr) el.ptr.setAttribute("transform", `rotate(${a.toFixed(1)} ${it.x} ${it.y})`);
+    el.name.textContent = clip(cs.map(c => c.name).join(" / "), knob ? 16 : 10);
+    if (el.val) el.val.textContent = fmt(c, c.value);
+    const t = targets.get(c.i);
+    if (t === undefined) el.mark.style.display = "none";
+    else {
+      el.mark.style.display = "";
+      el.mark.setAttribute("transform", `rotate(${(-SWEEP + 2 * SWEEP * toPos(c, t) / 1000).toFixed(1)} ${it.x} ${it.y})`);
+      el.mark.classList.toggle("hit", Math.abs(c.value - t) <= 0.02 * (c.max - c.min));
+    }
+    el.title.textContent = cs.map(c => `${c.name}: ${fmt(c, c.value)}` +
+      (targets.has(c.i) ? ` (patch: ${fmt(c, targets.get(c.i))}, turn to the marker)` : "")).join("\n") +
+      `\n${it.input.replace("_", " ")}`;
+  }
+}
+
+// ---------- display ----------
+// SCREEN: the SSD1306 framebuffer, 128 x 32, a byte = 8 rows of a column
+let lastScreen = null;
+const OLED_ON = "#e4f4ff", OLED_OFF = "#050505", PX = 6;   // enlarged: 6 x 6 per pixel, 1 dark gap
+
+function showScreen(hex) {
+  lastScreen = hex;
+  const big = $("oled").getContext("2d");
+  big.fillStyle = OLED_OFF;
+  big.fillRect(0, 0, 128 * PX, 32 * PX);
+  const small = oledSmall && oledSmall.getContext("2d");
+  const img = small && small.createImageData(128, 32);
+  if (hex) {
+    big.fillStyle = OLED_ON;
+    for (let i = 0; i < 512; i++) {
+      const b = parseInt(hex.substr(2 * i, 2), 16);
+      if (!b) continue;
+      const x = i % 128, y0 = 8 * (i >> 7);
+      for (let bit = 0; bit < 8; bit++) {
+        if (!(b & (1 << bit))) continue;
+        const y = y0 + bit;
+        big.fillRect(x * PX, y * PX, PX - 1, PX - 1);
+        if (img) { const k = 4 * (y * 128 + x); img.data.set([228, 244, 255], k); }
+      }
+    }
+  }
+  if (img) {
+    for (let k = 3; k < img.data.length; k += 4) img.data[k] = 255;   // opaque: off pixels black
+    small.putImageData(img, 0, 0);
+  }
+}
+
+$("savescreen").onclick = () => $("oled").toBlob(b => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(b);
+  a.download = `nemesis-${(programName() || "screen").replace(/[^\w-]+/g, "_")}.png`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
 // ---------- header ----------
 $("connect").onclick = () => (port ? disconnect() : connect());
 $("program").onchange = e => {
@@ -556,6 +884,7 @@ $("program").onchange = e => {
 };
 if ("serial" in navigator) navigator.serial.addEventListener("disconnect", e => { if (e.target === port) disconnect(); });
 else $("hint").innerHTML = '<span class="warn">This browser has no Web Serial: open the page in Chrome or Edge.</span>';
+updatePanel();
 </script>
 </body>
 </html>
