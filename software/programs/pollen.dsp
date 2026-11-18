@@ -2,48 +2,27 @@ declare name "pollen";
 declare description "Live granular sampler: grains from a looping live memory (freeze holds it), position, size, pitch, density, spray, blur reverb; free or synced to the transport";
 declare author "Arev Imer";
 declare version "0.3";
-declare block_size "64";        // audio block (system setting block size: auto)
+declare block_size "128";       // audio block (system setting block size: auto): 1.33 ms at 96 kHz; spreads the peaks of fast grain reads (64 peaked at 95 % with budget 24)
 declare sample_rate "96000";   // system setting sample rate: auto (FM, crush and grains alias less)
 declare audio_outputs "1,2,7,8"; // 3-6 are trigger/CV outputs (left exact)
+declare mem16 "2";               // the live memory: 2 channels of 16 bit samples (nemesis_mem16.h)
 
-// A prototype granulator for live input only.
-//
-//   - live memory: a loop per channel (2/4/8/10 s). While recording it
-//     always holds the last seconds of IN 1/2; freeze fades the input out
-//     (50 ms) and the loop keeps repeating itself, so grains can wander
-//     through it for as long as it stays frozen. A frozen loop is saved on
-//     the SD card (/NEMESIS/pollen.WAV, 32 bit float) and is there again
-//     when pollen starts with freeze on (after another program or power off)
-//   - grains: 8 voices. Each grain takes its start, size, pitch, direction
-//     and pan when it starts and keeps them (a snapshot of the controls);
-//     window shapes bell/tukey/decay/ramp/square/triangle
-//   - rate: density = overlapping grains (0.25 .. 7, the rate follows the
-//     size); with sync and a running transport POT A picks a note value
-//     (1 bar .. 1/32) and grains start on that grid
-//   - position: CW reads the newest audio, CCW further back; scan moves the
-//     start through the memory (while frozen: 0 holds still, 1 plays at
-//     the original speed); spray scatters the start randomly
-//   - blur: a small reverb after the grains, send and decay on one knob
-//
-// in 1/2: stereo audio
-// out 1/2: mix (limited to 4.5 V)   out 7/8: wet only
-// out 3: trigger per grain (5 ms, 5 V)   out 4: envelope of the grains
-// out 5: random value per grain (0..5 V)  out 6: pitch of the latest grain
-//        (1 V/oct around 0 V)
-//
-// hardware controls (rev2)                      rev1
-// position size pitch   X Y Z (knob + CV)        CV X Y Z
-// density spray         POT A, POT B (+ CV A, B) CV A, B
-// blur mix              POT C, POT D (+ CV C, D) CV C, F
-// settings: freeze, memory, sync, scan, reverse, pitch spray, quantize,
-//   shape, pan spread, tone, blur input (the input into the blur, heard
-//   also with mix fully dry)
+// Controls, modes and background: docs/pollen.md
 
 import("stdfaust.lib");
 import("nemesis.lib");
 
 N    = 8;        // grain voices
-MAXL = 2^20;     // live memory buffer per channel (PSRAM): 10.9 s at 96 kHz (2^19 cut 8/10 s to 5.5 s there)
+MAXL = 2^20;     // live memory per channel (PSRAM, = NEMESIS_MEM16_LENGTH): 10.9 s at 96 kHz (2^19 cut 8/10 s to 5.5 s there)
+BUDGET = 28;     // grains read at most this many samples per sample together (see grain_bank)
+
+// The live memory is 16 bit (half the PSRAM bandwidth of floats: grains
+// pitched up at 96 kHz overloaded the module, 2026-11-17), written and read
+// through the library's inline functions; sample t goes to t mod MAXL as in
+// a FAUST delay line, so the library can save a frozen loop.
+mem_put = ffunction(float nm16_put(int, int, float), "nemesis_mem16.h", "");
+mem_get = ffunction(float nm16_get(int, float, float), "nemesis_mem16.h", "");
+widx    = ((+(1) : %(MAXL)) ~ _) - 1;
 
 // ---- controls (curves from the raw sliders: control rate) ------------------
 
@@ -55,8 +34,14 @@ spray_knob = hslider("spray [rev1:CV_B] [rev2:POT_B] [cv:CV_B]", 0, 0, 1, 0.001)
 blur_knob  = hslider("blur [rev1:CV_C] [rev2:POT_C] [cv:CV_C]", 0, 0, 1, 0.001);
 mix_knob   = hslider("mix [rev1:CV_F] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01);
 
-freeze     = hslider("freeze [loop:freeze] [style:menu{'off':0;'on':1}]", 0, 0, 1, 1) > 0.5;
-mem_sel    = hslider("memory [style:menu{'2 s':0;'4 s':1;'8 s':2;'10 s':3}]", 1, 0, 3.999, 1) : int;
+freeze_raw = hslider("freeze [loop:freeze] [style:menu{'off':0;'on':1}]", 0, 0, 1, 1) > 0.5;
+mem_sel    = hslider("memory [ifnot:sync] [style:menu{'2 s':0;'4 s':1;'8 s':2;'10 s':3}]", 1, 0, 3.999, 1) : int;
+mem_bars   = hslider("memory bars [name:memory] [if:sync] [style:menu{'1 bar':0;'2 bars':1;'4 bars':2;'8 bars':3}]", 1, 0, 3.999, 1) : int;
+// looper: the frozen memory played directly (its previous pass), input
+// added into the frozen loop, and how much of the loop each pass keeps
+loop_out_g = hslider("loop out", 0, 0, 1, 0.01) : si.smoo;
+overdub    = hslider("overdub", 0, 0, 1, 0.01) : si.smoo;
+loop_keep  = hslider("loop feedback", 1, 0, 1, 0.01) : si.smoo;
 sync       = hslider("sync [style:menu{'off':0;'on':1}]", 0, 0, 1, 1) > 0.5;
 scan       = hslider("scan", 0, -1, 1, 0.01);
 rev_prob   = hslider("reverse", 0, 0, 1, 0.01);               // share of reversed grains
@@ -73,7 +58,16 @@ blur_in    = hslider("blur input", 0, 0, 1, 0.01) : si.smoo;   // input into the
 // A frozen loop is saved on the SD card and loaded when the program starts
 // frozen (nemesis_loop.h): the library writes its length to "restored",
 // which counts until freeze is turned off.
-mem_len    = ba.selectn(4, mem_sel, 2, 4, 8, 10) * ma.SR : min(MAXL - 8) : int;
+// memory: seconds, or with sync whole bars at the transport's tempo (halved
+// while they don't fit: 8 bars at 120 BPM are 16 s, the memory 10.9 s at
+// 96 kHz), so a frozen loop is a whole number of bars
+bar        = nm_samples(96);
+fit_bars(b) = select2(b * bar > MAXL - 8, b, max(1, b / 2));
+mem_bars_n = 2 ^ mem_bars : fit_bars : fit_bars : fit_bars;
+mem_len    = select2(sync, ba.selectn(4, mem_sel, 2, 4, 8, 10) * ma.SR, mem_bars_n * bar) : min(MAXL - 8) : int;
+// with sync and a running transport, freeze (on and off) takes effect on
+// the next bar line: the loop holds the bars before it
+freeze     = ba.sAndH(select2(sync & (nm_running > 0), 1, nm_grid(96)), freeze_raw);
 restored   = hslider("loop length [loop:restored]", 0, 0, MAXL, 1) : int;
 first      = 1 - 1';                                   // 1 in the first sample
 L          = select2(restored > 0, ba.sAndH((1 - freeze) | first, mem_len), restored);
@@ -81,16 +75,29 @@ L          = select2(restored > 0, ba.sAndH((1 - freeze) | first, mem_len), rest
 // loop must not fade in the input)
 frozen     = freeze : si.smooth(select2(first, ba.tau2pole(0.05), 0));
 // w(t) = in(t) while recording, w(t - L) while frozen: a loop of L samples
-live(x)    = (_ * frozen + x * (1 - frozen)) ~ de.delay(MAXL, L - 1);
+// recording: the input; frozen: the loop's previous pass (times feedback)
+// plus the input times overdub
+// (soft limited: with feedback 1 every overdub adds to the loop, which grew
+// past full scale and the 16 bit memory clipped it hard, recorded for good)
+live(ch, x) = mem_put(ch, widx, x * (1 - frozen) + (x * overdub + loop_prev(ch) * loop_keep) * frozen : nm_softclip(1.0));
+loop_prev(ch) = mem_get(ch, float(widx) - L, 0);
+// the loop as it plays (only while frozen)
+loop_play(ch) = loop_prev(ch) * frozen * loop_out_g;
 
 // ---- grain parameters (one shared signal, each voice holds it at its start)
 
-S_raw      = ma.SR * 0.02 * 100 ^ size_knob;          // 20 ms .. 2 s
+// 20 ms .. the memory length (2/4/8/10 s), exponential; then limited so the
+// grain fits in the memory with its pitch (S below: at unison half of it).
+// From the memory setting (block rate), not L: a pow of L (a held signal)
+// would run on every sample. Was 20 ms .. 2 s.
+S_raw      = ma.SR * 0.02 * pow(mem_len / (ma.SR * 0.02), size_knob);
 density    = 2 ^ (dens_knob * 5 - 2) : min(N - 1);    // overlapping grains
 rate_free  = density * ma.SR / S_raw;                 // grains per second
 
 sync_on    = sync & (nm_running > 0);
-ticks      = ba.selectn(6, int(dens_knob * 5.999), 96, 48, 24, 12, 6, 3);
+// sync: grains per note value, 1 bar .. 1/128 (fractions of a tick work:
+// the grid compares the continuous position; 1/32 was too sparse at the top)
+ticks      = ba.selectn(8, int(dens_knob * 7.999), 96, 48, 24, 12, 6, 3, 1.5, 0.75);
 interval   = nm_samples(ticks);
 
 ph         = (+(rate_free / ma.SR) : ma.frac) ~ _;
@@ -128,8 +135,6 @@ age_lo     = select2(freeze, select2(reversed, 2 + S * max(0, ratio - 1), 2 + ra
 age_hi     = select2(reversed, L - 4 - S * max(0, 1 - ratio), L - 4 - S);
 d_start    = wrapL((age : max(age_lo) : min(age_hi)) + since_frz);
 
-// voice that takes the next grain (round robin)
-voice_no   = (+(trig) : %(N)) ~ _;
 
 // ---- grain windows (polynomials: no sin/cos per voice) ----------------------
 
@@ -146,9 +151,12 @@ with {
 
 // ---- a grain voice: left, right, envelope -----------------------------------
 
-voice(i, wl, wr) = de.fdelay(MAXL, d, wl) * env * gl, de.fdelay(MAXL, d, wr) * env * gr, env
+// a voice reads the memory at the delay d behind the newest sample (wl/wr:
+// the samples just written, so the read comes after the write); its cost is
+// its read speed while it plays (at least 0.5: slow grains still read)
+voice(i, tg, vno, wl, wr) = mem_get(0, float(widx) - d, wl) * env * gl, mem_get(1, float(widx) - d, wr) * env * gr, env, cost
 with {
-    tr   = trig & (voice_no == i);
+    tr   = tg & (vno == i);
     hold = ba.sAndH(tr);
     t    = (+(1) : *(1 - tr) : min(10000000)) ~ _;   // samples since its start
     Sh   = hold(S);
@@ -159,10 +167,29 @@ with {
     ever = (max(tr)) ~ _;
     p    = float(t) / Sh;
     env  = window(min(p, 1)) * (p < 1) * ever;
-    // forward: start + ratio * t; reversed: from the end backwards
-    d    = select2(revh, dh + t * (1 - rh), dh - rh * Sh + t * (1 + rh)) : max(0) : min(MAXL - 4);
+    // forward: start + ratio * t; reversed: from the end backwards. The
+    // position stops at the grain's end: an idle voice reads the same place
+    // (in the cache) instead of running through PSRAM at grain speed (at +24
+    // st that alone overloaded 96 kHz, 2026-11-17)
+    te   = min(t, Sh);
+    d    = select2(revh, dh + te * (1 - rh), dh - rh * Sh + te * (1 + rh)) : max(0) : min(MAXL - 4);
     gl   = min(1, 1 - ph_);
     gr   = min(1, 1 + ph_);
+    cost = (p < 1) * ever * max(0.5, rh);
+};
+
+// the voices with a budget: a grain starts (round robin) only while the
+// playing grains' read speeds plus its own stay within BUDGET (or none
+// plays), so long, dense grains pitched up get sparser instead of
+// overloading the module (size 1, density 1, +24 st did); out: left,
+// right, envelope sum, the grain triggers that started
+grain_bank(ml, mr) = bank ~ (!, !, !, _, !) : _, _, _, !, _
+with {
+    bank(load) = (par(i, N, voice(i, tg, vno, ml, mr)) :> _, _, _, _), tg
+    with {
+        tg  = trig & ((load + max(0.5, ratio) <= BUDGET) | (load == 0));
+        vno = (+(tg) : %(N)) ~ _;
+    };
 };
 
 // ---- tone and blur -------------------------------------------------------------
@@ -196,24 +223,27 @@ dry_g = cos(mix_knob * ma.PI / 2) : si.smoo;
 
 // the blur comes after the mix: the grains go in at their wet level, the
 // input at "blur input", so the input can be blurred with mix fully dry
-process(inl, inr) = (inl * dry_g + gl * wet_g + bl, inr * dry_g + gr * wet_g + br : nm_limiter2(0.9)),
+process(inl, inr) = (inl * dry_g + (gl + lpl) * wet_g + bl, inr * dry_g + (gr + lpr) * wet_g + br : nm_limiter2(0.9)),
                     pulse, env_cv, rnd_cv, pitch_cv, wl, wr
 with {
-    ml      = live(inl);
-    mr      = live(inr);
-    grains  = par(i, N, voice(i, ml, mr)) :> _, _, _;
+    ml      = live(0, inl);
+    mr      = live(1, inr);
+    grains  = grain_bank(ml, mr);
     gain    = 1.5 / sqrt(overlap) : si.smoo;
-    gl      = grains : _, !, ! : *(gain) : tone_f;
-    gr      = grains : !, _, ! : *(gain) : tone_f;
-    env_sum = grains : !, !, _;
+    gl      = grains : _, !, !, ! : *(gain) : tone_f;
+    gr      = grains : !, _, !, ! : *(gain) : tone_f;
+    env_sum = grains : !, !, _, !;
+    tg      = grains : !, !, !, _;
     bl      = blur(gl * wet_g + inl * blur_in, gr * wet_g + inr * blur_in) : _, !;
     br      = blur(gl * wet_g + inl * blur_in, gr * wet_g + inr * blur_in) : !, _;
-    wl      = gl + bl;    // out 7/8: grains + blur (its grain part follows mix)
-    wr      = gr + br;
-    since   = (+(1) : *(1 - trig) : min(10000000)) ~ _;
+    lpl     = loop_play(0);   // the loop: part of the wet signal (grains + level * loop), follows mix
+    lpr     = loop_play(1);
+    wl      = gl + bl + lpl;  // out 7/8: grains + blur (its grain part follows mix) + loop
+    wr      = gr + br + lpr;
+    since   = (+(1) : *(1 - tg) : min(10000000)) ~ _;
     pulse   = since < 0.005 * ma.SR;
     env_cv  = env_sum / max(1, 0.6 * overlap) : min(1);
-    rnd_cv  = ba.sAndH(trig, rn(5) * 0.5 + 0.5);
-    pitch_cv = ba.sAndH(trig, semis) / 12 / 5         // 1 V/oct, 1.0 = 5 V
+    rnd_cv  = ba.sAndH(tg, rn(5) * 0.5 + 0.5);
+    pitch_cv = ba.sAndH(tg, semis) / 12 / 5           // 1 V/oct, 1.0 = 5 V
              : attach(_, L * freeze : hbargraph("loop [loop:length]", 0, MAXL));
 };
