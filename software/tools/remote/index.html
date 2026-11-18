@@ -1,0 +1,561 @@
+<!doctype html>
+<!--
+  Nemesis Remote - control a Nemesis module over USB serial (Web Serial).
+
+  Open this file in Chrome or Edge (file:// works), click Connect and pick the
+  Nemesis. The page asks the firmware for "JSON" once a second and builds the
+  controls from the answer, so new programs and settings need no change here.
+  Commands it sends: PROG <n> (1-based), PSET <index> <value>, SYS <name> <value>.
+  Firmware side: lib/nemesis/src/nemesis_remote.cpp, firmware/src/main.cpp.
+  Close the page (or Disconnect) before uploading or using the serial monitor:
+  only one program can have the port open.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nemesis Remote</title>
+<style>
+  :root {
+    --bg: #f4f3ef; --panel: #ffffff; --text: #1c1c1a; --muted: #6c6a64; --line: #dddad2;
+    --accent: #c2410c; --accent-soft: #fbe3d6; --knob: #2563eb; --ok: #15803d; --bad: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151514; --panel: #1f1f1d; --text: #ecebe6; --muted: #9a978f; --line: #34332f;
+      --accent: #fb923c; --accent-soft: #3a2518; --knob: #60a5fa; --ok: #4ade80; --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+           padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
+  main { max-width: 980px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  button, select, input[type=number] { font: inherit; color: inherit; background: var(--panel);
+           border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .status { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); margin-right: 6px; }
+  .dot.on { background: var(--ok); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 6px 20px; }
+  .row { display: grid; grid-template-columns: 110px 1fr 76px; gap: 8px; align-items: center; min-height: 30px; }
+  .row label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+  .row select, .row button { width: 100%; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .meter > .bar { height: 100%; background: var(--knob); width: 0; border-radius: 3px; }
+  .tag { font-size: 11px; color: var(--knob); margin-left: 4px; }
+  .empty { color: var(--muted); }
+  details pre { max-height: 220px; overflow: auto; font-size: 12px; margin: 8px 0 0; white-space: pre-wrap; }
+  .warn { color: var(--bad); }
+  .presetbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .plist { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 2px 8px;
+           max-height: 340px; overflow: auto; margin-top: 10px; }
+  .plist button { text-align: left; border: none; background: none; padding: 3px 6px; border-radius: 4px;
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plist button:hover { background: var(--line); }
+  .plist button.sel { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .meter { position: relative; overflow: visible; }
+  .meter > .target { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1px;
+                     background: var(--accent); border-radius: 1px; }
+  .meter > .target.hit { background: var(--ok); }
+  .tgt { color: var(--accent); font-size: 12px; }
+  @media (max-width: 520px) { .row { grid-template-columns: 90px 1fr 64px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>NEMESIS</h1>
+  <button id="connect" class="primary">Connect</button>
+  <select id="program" disabled title="program"></select>
+  <span class="status"><span id="dot" class="dot"></span><span id="status">not connected</span></span>
+</header>
+<main>
+  <p id="hint" class="empty">Connect to a Nemesis over USB (Chrome or Edge). The page needs firmware with the
+    JSON command; close other serial monitors first.</p>
+  <section id="presets" hidden>
+    <h2>Patches</h2>
+    <div class="presetbar">
+      <button id="prevp" title="previous patch">◀</button>
+      <button id="nextp" title="next patch">▶</button>
+      <span id="presetname"></span>
+      <span style="flex:1"></span>
+      <span id="presetinfo" class="status"></span>
+      <button id="loadp">Load .PRE…</button>
+      <button id="forgetp" hidden>Forget file</button>
+      <input type="file" id="prefile" accept=".PRE,.pre,.txt" hidden>
+    </div>
+    <div id="presetlist" class="plist"></div>
+  </section>
+  <div id="settings"></div>
+  <section id="knobs" hidden><h2>Knobs and CV (read only)</h2><div class="grid" id="knobgrid"></div></section>
+  <section id="system" hidden><h2>System</h2><div class="grid" id="sysgrid"></div></section>
+  <details><summary class="status">Serial log</summary><pre id="log"></pre></details>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let port = null, writer = null, reading = false;
+let state = null, shape = "";          // last JSON, and what the controls were built from
+let waiting = 0;                       // time a JSON request was sent (0: none open)
+const touched = new Map();             // control key -> time of the last local edit
+const HOLD_MS = 1500;                  // keep local values this long after an edit
+
+// ---------- serial ----------
+async function connect() {
+  if (!("serial" in navigator)) { alert("This browser has no Web Serial: use Chrome or Edge."); return; }
+  try {
+    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x16C0 }] });
+    await port.open({ baudRate: 115200 });
+  } catch (e) { port = null; setStatus(String(e.message || e)); return; }
+  writer = port.writable.getWriter();
+  $("connect").textContent = "Disconnect";
+  $("hint").hidden = true;
+  readDone = readLoop();
+  send("JSON");
+}
+
+async function disconnect() {
+  const p = port;
+  port = null;                                 // stops the loops, idempotent
+  reading = false;
+  try { reader && await reader.cancel(); } catch (e) {}
+  try { await readDone; } catch (e) {}
+  try { writer && writer.releaseLock(); } catch (e) {}
+  try { p && await p.close(); } catch (e) {}
+  writer = null; state = null; shape = ""; waiting = 0;
+  $("connect").textContent = "Connect";
+  $("program").disabled = true;
+  setStatus("not connected", false);
+}
+
+let reader = null, readDone = null;
+async function readLoop() {
+  reading = true;
+  const decoder = new TextDecoder();
+  let text = "";
+  const p = port;
+  while (reading && p.readable) {
+    reader = p.readable.getReader();
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        let n;
+        while ((n = text.indexOf("\n")) >= 0) {
+          const line = text.slice(0, n).replace(/\r$/, "");
+          text = text.slice(n + 1);
+          onLine(line);
+        }
+        if (text.length > 200000) text = "";   // no newline in sight: drop it
+      }
+    } catch (e) {
+      log("! " + (e.message || e));
+      break;                                   // unplugged
+    } finally { reader.releaseLock(); reader = null; }
+  }
+  if (reading && port === p) setTimeout(disconnect);   // unplugged: clean up
+}
+
+async function send(cmd) {
+  if (!writer) return;
+  if (cmd === "JSON") waiting = performance.now();
+  else log("> " + cmd);
+  try { await writer.write(new TextEncoder().encode(cmd + "\n")); }
+  catch (e) { log("! " + (e.message || e)); }
+}
+
+function onLine(line) {
+  if (line.startsWith("JSON ")) {
+    waiting = 0;
+    try { update(JSON.parse(line.slice(5))); }
+    catch (e) { log("! bad JSON: " + e.message); }
+  } else if (line.trim()) log(line);
+}
+
+// poll once a second; a lost answer is asked again after 3 s
+setInterval(() => {
+  if (writer && (!waiting || performance.now() - waiting > 3000)) send("JSON");
+}, 1000);
+
+function log(s) {
+  const el = $("log");
+  el.textContent = (el.textContent + s + "\n").split("\n").slice(-200).join("\n");
+  el.scrollTop = el.scrollHeight;
+}
+function setStatus(s, on) { $("status").textContent = s; $("dot").classList.toggle("on", !!on); }
+
+// ---------- helpers ----------
+// FAUST menus: {'name':value;'name':value}
+function parseMenu(m) {
+  const out = [];
+  for (const x of String(m).matchAll(/'((?:[^'\\]|\\.)*)'\s*:\s*(-?[\d.eE+-]+)/g)) out.push([x[1], +x[2]]);
+  return out;
+}
+function decimals(step) { return step >= 1 || !step ? 0 : Math.min(4, Math.ceil(-Math.log10(step) - 1e-9)); }
+function fmt(c, v) { return v.toFixed(decimals(c.step)) + (c.unit ? " " + c.unit : ""); }
+function useLog(c) { return c.log && c.min > 0 && c.max > c.min; }
+function toPos(c, v) {          // slider position 0..1000
+  if (c.max === c.min) return 0;
+  const f = useLog(c) ? Math.log(v / c.min) / Math.log(c.max / c.min) : (v - c.min) / (c.max - c.min);
+  return Math.round(1000 * Math.min(1, Math.max(0, f)));
+}
+function fromPos(c, p) {
+  const f = p / 1000;
+  let v = useLog(c) ? c.min * Math.pow(c.max / c.min, f) : c.min + f * (c.max - c.min);
+  if (c.step > 0 && !useLog(c)) v = c.min + Math.round((v - c.min) / c.step) * c.step;
+  return +v.toFixed(6);
+}
+function busy(key) { const t = touched.get(key); return t && performance.now() - t < HOLD_MS; }
+function edited(key) { touched.set(key, performance.now()); }
+// send at most every 40 ms while dragging, always the last value
+const pending = new Map();
+function throttled(key, cmd) {
+  edited(key);
+  const p = pending.get(key);
+  if (p) { p.cmd = cmd; return; }
+  send(cmd);
+  const entry = { cmd: null };
+  pending.set(key, entry);
+  setTimeout(() => { pending.delete(key); if (entry.cmd) throttled(key, entry.cmd); }, 40);
+}
+
+// ---------- program controls ----------
+const views = new Map();     // key -> { c, set(value) }
+
+function update(s) {
+  state = s;
+  const prog = $("program");
+  const progShape = s.programs.join("|");
+  if (prog.dataset.shape !== progShape) {
+    prog.innerHTML = s.programs.map((n, i) => `<option value="${i}">${i + 1} ${esc(n)}</option>`).join("");
+    prog.dataset.shape = progShape;
+  }
+  prog.disabled = false;
+  if (!busy("prog")) prog.value = s.current;
+
+  const t = s.transport || {};
+  setStatus(`rev${s.rev} · CPU ${s.cpu.toFixed(1)} % · ${s.audio.sampleRate / 1000} kHz / ${s.audio.blockSize}` +
+            (t.running ? ` · ▶ ${t.bpm.toFixed(1)} BPM${t.external ? " ext" : ""}` : ""), true);
+
+  const controls = s.controls || [];
+  const newShape = s.current + "#" + controls.map(c =>
+    [c.i, c.label, c.input, c.visible, c.listed, c.menu || ""].join("~")).join("|");
+  if (newShape !== shape) { shape = newShape; build(controls); }
+  updatePresets();
+  for (const c of controls) { const v = views.get("c" + c.i); if (v) { v.c = c; if (!busy("c" + c.i)) v.set(c.value); } }
+  buildSystem(s.system);
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]); }
+
+function build(controls) {
+  views.clear();
+  const host = $("settings");
+  host.innerHTML = "";
+  const sections = new Map();
+  const shown = controls.filter(c => c.input === null && c.listed && c.visible);
+  // the home setting (e.g. juno's patch) first, as on the module
+  shown.sort((a, b) => (b.home - a.home));
+  for (const c of shown) {
+    const name = c.section || "Settings";
+    if (!sections.has(name)) {
+      const sec = document.createElement("section");
+      sec.innerHTML = `<h2>${esc(name)}</h2><div class="grid"></div>`;
+      host.appendChild(sec);
+      sections.set(name, sec.lastChild);
+    }
+    sections.get(name).appendChild(settingRow(c));
+  }
+  if (!shown.length) host.innerHTML = `<section><p class="empty">This program has no settings.</p></section>`;
+
+  const knobs = controls.filter(c => c.input !== null && c.visible);
+  $("knobs").hidden = !knobs.length;
+  const kg = $("knobgrid");
+  kg.innerHTML = "";
+  for (const c of knobs) kg.appendChild(knobRow(c));
+}
+
+function row(c, tag) {
+  const r = document.createElement("div");
+  r.className = "row";
+  r.innerHTML = `<label title="${esc(c.label)}">${esc(c.name)}${tag ? `<span class="tag">${esc(tag)}</span>` : ""}</label>`;
+  return r;
+}
+
+function settingRow(c) {
+  const key = "c" + c.i;
+  const r = row(c);
+  const val = document.createElement("span");
+  val.className = "val";
+  const menu = c.menu ? parseMenu(c.menu) : [];
+  let set;
+  if (menu.length) {
+    const sel = document.createElement("select");
+    sel.innerHTML = menu.map(([n, v]) => `<option value="${v}">${esc(n)}</option>`).join("");
+    sel.onchange = () => { edited(key); send(`PSET ${c.i} ${sel.value}`); setTimeout(() => send("JSON"), 150); };
+    r.appendChild(sel);
+    r.appendChild(val);
+    set = v => { sel.value = String(v); if (sel.value === "") sel.value = String(Math.round(v)); };
+  } else if (c.gate) {
+    const b = document.createElement("button");
+    b.textContent = c.name;
+    let down = false;
+    const press = on => { if (on === down) return; down = on; edited(key); send(`PSET ${c.i} ${on ? c.max : c.min}`); };
+    b.onpointerdown = () => press(true);
+    b.onpointerup = b.onpointerleave = b.onpointercancel = () => press(false);
+    r.appendChild(b);
+    r.appendChild(val);
+    set = () => {};
+  } else if (c.step >= 1 && c.max - c.min <= 200) {
+    // a whole number setting (e.g. a preset number without names): a number box
+    const n = document.createElement("input");
+    n.type = "number"; n.min = c.min; n.max = c.max; n.step = c.step;
+    n.onchange = () => { edited(key); send(`PSET ${c.i} ${n.value}`); setTimeout(() => send("JSON"), 150); };
+    r.appendChild(n);
+    r.appendChild(val);
+    set = v => { if (document.activeElement !== n) n.value = v; val.textContent = c.unit || ""; };
+  } else {
+    const sl = document.createElement("input");
+    sl.type = "range"; sl.min = 0; sl.max = 1000; sl.step = 1;
+    sl.oninput = () => {
+      const v = fromPos(views.get(key).c, +sl.value);
+      val.textContent = fmt(c, v);
+      throttled(key, `PSET ${c.i} ${v}`);
+    };
+    sl.ondblclick = () => {   // type a value
+      const t = prompt(`${c.name} (${c.min} … ${c.max})`, views.get(key).c.value);
+      if (t !== null && t.trim() !== "" && isFinite(+t)) { edited(key); send(`PSET ${c.i} ${+t}`); set(+t); }
+    };
+    sl.title = "double-click to type a value";
+    r.appendChild(sl);
+    r.appendChild(val);
+    set = v => { sl.value = toPos(c, v); val.textContent = fmt(c, v); };
+  }
+  views.set(key, { c, set });
+  set(c.value);
+  return r;
+}
+
+function knobRow(c) {
+  const r = row(c, c.input.replace(/^CV_/, ""));
+  const m = document.createElement("div");
+  m.className = "meter";
+  m.innerHTML = '<div class="bar"></div><div class="target" hidden></div>';
+  const val = document.createElement("span");
+  val.className = "val";
+  r.appendChild(m);
+  r.appendChild(val);
+  const set = v => {
+    m.firstChild.style.width = toPos(c, v) / 10 + "%";
+    const t = targets.get(c.i), mark = m.lastChild;
+    mark.hidden = t === undefined;
+    if (t === undefined) { val.textContent = fmt(c, v); r.title = ""; return; }
+    mark.style.left = toPos(c, t) / 10 + "%";
+    mark.classList.toggle("hit", Math.abs(v - t) <= 0.02 * (c.max - c.min));
+    val.innerHTML = `${esc(fmt(c, v))}<br><span class="tgt">→ ${esc(fmt(c, t))}</span>`;
+    r.title = "the patch's value: turn the knob to the marker";
+  };
+  views.set("c" + c.i, { c, set });
+  set(c.value);
+  return r;
+}
+
+// ---------- system settings ----------
+const SYSTEM = [
+  ["clockSource", "clock", { choices: [[0, "auto"], [1, "internal"], [2, "MIDI"], [3, "IN 8"]] }],
+  ["run", "run", { choices: [[0, "off"], [1, "on"]] }],
+  ["tempo", "tempo", { min: 20, max: 300, step: 0.1, unit: "BPM" }],
+  ["clockPpqn", "IN 8 pulses", { choices: [[1, "1/4"], [2, "1/8"], [4, "1/16"], [24, "24 ppqn"]] }],
+  ["clockOffsetMs", "clock offset", { min: -50, max: 50, step: 1, unit: "ms" }],
+  ["midiChannel", "MIDI channel", { choices: [[0, "omni"], ...Array.from({ length: 16 }, (_, i) => [i + 1, String(i + 1)])] }],
+  ["popup", "knob popup", { choices: [[0, "off"], [1, "on"]] }],
+  ["knobJump", "knobs", { choices: [[0, "catch"], [1, "jump"]] }],
+  ["brightness", "brightness", { min: 1, max: 10, step: 1 }],
+  ["ledBrightness", "LED brightness", { min: 1, max: 10, step: 1 }],
+  ["cvRangeVolts", "CV range", { choices: [[5, "0-5V"], [8, "0-8V"]] }],
+  ["blockSize", "block size", { choices: [[0, "auto"], [32, "32"], [64, "64"], [128, "128"]] }],
+  ["sampleRate", "sample rate", { choices: [[0, "auto"], [48000, "48k"], [96000, "96k"]] }],
+];
+const sysViews = new Map();
+
+function buildSystem(sys) {
+  if (!sys) return;
+  $("system").hidden = false;
+  const grid = $("sysgrid");
+  if (!sysViews.size) {
+    for (const [name, label, spec] of SYSTEM) {
+      if (!(name in sys)) continue;
+      const key = "s" + name;
+      const c = { name: label, label, min: spec.min, max: spec.max, step: spec.step, unit: spec.unit };
+      const r = row(c);
+      const val = document.createElement("span");
+      val.className = "val";
+      let set;
+      if (spec.choices) {
+        const sel = document.createElement("select");
+        sel.innerHTML = spec.choices.map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join("");
+        sel.onchange = () => { edited(key); send(`SYS ${name} ${sel.value}`); setTimeout(() => send("JSON"), 300); };
+        r.appendChild(sel);
+        set = v => { sel.value = String(v); };
+      } else {
+        const sl = document.createElement("input");
+        sl.type = "range"; sl.min = 0; sl.max = 1000;
+        sl.oninput = () => { const v = fromPos(c, +sl.value); val.textContent = fmt(c, v); throttled(key, `SYS ${name} ${v}`); };
+        sl.ondblclick = () => {
+          const t = prompt(`${label} (${c.min} … ${c.max})`, state.system[name]);
+          if (t !== null && isFinite(+t)) { edited(key); send(`SYS ${name} ${+t}`); set(+t); }
+        };
+        sl.title = "double-click to type a value";
+        r.appendChild(sl);
+        set = v => { sl.value = toPos(c, v); val.textContent = fmt(c, v); };
+      }
+      r.appendChild(val);
+      grid.appendChild(r);
+      sysViews.set(name, { key, set });
+    }
+  }
+  for (const [name, v] of sysViews) if (!busy(v.key)) v.set(sys[name]);
+}
+
+// ---------- patches ----------
+// A program with a preset setting ([action:preset]) gets a patch list: the
+// names the module read from its SD card, or a .PRE file loaded here (kept
+// in this browser per program; it wins over the card). A patch from a file
+// is sent value by value; values on knobs/CV the module can't take (rev1:
+// pots are inputs) are shown as a marker on the knob's meter.
+const targets = new Map();   // control index -> the patch's value for an input
+let presetKey = null, presetList = [], presetSel = -1;
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} },
+};
+function programName() { return state ? state.programs[state.current] : ""; }
+function presetControl() { return (state.controls || []).find(c => c.action === 5 && c.input === null); }
+function parsePresets(text) {
+  return text.split(/\r?\n/).filter(l => l.trim() && !l.startsWith("#")).map(l => {
+    const [name, ...fields] = l.split("|");
+    return { name: name.trim(), local: true, values: fields.map(f => {
+      const i = f.indexOf("=");
+      return [f.slice(0, i), +f.slice(i + 1)];
+    }).filter(([k, v]) => k && isFinite(v)) };
+  });
+}
+
+function updatePresets() {
+  const name = programName(), pc = presetControl();
+  const text = store.get("nemesis.presets." + name);
+  const key = name + "#" + (text ? text.length : 0) + "#" + ((pc && pc.menu) || "");
+  if (key !== presetKey) {
+    presetKey = key;
+    targets.clear();
+    if (text) {
+      presetList = parsePresets(text);
+      const saved = store.get("nemesis.presetSel." + name);
+      presetSel = saved === null ? -1 : +saved;
+    } else if (pc && pc.menu) {
+      presetList = parseMenu(pc.menu).map(([n, v]) => ({ name: n, index: v }));
+    } else presetList = [];
+    renderPresets();
+  }
+  if (!text && pc && pc.menu && !busy("preset")) {
+    const i = presetList.findIndex(p => p.index === Math.round(pc.value));
+    if (i !== presetSel) { presetSel = i; markPreset(); }
+  }
+  $("presets").hidden = !pc && !text;
+  $("forgetp").hidden = !text;
+  $("presetinfo").textContent = text ? `${presetList.length} from a file`
+    : pc && pc.menu ? `${presetList.length} from the SD card`
+    : "no patches on the module: load a .PRE file (software/programs/juno.PRE)";
+}
+
+function renderPresets() {
+  const list = $("presetlist");
+  list.innerHTML = "";
+  presetList.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.textContent = p.name;
+    b.title = p.name;
+    b.onclick = () => applyPreset(i);
+    list.appendChild(b);
+  });
+  markPreset();
+}
+
+function markPreset() {
+  [...$("presetlist").children].forEach((b, i) => b.classList.toggle("sel", i === presetSel));
+  const sel = $("presetlist").children[presetSel];
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+  $("presetname").textContent = presetList[presetSel] ? presetList[presetSel].name : "";
+}
+
+function applyPreset(i) {
+  if (!state || i < 0 || i >= presetList.length) return;
+  const p = presetList[i];
+  presetSel = i;
+  edited("preset");
+  markPreset();
+  if (!p.local) {
+    const pc = presetControl();
+    if (pc) send(`PSET ${pc.i} ${p.index}`);
+  } else {
+    store.set("nemesis.presetSel." + programName(), String(i));
+    targets.clear();
+    const missing = [];
+    for (const [label, v] of p.values) {
+      const c = state.controls.find(c => c.label === label);
+      if (!c) missing.push(label);
+      else if (c.input === null || c.knob) { edited("c" + c.i); send(`PSET ${c.i} ${v}`); views.get("c" + c.i)?.set(v); }
+      else targets.set(c.i, v);
+    }
+    if (missing.length) log("patch values without a setting: " + missing.join(", "));
+    for (const c of state.controls) if (targets.has(c.i)) views.get("c" + c.i)?.set(c.value);
+  }
+  setTimeout(() => send("JSON"), 300);
+}
+
+$("prevp").onclick = () => applyPreset(Math.max(0, presetSel - 1));
+$("nextp").onclick = () => applyPreset(Math.min(presetList.length - 1, presetSel + 1));
+$("loadp").onclick = () => $("prefile").click();
+$("prefile").onchange = async e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f || !state) return;
+  const text = await f.text();
+  if (!parsePresets(text).length) { alert("No patches in " + f.name + " (lines: name|label=value|...)"); return; }
+  store.set("nemesis.presets." + programName(), text);
+  store.set("nemesis.presetSel." + programName(), null);
+  presetKey = null;
+  updatePresets();
+};
+$("forgetp").onclick = () => {
+  store.set("nemesis.presets." + programName(), null);
+  presetKey = null;
+  updatePresets();
+};
+document.addEventListener("keydown", e => {
+  if ($("presets").hidden || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if (e.key === "ArrowRight" || e.key === "ArrowDown") { e.preventDefault(); $("nextp").click(); }
+  if (e.key === "ArrowLeft" || e.key === "ArrowUp") { e.preventDefault(); $("prevp").click(); }
+});
+
+// ---------- header ----------
+$("connect").onclick = () => (port ? disconnect() : connect());
+$("program").onchange = e => {
+  edited("prog");
+  send(`PROG ${+e.target.value + 1}`);
+  setTimeout(() => send("JSON"), 400);
+};
+if ("serial" in navigator) navigator.serial.addEventListener("disconnect", e => { if (e.target === port) disconnect(); });
+else $("hint").innerHTML = '<span class="warn">This browser has no Web Serial: open the page in Chrome or Edge.</span>';
+</script>
+</body>
+</html>
