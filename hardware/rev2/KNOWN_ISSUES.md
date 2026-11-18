@@ -102,6 +102,40 @@ No bytes arrived from a MIDI keyboard on the test unit; USB MIDI works.
 - Pot ADC noise: 24–33 LSB single reading; handled with 32x averaging and
   adaptive smoothing in software, a RC filter or a reference with less noise
   at the pot wipers would help.
+- Pot noise source found (2026-11-17, `software/tests/adcnoise`, which now
+  measures in passes): the audio clocking. Rewiring the pots to the
+  Teensy's own 3.3 V and GND changed nothing. Pots in the middle, sd in
+  12 bit LSB, single conversion / 32x averaging (the firmware's setting):
+  Teensy alone (before `nemesis::begin()`) 33–43 / 2.0–2.6; with the
+  firmware running 81–96 / 5.9–6.6; library pot interrupts off or display
+  and its charge pump off: no change; SAI1 and MCLK (pin 23, 49.152 MHz) to
+  the codec stopped: 4–6 / 0.9–1.0; interval timers (CV scan, MIDI poll)
+  off: no further change. By position (firmware running): fully left 52–58
+  / 3.5–3.9, middle 78–97 / 6–7, fully right 20–28 / 1.5–1.9, i.e. largest
+  where the wiper's source impedance is highest: coupled pickup on the
+  wiper-to-ADC path, not the pot supply. It aliases with the ADC timing
+  (16x over 33 µs averages it out, 16x over 44 µs doesn't), as a clock
+  asynchronous to the ADC's would. The audio pins already have slow slew
+  (pad 0x10b0, drive strength 6); drive strength 3 gives 6.2, 1 gives 4.7
+  (sd at 32x), weak for a 49 MHz clock: not used.
+  **Next revision:** an RC right at each Teensy ADC pin (about 1 kΩ in
+  series, 100 nF to the Teensy's GND), the pot traces away from MCLK, BCLK
+  and the codec, a series resistor (22–47 Ω) at the MCLK source; or buffer
+  the wipers as rev1 does (op amp, 33 kΩ ‖ 10 nF).
+- Pot filtering in the firmware (2026-11-17, `nemesis_rev2.cpp`): the
+  pickup also makes bursts of two conversions 50–160 LSB off; the median of
+  3 let them through and the adaptive filter jumped with them (flicker).
+  Now: median of 5, adaptive one-pole (rest 50 ms, full speed at 64 LSB
+  difference), output in 4 LSB steps (1024) with 8 LSB hysteresis. Resting
+  pots: 0 output changes in 60 s (filtered value within ~1 LSB); before up
+  to 36 changes in 10 s. No knob popup for turns in the first 1.5 s after a
+  start (X/Y/Z's CV ADC smoothing starts at 0).
+- Display froze once (2026-11-17, turning POT A in harmonizer) while the
+  sound, serial and the main loop went on (no reset, no late blocks): the
+  SSD1306 probably took a disturbed I2C byte as a command and ignored the
+  frames after it. The firmware now sends the controller's setup again every
+  2 s (without display off). Cause on the board not known (I2C lines near
+  the pots, no pull-up/ESD check yet).
 - Pot spikes (2026-11-11, Teensy VIN from the bus +5 V): single
   conversions ~30 LSB off on POT D now and then (one per 30–60 s), which
   the adaptive smoothing passes as a turn and which opened the parameter

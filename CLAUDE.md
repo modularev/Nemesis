@@ -18,10 +18,30 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 
 ## Devices
 
-- rev2 test unit: `/dev/cu.usbmodem103226001`, USB MIDI port "Nemesis"
-  (software/firmware/src/name.c overrides the USB product name; macOS kept
-  showing "Teensy MIDI" until the old entry is removed in Audio MIDI Setup)
+- rev2 test unit: `/dev/cu.usbmodem103226001`, USB MIDI port "Nemesis rev2"
+  (software/firmware/src/name.c: "Nemesis rev1"/"rev2" by NEMESIS_HW_REV;
+  macOS keeps a device's first MIDI name until its entry is removed in
+  Audio MIDI Setup)
   when built with `-D USB_MIDI_SERIAL` (software/firmware).
+- rev1 test unit (2026-11-12, first run of the unified code): runs juno
+  (3 % idle, no late blocks), `/dev/cu.usbmodem78279001`, no SD card.
+  Knob calibration in EEPROM (hold button 3 at start: min + button 1, max
+  + button 2, button 3; a HANG/watchdog reset while holding works too):
+  0.000 at min, 1.000 at max, noise < 0.001 p-p. CV V/Oct not calibrated.
+  With both units on USB, unplug the other one for an upload (teensy-gui
+  can't choose the board).
+  Its PSRAM read bits wrong (2026-11-12, PSRAMTEST ~200 per 64 MB, bit 5
+  or 1 of a byte read 1 = data line IO1; a flipped smalloc pattern crashed
+  extmem_free() on a switch mooSpace2 -> mooSpace, CrashReport at
+  smalloc_do_crash): the library clocked the PSRAM at 180 MHz (PLL3 PFD0
+  720 / 4, comment said 133). At 88 MHz no errors; rev2's chip had none at
+  180. Now 144 MHz (720 / 5; hw::setPSRAMspeed in nemesis.cpp, FlexSPI
+  disabled and gated while changing). rev2 2026-11-17, mooSpace2 / pollen
+  CPU: 180 MHz 77 / 78 %, 144 MHz 83 / 77 %, 132.9 MHz 86 / 87 % (mooSpace2
+  peaks 98 %), PSRAMTEST 0 errors at all three. rev1 still to test at 144.
+  Changing the clock while programs run hung the module. A PSRAM block
+  tracker (check the pattern at stop, leak instead of crash) made rev2 hang
+  ~1 s after starting mooSpace2 (watchdog; cause not found): removed.
 - HP 34401A multimeter: `/dev/cu.usbserial-FTEJ7S3Y` (FTDI), RS-232 9600 8N2,
   HP-IB address must not be 31 (talk only). Driver and CLI:
   `~/GitHub/34401a-calibrator` (`hp34401a read -n 5`).
@@ -51,6 +71,52 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 - software/firmware serial commands: `PROG <n>`, `CONTROLS`, `MEM` (PSRAM, 16 MB on the rev2 unit),
   `GET <path>` (parameter or meter, e.g. `/breaker/slice`), `STATUS` (MIDI bytes/USB messages,
   transport state, voice notes, NaN resets), CPU report every 2 s.
+- `SCREEN` returns the display's framebuffer; `software/tools/screen.py
+  out.png` saves it as a PNG (4x): look at the rev2 display remotely.
+  Home screen top right (2026-11-17): the CPU load as a number ("64%") in
+  the built-in 5 x 7 font (the user's choice over "cpu 9%" and a bar);
+  CLIP / limiter readouts take its place as before.
+  Display refresh (2026-11-17): redraw every 25 ms, the frame sent only when
+  it changed (pushDisplay: FNV checksum of the 512 bytes, at least once a
+  second); the CPU number updates every 500 ms (changing every frame it
+  forced every transfer). breaker 35 frames/s at 3.4 ms avg (was 8.9 at
+  12.3 ms: the beat count skipped sixteenths). I2C at 1 MHz broke the
+  transfers (frames up to 358 ms): stays at the library's 400 kHz. STATUS
+  prints frames/s and ms per frame.
+- Button LEDs (2026-11-17, rev2): dimmed by pulse density from a 4 kHz
+  IntervalTimer (pin 34 has no hardware PWM; integer accumulators, fixed
+  pins; priority 64, above the audio so they don't stall). A 16 kHz float
+  version cost mooSpace2 ~3-4 points. The loop shapes on/off: 5 ms up,
+  30 ms exponential decay (80 stayed lit too long), gamma 2.2; "LED brightness"
+  1..10 = 3..100 % duty (lower flickers at 4 kHz), off below 2 %; SD key
+  led_brightness, remote SYS ledBrightness. Default 5 (the user likes it).
+- Home layout (2026-11-17): `declare home "A|B";` in a .dsp (Program::
+  homeLayout, rev2 drawLayout): up to 3 values big (bargraph, control or
+  setting labels, @tempo, @beat), name in the top line; `[digits:N]` for
+  decimals. Chosen over a separate layout file (second format and parser,
+  drifts from the .dsp) and over splitting .dsp into audio + bindings (two
+  files per program, and the simulator compiles the .dsp files).
+- Program descriptions (2026-11-17): in software/programs/docs/<name>.md
+  (controls, modes, background); a .dsp keeps its declares and one line
+  pointing there. Write new programs that way; implementation notes stay
+  as comments next to the code they explain.
+- System setting "knobs" (2026-11-17): catch (a knob takes over a stored
+  value when it reaches it) or jump (when moved 1 % from where it was when
+  the value came: Control.jumpRef, catches() in nemesis.cpp); SD key
+  knob_jump, remote SYS knobJump. The user wants jump (set on rev2).
+- Remote control (2026-11-12): software/tools/remote/index.html (Web Serial,
+  Chrome/Edge, file:// works) polls `JSON` (one line: programs, current
+  program's controls, system, transport) and sends `PROG <n>`, `PSET <index>
+  <value>` (settings only, not knobs), `SYS <name> <value>`
+  (lib/nemesis/src/nemesis_remote.cpp; knobs take a PSET value until they
+  reach it, as with presets). It holds the serial port: close it before
+  uploading. Patches: the module's SD list, or a .PRE file loaded in the page
+  (kept in the browser; software/programs/juno.PRE, from juno106_presets.py) sent value by
+  value; rev1 pots are inputs, so their patch values show as meter markers.
+  The user didn't want presets built into the firmware.
+- firmware/upload_guard.py stops an upload with two Teensys on USB or when
+  the connected unit's USB name ("Nemesis revN") doesn't match the build
+  (a rev2 build once went to rev1).
 - The transport PLL (`lib/nemesis/src/nemesis_transport_core.h`) is plain C++: test changes on
   the Mac with a host harness before flashing.
 - tests/hwtest serial commands: see the top of `software/tests/hwtest/src/main.cpp`
@@ -133,6 +199,113 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   remembered only after 10 s. The SNVS_LPGPR registers did not keep values.
   Test commands: SET, RANDOM, ROLL, MUTE/UNMUTE, SILENT/LOUD, CLOCK <MHz>, RAW,
   HANG (watchdog test).
+- FAUST delay memories (2026-11-17): a recursion inside another one, or
+  a recursive signal fed back as a second output of the outer ~ and read
+  with @, made FAUST build the same 2 MB delay memory 2-19 times (count
+  the [524287] arrays in the generated code). One recursive signal whose
+  feedback block does every delayed read (they read d - 1: ~ adds one
+  sample), outputs reading the same signal outside, gives one. Selecting
+  outputs of a with-local block several times (b : (_, !, !)) copies it:
+  route once (process = _, _ <: _, _, (f <: _, g) : out). `outputs`,
+  `inputs` and `control` are FAUST keywords (syntax error as a name); a
+  bargraph can't share its label with a slider ("path already used"). A
+  float->int delay index needs max(0, ...) after int() (overflow).
+- Test firmwares that call nemesis::begin() get the 4 s watchdog and the
+  failed-start counter: tests/adcnoise didn't feed it and restarted every
+  ~4.7 s (2026-11-17, fixed: watchdogFeed() in its waits and loops), and
+  its 40 short starts put the real firmware into safe start (program 1, SD
+  off) until one start ran 10 s. After many watchdog resets the SD card
+  read "no SD" once (it keeps power); the next restart found it again
+  (reproduced twice: the first start after a safe start): settings::begin
+  now tries SD.begin a second time after 100 ms; checked by forcing a safe
+  start (3x HANG before 10 s) and restarting: card found at once.
+  rev2 pot noise is the audio clocking (MCLK/SAI to the codec), see
+  hardware/rev2/KNOWN_ISSUES.md; tests/adcnoise measures in passes.
+  Pots A-D (2026-11-17): median of 5, rest 50 ms, snap 64 LSB, 1024 steps
+  with 2-step hysteresis: 0 changes in 60 s at rest (tuned with RAW and a
+  temporary print of the filtered value: the flicker was bursts passing
+  the median of 3, not noise). Popup ignores turns for 1.5 s after a start.
+  Display froze once with the firmware running (turning POT A): rev2
+  service() resends the SSD1306 setup every 2 s (refreshDisplaySetup:
+  begin()'s sequence without display off, contrast via applyBrightness).
+  To catch a test's output after an upload, reconnect on every port drop
+  until it prints (the port comes and goes several times).
+- Per-sample libm calls (2026-11-17): mooSpace2 rose from 83 to 93-98 %
+  with no change of its own: fmodf (nm_position in nemesis.lib, its
+  shimmer phase, a float % of REV_LEN / 2) ran per sample; libm sits in
+  ITCM but compute() reaches it through veneers in flash, and the fmodf
+  veneer's cache line landed in the range compute() (25 kB, 2-way 32 kB
+  I-cache) already filled twice: evictions on every sample after the
+  firmware grew. Now nm_wrapped(x, n) = x - n*floor(x/n) (floor inlines
+  as vrintm): 75-81 %, breaker 25 -> 22, pollen 77.7 -> 75.3. Check sample
+  loops with objdump for bl <__*_veneer> (per-block calls are fine; a
+  user function used with _ needs \(v).(f(v, n))). The pot ADC interrupt
+  was priority 192 (above the audio update, 208); now 224.
+- Single slow blocks (2026-11-17): serial BLOCKS logs the cycles of
+  compute() for 4096 blocks. mooSpace2 at 64 samples: median 75 %, but
+  irregular single blocks up to 118 % (gaps 0.02-3 s, not periodic; not
+  the display: MONITOR 0, not the pot interrupt, not drag) -> ~1 late
+  block (click) per 7 s. Likely its modulated PSRAM heads colliding in
+  the 32 kB data cache now and then. declare block_size "128": 0 late in
+  60 s, max 89 %. juno idle shows no spikes (too short to be hit).
+- RAM2 tier in the DSP memory manager (2026-11-17, nemesis_arch.cpp):
+  heap < 1 kB, arena (DTCM) <= 32 kB, then buffers <= 128 kB the arena
+  can't take from the heap in RAM2 (on chip) while 64 kB of it stays free
+  (nemesis::heapFree), the rest PSRAM. mooSpace2's late taps and tank
+  delays (106, 72, 3 x 65.5 kB) left PSRAM: 74 -> 63 % (max 89 -> 75),
+  mooSpace 54 -> 50.5 %, others unchanged; heap after visiting all
+  programs 427 kB (fragmented: 48 kB at the top, larger buffers then go
+  to PSRAM). mooSpace2 at 64 samples now 3 late blocks in 70 s (was 11
+  in 80 s): it keeps block_size 128 (0 late).
+- pollen at 96 kHz, pitch +24 st (2026-11-17): 97 % (max 112), late
+  blocks: memory bound, each voice reads its PSRAM buffer 4x faster
+  (~770k cache line fills per second). Idle voices kept running through
+  PSRAM (t counted on after the grain): position stopped at the grain's
+  end (te = min(t, S); the window is 0 there): +24 st 77-79 % (max
+  87-90), density 1.0 77-82 % (max 93), 0 late. Size 1 + density 1 +
+  +24 st still overloaded (watchdog reset). Now: 16 bit memory (declare
+  mem16 "2"; lib nemesis_mem16.h: inline nm16_put/nm16_get through
+  ffunction "nemesis_mem16.h" (no <>: FAUST writes the string into the
+  #include), get takes the put's value so FAUST orders them; buffers
+  allocated/freed by the architecture at start/stop, no PSRAM -> the
+  program doesn't start) and a grain budget (BUDGET 20: sum of playing
+  grains' read speeds, min 0.5 each; grain_bank feeds the load back).
+  Worst case 77-83 % (max 85), 0 late; -24 st 61 %. Mac render vs the
+  float version: -60..-76 dB difference. Loop save: 16 bit PCM WAV, float
+  WAVs still load (nemesis_loop.cpp Memory); saved/loaded on rev2.
+  Then BUDGET 28 (all 7 grains at +24 st) with declare block_size "128"
+  (64 peaked at 95 % with budget 24): worst case 76-80 %, peak 89.6 %, 0
+  late in 30 s (23301 blocks).
+  Sync density (2026-11-17, the user: too sparse at the top): 1 bar ..
+  1/128 (ticks 96 .. 3, 1.5, 0.75; fractional ticks work with nm_grid);
+  Mac: 8/32/64 grains/s at 0.6/0.8/0.95 (120 BPM); rev2 sync 1/128 +
+  size 1 + +24 st 60-66 %, peak 88 %, 0 late.
+  Size up to the memory length (was 20 ms .. 2 s): S_raw from mem_len
+  (the setting, block rate: a pow of L would run per sample), then <=
+  L / (1 + ratio). Memory 10 s, size 1, density 1: 60-66 %, peak 74 %,
+  0 late at -24/0/+24 st. Open: ratio = 2^(semis/12) is a pow per sample
+  (pitch spray draws per sample), through a flash veneer.
+  Looper (2026-11-17): loop out (the frozen memory's previous pass, w(t-L),
+  part of the wet signal: wet = grains + level * loop, mix fades input vs
+  wet (the user, 2026-11-17), also on 7/8), memory in bars with sync
+  ("memory bars [name:memory] [if:sync]", halved while > MAXL), freeze
+  quantized to the next bar line with sync + running transport (freeze =
+  sAndH(nm_grid(96), freeze_raw)), overdub + loop feedback in live().
+  Mac: loop starts at the bar line, repeats exactly, content = the bar
+  before. rev2 frozen with loop out + overdub 65 % (max 76). Overdubs
+  after the freeze aren't saved to SD (saved once per freeze).
+  Overdub with feedback 1 built the loop up to the 16 bit limit (hard
+  clipping recorded for good: 78k of 96k samples clipped after 60 s in a
+  Mac render with input in time with the loop; measure on out 7/8, out 1/2
+  go through the output limiter and hid it): the write is nm_softclip(1.0)
+  now (peak 0.983, nothing at the limit).
+- Start and switch clicks (2026-11-17): hw::begin's codec.volume(1.0)
+  unmuted the DACs right after enable() while the program played at full
+  level: now outputGain/outputTarget 0 at begin, DACs muted again (07h FF)
+  and unmuted START_MUTE_MS = 400 ms later in update() (soft ramp, 06h
+  0x63 from the Audio library), then the program fades in. Switch fades
+  15 ms out / 30 ms in (were 5/10; the outputs are DC coupled). Not
+  checked by ear yet.
 - Program switching (stop/start): every program is freed (since
   2026-11-11, also MIDI ones). start() and stop() run with
   AudioNoInterrupts and update() waits for fReady.
@@ -298,12 +471,64 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   isn't stored then, a reboot comes back); 8 modes, 3 bent: 75 % (max 84);
   6 modes, 2 bent, block 64: 55 % (max 66). Mac ratio for it ~60x.
   Settings list and edit knobs not yet looked at on the display.
+- bitrot (program 10, 2026-11-14, new, uncommitted): data error/glitch
+  buffer (genre of a circuit-bent buffer; the user's reference was a
+  commercial module, keep it original). One delay line per channel (2^19,
+  PSRAM) read at a computed delay with linear interpolation serves every
+  error type; freeze recirculates at the event length held when freezing.
+  Dice = integer hash of event number (synced: nm_grid_index), seed,
+  rerolls, channel: pattern 2-32 repeats them. Mac render harness
+  (scratchpad br/: arch.cpp with a test loop, "@sec:path=value" changes
+  parameters during the render): no NaN, peaks < 1, freeze loop exact,
+  pattern period exact, sync on the grid. compute() 5.6 kB, ITCM 4
+  blocks. Not run on the module yet: check CPU (2 PSRAM reads + 1 write
+  per channel) and listen.
+- primetime (program 11, 2026-11-17, new, uncommitted): Lexicon Prime
+  Time II (Model 95) after its owner's manual (the user's PDF,
+  ~/Downloads/f885b7.pdf, scanned: render pages with gs). Tap table 128
+  steps a(e^(bn)-1), 0.1..640 ms, prime numbers of 0.1 ms, x memory
+  1/2/4 x range. Time base k = 1 + 0.5(sweep(1-depth) + mod depth), taps
+  read at d*k. Mac harness (scratchpad pt/: arch8.cpp, INPUT=impulse|loop):
+  echo times = table (1X/X2/memory), sweep 0.5-1.5x, repeat loop exact,
+  clock pulses exact, no NaN at full feedback + depth. compute() 5.3 kB,
+  one 2 MB memory (PSRAM). 2026-11-17: changing delay A/B crackled
+  (jumps between steps): two heads per tap crossfaded by a shared 25 ms
+  triangle, a head takes the new step only while silent (as mooSpace2);
+  the time base k stays continuous; setting change = glide (0.2 s
+  smoothing, tape-like pitch). Mac: no sample step larger than the steady
+  signal's. CPU on rev2 9 -> 15 % (max 19).
+- harmonizer (program 12, 2026-11-17, new, uncommitted): Eventide H949
+  after its instruction manual (~/Downloads/H949-Manual.pdf, scanned, no
+  theory-of-operation section: the algorithms are inferred). Pointer
+  phase advances (1 - r)/W (reverse: (1 + r)/W); alg 2 one head (splices
+  at |1-r|/W per s, measured exact), alg 1 two heads W/2 apart with
+  triangle crossfades: tones where f*W/2 = k + 1/2 (440 and 1000 Hz at
+  W = 25 ms) lose 4.8 dB, shifted up their pitch cancels into a 40 Hz
+  warble (comb colouring the manual mentions; down-shifts keep it). Mac
+  harness (scratchpad h9/: INPUT=sine with FREQ, impulse, loop; only
+  columns 0-1 are real outputs, the rest uninitialized): alg 2 pitch exact
+  .25-2.0, delays exact, micro 1.0728/.9272 at the ends, repeat loop exact,
+  no NaN, feedback at max + EQ boosts held by the converter clip.
+  compute() 7 kB, one 128 kB memory. Not run on the module yet.
 - Output setting (clip/soft/tape/fold) on every program's audio outputs
   (nemesis_output.h, `declare audio_outputs`/`declare output`); breaker
   defaults to clip, freqshift shapes 1-6. superosc's oscillator sum scales
   with root+fourth+fifth (it drove its limiter to -8 dB).
 - Open: freqshift (rewritten), superosc (drone, MIDI/V-Oct, limiter), CLIP and
   limiter display only simulated, not run on the module; check CPU of both.
+- rev2 check 2026-11-17 (firmware with bitrot, primetime, harmonizer,
+  PSRAM 144 MHz): all 12 programs switch (heap 444-464 kB after all),
+  CPU juno 4, mooSpace 56, mooSpace2 83 (max 92-95), freqshift 16,
+  superosc 25, breaker 25, growler 54, pollen 77-80, strike 48, bitrot 8,
+  primetime 9, harmonizer 10 %; growler (96k) -> mooSpace2 fine; settings
+  and the current program survive a watchdog reset (SD); all 128 juno
+  patches load (names = juno.PRE; settings exact, knob-bound values caught
+  by the knob when within its pickup window). The transport reported
+  53333 BPM with clock source IN 8 and nothing patched (a 2-sample edge
+  pair, then stale; programs got it as nm_bpm): CV edges < 1 ms apart are
+  ignored and without an active clock bpm = the tempo setting; host test
+  tests/transport/run.sh. USB mass storage for the SD card: not wanted
+  (the Teensy core has none; MTP needs extra software on macOS).
 - Open: MIDI input in the 100 us timer interrupt and the transport PLL are
   only simulated, not yet run on the module (check STATUS, juno notes over
   USB and the jack, breaker on a DAW clock, CPU load of the poll timer).
