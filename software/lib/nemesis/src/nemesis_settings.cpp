@@ -122,7 +122,9 @@ namespace nemesis
             return;
          file.printf("midi_channel=%d\n", system_settings.midiChannel);
          file.printf("popup=%d\n", system_settings.popup ? 1 : 0);
+         file.printf("knob_jump=%d\n", system_settings.knobJump ? 1 : 0);
          file.printf("brightness=%d\n", system_settings.brightness);
+         file.printf("led_brightness=%d\n", system_settings.ledBrightness);
          file.printf("cv_range=%d\n", system_settings.cvRangeVolts);
          file.printf("clock=%d\n", system_settings.clockSource);
          file.printf("tempo=%g\n", system_settings.tempo);
@@ -215,6 +217,14 @@ namespace nemesis
          card = SD.begin(BUILTIN_SDCARD);
          if (!card)
          {
+            // the card keeps power through a watchdog reset: after a safe
+            // start (card left alone) the next start found "no SD" once and
+            // the one after that the card (2026-11-17, twice). Try again.
+            delay(100);
+            card = SD.begin(BUILTIN_SDCARD);
+         }
+         if (!card)
+         {
             problem = "no SD";
             return;
          }
@@ -234,8 +244,12 @@ namespace nemesis
                system_settings.midiChannel = constrain(v, 0, 16);
             else if (strcmp(key, "popup") == 0)
                system_settings.popup = v != 0;
+            else if (strcmp(key, "knob_jump") == 0)
+               system_settings.knobJump = v != 0;
             else if (strcmp(key, "brightness") == 0)
                system_settings.brightness = constrain(v, 1, 10);
+            else if (strcmp(key, "led_brightness") == 0)
+               system_settings.ledBrightness = constrain(v, 1, 10);
             else if (strcmp(key, "cv_range") == 0)
                system_settings.cvRangeVolts = (v == 5) ? 5 : 8;
             else if (strcmp(key, "clock") == 0)

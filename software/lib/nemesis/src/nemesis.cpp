@@ -10,6 +10,7 @@
 // released under GNU GPL v3
 //
 
+#include <malloc.h>
 #include "nemesis.h"
 #include "nemesis_tdm.h"
 #include "nemesis_hw.h"
@@ -24,14 +25,18 @@ namespace nemesis
    namespace
    {
       bool codec_ready = false; // hw::begin() set the codec up (applySampleRate())
-      uint32_t unmute_at = 0;   // millis() when the codec's outputs come back after a rate change
+      uint32_t unmute_at = 0;   // millis() when the codec's outputs come back (start, rate change)
+      bool fade_in_at_unmute = false; // start: the program fades in once the DACs are on
+      // after power up the codec's outputs stay muted this long (its reference
+      // settles) and the program silent; a restart clicked loudly (2026-11-17)
+      constexpr uint32_t START_MUTE_MS = 400;
 
-      // waits (up to 30 ms) until the outputs faded out; a stopped program
+      // waits (up to 40 ms) until the outputs faded out; a stopped program
       // can't fade, so the gain is set to 0 anyway
       void fadeOut()
       {
          outputTarget = 0.0f;
-         for (uint32_t start = millis(); outputGain > 0.0f && millis() - start < 30;)
+         for (uint32_t start = millis(); outputGain > 0.0f && millis() - start < 40;)
             delay(1);
          outputGain = 0.0f;
       }
@@ -147,6 +152,9 @@ namespace nemesis
          Serial.printf("safe start: %d starts in a row ended early, SD card left alone\n", bootFailures());
       watchdogBegin();
 
+      // silent until the codec has settled (START_MUTE_MS, update())
+      outputGain = 0.0f;
+      outputTarget = 0.0f;
       tdm::begin(); // MCLK for both sample rates, before the codec starts
       settings::begin(!safe);
       transport::begin();
@@ -160,6 +168,9 @@ namespace nemesis
       run(*active);
       hw::begin(*active);
       codec_ready = true;
+      codecWrite(0x07, 0xFF); // hw::begin's codec.volume() unmuted the DACs at once
+      unmute_at = millis() + START_MUTE_MS;
+      fade_in_at_unmute = true;
       applyBlockSize();
    }
 
@@ -320,6 +331,69 @@ namespace nemesis
 
    void arenaReset() { arena_used = 0; }
 
+   extern "C" char *__brkval;
+   extern "C" unsigned long _heap_end;
+   size_t heapFree() { return (size_t)((char *)&_heap_end - __brkval) + mallinfo().fordblks; }
+
+   namespace
+   {
+      constexpr int BLOCK_LOG = 4096; // 5.5 s of 64 sample blocks (16384 took 64 kB of the heap)
+      DMAMEM uint32_t block_log[BLOCK_LOG]; // RAM2: RAM1 is full
+      volatile int block_log_pos = BLOCK_LOG; // full: not recording
+   }
+
+   void recordBlock(uint32_t cycles)
+   {
+      int p = block_log_pos;
+      if (p < BLOCK_LOG)
+      {
+         block_log[p] = cycles;
+         block_log_pos = p + 1;
+      }
+   }
+
+   void startBlockLog() { block_log_pos = 0; }
+   bool blockLogDone() { return block_log_pos >= BLOCK_LOG; }
+
+   // "BLOCKS <n>" then the cycles per block, 64 per line
+   FLASHMEM void printBlockLog(Print &out)
+   {
+      out.printf("BLOCKS %d %lu\n", BLOCK_LOG, (unsigned long)F_CPU_ACTUAL);
+      for (int i = 0; i < BLOCK_LOG; i++)
+         out.printf(i % 64 == 63 ? "%lu\n" : "%lu ", (unsigned long)block_log[i]);
+   }
+
+   extern "C" uint8_t external_psram_size; // MB, set by the Teensy startup code
+
+   namespace hw
+   {
+      // The PSRAM's clock, PLL3 PFD0 (720 MHz) / 5 = 144 MHz. It was 720 / 4 =
+      // 180 MHz, under a comment saying 133: rev1's PSRAM returned bits set
+      // that were written 0 (~200 per 64 MB read, PSRAMTEST) and a flipped
+      // smalloc pattern crashed extmem_free() on a program switch
+      // (2026-11-12); at the core's 88 MHz it had no errors. Measured on rev2
+      // (2026-11-17, mooSpace2 / pollen CPU): 180 MHz 77 / 78 %, 144 MHz
+      // 83 / 77 %, 132.9 MHz (664.6 / 5) 86 / 87 % (mooSpace2 peaks 98 %).
+      // rev2 0 errors at all three; rev1 still to test at 144. The FlexSPI is
+      // disabled and its clock gated while the divider changes (the old
+      // code's |= with CCM_CCGR_OFF gated nothing).
+      FLASHMEM void setPSRAMspeed()
+      {
+         __disable_irq();
+         if (external_psram_size)
+            arm_dcache_flush((void *)0x70000000, external_psram_size * 1024 * 1024);
+         asm volatile("dsb");
+         FLEXSPI2_MCR0 |= FLEXSPI_MCR0_MDIS;
+         CCM_CCGR7 &= ~CCM_CCGR7_FLEXSPI2(CCM_CCGR_ON);
+         CCM_CBCMR = (CCM_CBCMR & ~(CCM_CBCMR_FLEXSPI2_PODF_MASK | CCM_CBCMR_FLEXSPI2_CLK_SEL_MASK)) |
+                     CCM_CBCMR_FLEXSPI2_PODF(4) | CCM_CBCMR_FLEXSPI2_CLK_SEL(1);
+         CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_ON);
+         FLEXSPI2_MCR0 &= ~FLEXSPI_MCR0_MDIS;
+         __enable_irq();
+      }
+   }
+
+
    int currentProgram() { return current; }
 
    int programCount() { return numPrograms; }
@@ -337,8 +411,22 @@ namespace nemesis
       constexpr uint32_t BUTTON_DEBOUNCE_MS = 30;
 
       // the knob reaches the stored position, or passed it since the last reading
+      constexpr float KNOB_JUMP_MOVE = 0.01f;
+
       bool catches(Control &c, float pos, float stored)
       {
+         if (systemSettings().knobJump)
+         {
+            // the knob takes over as soon as it is moved (1 %, above its
+            // noise), measured from where it was when the value came
+            if (c.jumpRef < 0.0f)
+               c.jumpRef = pos;
+            bool moved = fabsf(pos - c.jumpRef) > KNOB_JUMP_MOVE;
+            c.catchRef = pos;
+            if (moved)
+               c.jumpRef = -1.0f; // the next stored value starts again
+            return moved;
+         }
          bool reached = fabsf(pos - stored) < CATCH_RANGE ||
                         (c.catchRef >= 0.0f && (pos - stored) * (c.catchRef - stored) < 0.0f);
          c.catchRef = pos;
@@ -546,7 +634,12 @@ namespace nemesis
          if (unmute_at && (int32_t)(millis() - unmute_at) >= 0)
          {
             unmute_at = 0;
-            codecWrite(0x07, 0x00); // the DACs after a rate change
+            codecWrite(0x07, 0x00); // the DACs after the start or a rate change (soft ramp, register 06h)
+            if (fade_in_at_unmute)
+            {
+               fade_in_at_unmute = false;
+               fadeIn();
+            }
          }
          if (wantedSampleRate(nullptr) != tdm::sampleRate())
          {

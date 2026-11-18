@@ -66,6 +66,12 @@ namespace nemesis
       // MIDI events, t in samples on the same time base as block()
       void clock(double t)
       {
+         // CV clock: edges closer than 1 ms are not a clock (24 ppqn at 300
+         // BPM is 8 ms) but a transient on the input, e.g. the codec
+         // restarting; they once read as 53333 BPM. MIDI clocks may arrive
+         // bunched in one USB packet and all count.
+         if (source == CV && lastTick >= 0 && t - lastTick < sampleRate * 0.001)
+            return;
          bool wasActive = lastTick >= 0 && t - lastTick < clockTimeout();
          if (!wasActive && !pendingStart)
          {
@@ -209,7 +215,10 @@ namespace nemesis
                outPos = std::fmin(raw, lead); // hold when the clock stops
                increment = std::fmax(0.0, std::fmin(inc, (lead - outPos) / n));
             }
-            state.bpm = interval > 0 ? (float)(sampleRate * 60 * tickSize / (TICKS_PER_QUARTER * interval)) : 0;
+            // without a clock (none yet, or it stopped) the internal tempo:
+            // programs compute note lengths from it
+            state.bpm = (interval > 0 && midiActive) ? (float)(sampleRate * 60 * tickSize / (TICKS_PER_QUARTER * interval))
+                                                     : (float)tempo;
          }
          else
          {

@@ -115,7 +115,9 @@ namespace nemesis
    {
       int midiChannel = 0;   // 0 omni, 1..16
       bool popup = true;     // rev2: show the parameter of a turned knob
+      bool knobJump = false; // rev2: a knob takes over a stored value when moved (else when it reaches it)
       int brightness = 10;   // rev2: display, 1..10
+      int ledBrightness = 5; // rev2: button LEDs, 1..10
       int cvRangeVolts = 8;  // rev2: CV A-D read 0..1 = 0..5 V or 0..8 V
       // transport
       int clockSource = 0;   // TransportCore::AUTO (MIDI clock when there is one), INTERNAL, MIDI, CV (audio IN 8)
@@ -185,6 +187,10 @@ namespace nemesis
    void resetVoltCalibration(); // design values, not stored
    void printVoltCalibration(Stream &out = Serial);
 #endif
+   // the display as one line "SCREEN <hex>" (rev2; rev1 has no display)
+   void printScreen(Stream &out = Serial);
+   // frames per second and time per frame since the last call (rev2)
+   void printDisplayStats(Stream &out = Serial);
 }
 
 #endif

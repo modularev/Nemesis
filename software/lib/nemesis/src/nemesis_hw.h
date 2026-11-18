@@ -44,7 +44,8 @@ namespace nemesis
       // a physical knob (catches stored values), not a CV-only input
       bool isKnob(int index);
 
-      // FlexSPI2 clock for the optional PSRAM
+      // FlexSPI2 clock for the optional PSRAM: 144 MHz (nemesis.cpp, called
+      // by begin() of each revision before anything uses the PSRAM)
       void setPSRAMspeed();
    }
 }

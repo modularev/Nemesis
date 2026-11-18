@@ -10,6 +10,7 @@
 
 #include "nemesis_loop.h"
 #include "nemesis.h"
+#include "nemesis_mem16.h"
 #include <SD.h>
 
 namespace nemesis
@@ -50,20 +51,69 @@ namespace nemesis
          uint32_t get32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
          uint16_t get16(const uint8_t *p) { return p[0] | p[1] << 8; }
 
-         // a canonical 44 byte WAV header, IEEE float (format 3)
-         void header(uint8_t *h, int channels, uint32_t frames)
+         // the loop memory: FAUST's float delay lines (>= 256 kB, found by the
+         // memory manager) or the program's 16 bit memory (nemesis_mem16.h)
+         struct Memory
          {
-            uint32_t bytes = frames * channels * 4;
+            int channels = 0;
+            bool pcm16 = false;
+            float *f[MAX_BUFFERS];
+            int16_t *s[MAX_BUFFERS];
+            uint32_t length[MAX_BUFFERS];
+            float get(int c, uint32_t i) const { return pcm16 ? s[c][i] * (1.0f / 32767.0f) : f[c][i]; }
+            void set(int c, uint32_t i, float v)
+            {
+               if (!pcm16)
+               {
+                  f[c][i] = v;
+                  return;
+               }
+               float x = constrain(v * 32767.0f, -32767.0f, 32767.0f);
+               s[c][i] = (int16_t)lrintf(x);
+            }
+            void clear()
+            {
+               for (int c = 0; c < channels; c++)
+                  memset(pcm16 ? (void *)s[c] : (void *)f[c], 0, length[c] * (pcm16 ? 2 : 4));
+            }
+         };
+
+         bool memoryOf(Program &program, Memory &m)
+         {
+            if (program.mem16Channels() > 0 && mem16::channels() > 0)
+            {
+               m.pcm16 = true;
+               m.channels = min(mem16::channels(), MAX_BUFFERS);
+               for (int c = 0; c < m.channels; c++)
+               {
+                  m.s[c] = mem16::buffer[c];
+                  m.length[c] = mem16::LENGTH;
+               }
+            }
+            else
+            {
+               m.pcm16 = false;
+               m.channels = program.largeBuffers(m.f, m.length, MAX_BUFFERS);
+            }
+            return m.channels > 0;
+         }
+
+         // a canonical 44 byte WAV header: IEEE float (format 3, 32 bit) or
+         // PCM (format 1, 16 bit)
+         void header(uint8_t *h, int channels, uint32_t frames, bool pcm16)
+         {
+            int bytesPerSample = pcm16 ? 2 : 4;
+            uint32_t bytes = frames * channels * bytesPerSample;
             memcpy(h, "RIFF", 4);
             put32(h + 4, 36 + bytes);
             memcpy(h + 8, "WAVEfmt ", 8);
             put32(h + 16, 16);
-            put16(h + 20, 3);
+            put16(h + 20, pcm16 ? 1 : 3);
             put16(h + 22, channels);
             put32(h + 24, (uint32_t)sampleRate());
-            put32(h + 28, (uint32_t)sampleRate() * channels * 4);
-            put16(h + 32, channels * 4);
-            put16(h + 34, 32);
+            put32(h + 28, (uint32_t)sampleRate() * channels * bytesPerSample);
+            put16(h + 32, channels * bytesPerSample);
+            put16(h + 34, bytesPerSample * 8);
             memcpy(h + 36, "data", 4);
             put32(h + 40, bytes);
          }
@@ -73,13 +123,12 @@ namespace nemesis
          // (end - L + k) mod length in every delay line
          FLASHMEM bool save(Program &program, uint32_t frames)
          {
-            float *buffers[MAX_BUFFERS];
-            uint32_t lengths[MAX_BUFFERS];
-            int channels = program.largeBuffers(buffers, lengths, MAX_BUFFERS);
-            if (channels <= 0)
+            Memory m;
+            if (!memoryOf(program, m))
                return false;
+            int channels = m.channels;
             for (int c = 0; c < channels; c++)
-               if (frames + MARGIN >= lengths[c])
+               if (frames + MARGIN >= m.length[c])
                   return false;
 
             char name[48];
@@ -93,11 +142,12 @@ namespace nemesis
 
             uint32_t start = millis();
             uint8_t h[44];
-            header(h, channels, frames);
+            header(h, channels, frames, m.pcm16);
             file.write(h, sizeof(h));
 
             const uint64_t end = program.samplesComputed();
-            static float chunk[CHUNK * MAX_BUFFERS];
+            static float chunk[CHUNK * MAX_BUFFERS]; // 16 bit: used as int16_t
+            int16_t *chunk16 = (int16_t *)chunk;
             bool ok = true;
             for (uint32_t k = 0; k < frames && ok; k += CHUNK)
             {
@@ -107,29 +157,32 @@ namespace nemesis
                // more samples: stop if it got close
                uint32_t ran = (uint32_t)(program.samplesComputed() - end);
                for (int c = 0; c < channels; c++)
-                  if (ran + MARGIN >= lengths[c] - frames + k)
+                  if (ran + MARGIN >= m.length[c] - frames + k)
                      ok = false;
                if (!ok)
                   break;
                for (int c = 0; c < channels; c++)
                {
-                  uint32_t len = lengths[c];
+                  uint32_t len = m.length[c];
                   uint32_t i = (uint32_t)((end + len - frames + k) % len);
                   for (uint32_t f = 0; f < n; f++)
                   {
-                     chunk[f * channels + c] = buffers[c][i];
+                     if (m.pcm16)
+                        chunk16[f * channels + c] = m.s[c][i];
+                     else
+                        chunk[f * channels + c] = m.f[c][i];
                      if (++i == len)
                         i = 0;
                   }
                }
-               size_t bytes = n * channels * 4;
+               size_t bytes = n * channels * (m.pcm16 ? 2 : 4);
                ok = file.write((const uint8_t *)chunk, bytes) == bytes;
             }
             file.close();
             if (!ok)
                SD.remove(name);
-            Serial.printf("loop: %s %s, %lu frames x %d in %lu ms\n", ok ? "saved" : "not saved", name,
-                          (unsigned long)frames, channels, (unsigned long)(millis() - start));
+            Serial.printf("loop: %s %s, %lu frames x %d (%d bit) in %lu ms\n", ok ? "saved" : "not saved", name,
+                          (unsigned long)frames, channels, m.pcm16 ? 16 : 32, (unsigned long)(millis() - start));
             return ok;
          }
       }
@@ -173,11 +226,10 @@ namespace nemesis
       {
          if (!program.loopRestored() || !program.loopFreeze() || *program.loopFreeze() < 0.5f)
             return;
-         float *buffers[MAX_BUFFERS];
-         uint32_t lengths[MAX_BUFFERS];
-         int channels = program.largeBuffers(buffers, lengths, MAX_BUFFERS);
-         if (channels <= 0)
+         Memory m;
+         if (!memoryOf(program, m))
             return;
+         int channels = m.channels;
 
          char name[48];
          path(program, name, sizeof(name));
@@ -186,23 +238,29 @@ namespace nemesis
             return;
          uint32_t start = millis();
          uint8_t h[44];
-         bool ok = file.read(h, sizeof(h)) == sizeof(h) && memcmp(h, "RIFF", 4) == 0 && get16(h + 20) == 3 &&
-                   get16(h + 22) == channels && get16(h + 34) == 32 && memcmp(h + 36, "data", 4) == 0;
+         // float (format 3, 32 bit) or PCM (format 1, 16 bit) files, into
+         // either memory: loops saved before the 16 bit memory load too
+         bool ok = file.read(h, sizeof(h)) == sizeof(h) && memcmp(h, "RIFF", 4) == 0 &&
+                   ((get16(h + 20) == 3 && get16(h + 34) == 32) || (get16(h + 20) == 1 && get16(h + 34) == 16)) &&
+                   get16(h + 22) == channels && memcmp(h + 36, "data", 4) == 0;
+         bool file16 = ok && get16(h + 20) == 1;
+         int bytesPerSample = file16 ? 2 : 4;
          // a loop saved at the other sample rate loads too (the buffers are
          // the same in samples): it plays an octave up or down
-         uint32_t frames = ok ? get32(h + 40) / (channels * 4) : 0;
+         uint32_t frames = ok ? get32(h + 40) / (channels * bytesPerSample) : 0;
          for (int c = 0; c < channels && ok; c++)
-            if (frames == 0 || frames + MARGIN >= lengths[c])
+            if (frames == 0 || frames + MARGIN >= m.length[c])
                ok = false;
 
          // the program has not run yet: each delay line writes its next
          // sample at 0, so the newest saved frame goes to length - 1
          static float chunk[CHUNK * MAX_BUFFERS];
+         const int16_t *chunk16 = (const int16_t *)chunk;
          for (uint32_t k = 0; k < frames && ok; k += CHUNK)
          {
             watchdogFeed();
             uint32_t n = min((uint32_t)CHUNK, frames - k);
-            size_t bytes = n * channels * 4;
+            size_t bytes = n * channels * bytesPerSample;
             if (file.read((uint8_t *)chunk, bytes) != (int)bytes)
             {
                ok = false;
@@ -210,18 +268,19 @@ namespace nemesis
             }
             for (int c = 0; c < channels; c++)
             {
-               float *buffer = buffers[c];
-               uint32_t i = lengths[c] - frames + k;
+               uint32_t i = m.length[c] - frames + k;
                for (uint32_t f = 0; f < n; f++)
-                  buffer[i + f] = chunk[f * channels + c];
+               {
+                  float v = file16 ? chunk16[f * channels + c] * (1.0f / 32767.0f) : chunk[f * channels + c];
+                  m.set(c, i + f, v);
+               }
             }
          }
          file.close();
          if (ok)
             *program.loopRestored() = frames;
          else
-            for (int c = 0; c < channels; c++)
-               memset(buffers[c], 0, lengths[c] * sizeof(float));
+            m.clear();
          watched = &program;
          frozenLength = 0;
          saved = ok; // don't write the same loop back

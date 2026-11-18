@@ -3,24 +3,29 @@
 //
 // The programs are listed in platformio.ini (custom_faust_programs);
 // lib/faust_programs/nemesis_programs.h is generated from that list.
-// On rev2 the encoder selects (turn) and loads (push) a program, the last
-// one is restored at power up. Over USB serial: "PROG <n>" selects program n
-// (1 based), "CONTROLS" lists its hardware bindings, "MEM" the PSRAM size,
-// "GET /breaker/bpm" a parameter or meter of the running program, "STATUS" shows MIDI
-// traffic, voices and NaN resets, "CAL" the CV and output calibration; the
-// CPU load is reported every 2 s (with uptime, reset cause and chip
-// temperature). Test commands: "SET <setting> <value>", "RANDOM ALL|<page>", "ROLL +|-",
-// "MUTE"/"UNMUTE" (the program's DSP not computed), "SILENT"/"LOUD" (computed,
-// outputs zeroed), "CLOCK <MHz>" (processor clock), "MIDICH <n>"
-// (MIDI channel, not saved), "RATE <Hz>" (sample rate setting, 0 auto),
-// "WRITE <path> <bytes>" + the bytes (a file on the SD card), "RAW"
-// (control inputs unfiltered), "HANG" (loop() stops:
-// the watchdog resets the module after 4 s).
+// The last program is restored at power up (rev2: hold the encoder for the
+// program list). Over USB serial: "PROG <n>" selects program n (1 based),
+// "CONTROLS" lists its hardware bindings, "MEM" the PSRAM size and heap,
+// "GET /breaker/bpm" a parameter or meter of the running program, "STATUS"
+// shows MIDI traffic, voices and NaN resets, "CAL" the CV and output
+// calibration; the CPU load is reported every 2 s (with uptime, reset cause
+// and chip temperature). Remote control (software/tools/remote): "JSON",
+// "PSET <index> <value>", "SYS <name> <value>". Test commands: "SET
+// <setting> <value>", "RANDOM ALL|<page>", "ROLL +|-", "MUTE"/"UNMUTE" (the
+// program's DSP not computed), "SILENT"/"LOUD" (computed, outputs zeroed),
+// "CLOCK <MHz>" (processor clock), "MIDICH <n>" (MIDI channel, not saved),
+// "RATE <Hz>" (sample rate setting, 0 auto), "WRITE <path> <bytes>" + the
+// bytes (a file on the SD card), "RAW" (control inputs unfiltered),
+// "BLOCKS" (cycles of compute() of 4096 consecutive audio blocks: find slow
+// single blocks), "MONITOR 0|1" (display updates off/on), "SCREEN" (the
+// display's framebuffer as hex), "PSRAMTEST" (4 MB pattern written and read back 4 times: errors of the
+// PSRAM bus), "HANG" (loop() stops: the watchdog resets the module after 4 s).
 //
 
 #include <nemesis.h>
 #include "nemesis_programs.h"
 #include <nemesis_hw.h>
+#include <nemesis_remote.h>
 
 extern "C" uint8_t external_psram_size; // MB, set by the startup code
 extern "C" char *__brkval;
@@ -62,6 +67,76 @@ void readCommands()
          p->randomize(page);
          nemesis::programSettingsChanged(*p);
          Serial.printf("OK RANDOM %d\n", page);
+      }
+#if NEMESIS_HW_REV == 2
+      else if (sscanf(command, "MONITOR %d", &n) == 1)
+      {
+         // test: display updates on/off (1/0)
+         nemesis::showMonitor(n != 0);
+         Serial.printf("OK MONITOR %d\n", n != 0);
+      }
+#endif
+      else if (strcmp(command, "BLOCKS") == 0)
+      {
+         // test: the cycles of compute() of 4096 consecutive audio blocks
+         nemesis::startBlockLog();
+         elapsedMillis waited;
+         while (!nemesis::blockLogDone() && waited < 40000)
+         {
+            nemesis::watchdogFeed();
+            delay(10);
+         }
+         nemesis::printBlockLog(Serial);
+      }
+      else if (strcmp(command, "SCREEN") == 0)
+         nemesis::printScreen(Serial);
+      else if (strcmp(command, "PSRAMTEST") == 0)
+      {
+         // a free PSRAM block filled with a pattern and read back from the
+         // chip (cache cleared) several times: read/write errors of the bus
+         const uint32_t words = 1u << 20; // 4 MB
+         uint32_t *m = (uint32_t *)extmem_malloc(words * 4);
+         if (!m || (uint32_t)m < 0x70000000u)
+         {
+            Serial.println("PSRAMTEST: no 4 MB PSRAM block free");
+            free(m);
+         }
+         else
+         {
+            uint32_t x = micros() | 1, seed = x;
+            for (uint32_t i = 0; i < words; i++)
+            {
+               x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+               m[i] = x;
+            }
+            arm_dcache_flush_delete(m, words * 4);
+            uint32_t errors = 0, first = 0, firstGot = 0, firstWant = 0;
+            elapsedMillis took;
+            for (int pass = 0; pass < 4; pass++)
+            {
+               x = seed;
+               for (uint32_t i = 0; i < words; i++)
+               {
+                  x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+                  if (m[i] != x)
+                  {
+                     if (!errors++)
+                     {
+                        first = i;
+                        firstGot = m[i];
+                        firstWant = x;
+                     }
+                  }
+               }
+               arm_dcache_delete(m, words * 4);
+               nemesis::watchdogFeed();
+            }
+            Serial.printf("PSRAMTEST: %lu errors in 4 x 4 MB (%lu ms)", (unsigned long)errors, (unsigned long)(uint32_t)took);
+            if (errors)
+               Serial.printf(", first at word %lu: %08lx, wanted %08lx", (unsigned long)first, (unsigned long)firstGot, (unsigned long)firstWant);
+            Serial.println();
+            extmem_free(m);
+         }
       }
       else if (strncmp(command, "SET ", 4) == 0)
       {
@@ -105,6 +180,31 @@ void readCommands()
          delay(50);
          uint32_t got = set_arm_clock(mhz * 1000000);
          Serial.printf("OK CLOCK %lu MHz\n", (unsigned long)(got / 1000000));
+      }
+      else if (strcmp(command, "JSON") == 0)
+      {
+         // remote control (software/tools/remote): the state as one JSON line
+         nemesis::printRemoteState(Serial);
+      }
+      else if (strncmp(command, "PSET ", 5) == 0)
+      {
+         // PSET <control index> <value>: a program setting
+         int index;
+         float value;
+         if (sscanf(command + 5, "%d %f", &index, &value) == 2 && nemesis::setProgramSetting(index, value))
+            Serial.printf("OK PSET %d\n", index);
+         else
+            Serial.printf("? PSET %s\n", command + 5);
+      }
+      else if (strncmp(command, "SYS ", 4) == 0)
+      {
+         // SYS <name> <value>: a system setting (names as in the JSON)
+         char name[32];
+         float value;
+         if (sscanf(command + 4, "%31s %f", name, &value) == 2 && nemesis::setSystemSetting(name, value))
+            Serial.printf("OK SYS %s\n", name);
+         else
+            Serial.printf("? SYS %s\n", command + 4);
       }
       else if (strncmp(command, "WRITE ", 6) == 0)
       {
@@ -180,8 +280,22 @@ void readCommands()
          Serial.printf("OK %s\n", command);
       }
       else if (strcmp(command, "MEM") == 0)
-         Serial.printf("PSRAM %u MB, heap free %u kB (top %u kB)\n", external_psram_size,
-                       (unsigned)(heapTop() + mallinfo().fordblks) / 1024, (unsigned)heapTop() / 1024);
+      {
+         // the largest block malloc() can give now (binary search by trial)
+         size_t lo = 0, hi = heapTop() + mallinfo().fordblks;
+         while (hi - lo > 1024)
+         {
+            size_t mid = (lo + hi) / 2;
+            void *p = malloc(mid);
+            if (p)
+               lo = mid;
+            else
+               hi = mid;
+            free(p);
+         }
+         Serial.printf("PSRAM %u MB, heap free %u kB (top %u kB, largest block %u kB)\n", external_psram_size,
+                       (unsigned)(heapTop() + mallinfo().fordblks) / 1024, (unsigned)heapTop() / 1024, (unsigned)lo / 1024);
+      }
 #if NEMESIS_HW_REV == 2
       else if (strcmp(command, "CAL") == 0)
          nemesis::printVoltCalibration(Serial);
@@ -190,6 +304,7 @@ void readCommands()
       {
          nemesis::program(nemesis::currentProgram())->printStatus(Serial);
          nemesis::printAudioStatus(Serial);
+         nemesis::printDisplayStats(Serial);
       }
    }
 }

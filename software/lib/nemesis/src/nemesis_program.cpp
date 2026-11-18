@@ -119,6 +119,10 @@ namespace nemesis
       {
          fPendingUnit = value;
       }
+      else if (strcmp(key, "digits") == 0)
+      {
+         fPendingDigits = atoi(value);
+      }
       else if (strcmp(key, "scale") == 0)
       {
          fPendingLog = strcmp(value, "log") == 0 || strcmp(value, "exp") == 0;
@@ -304,6 +308,7 @@ namespace nemesis
          fIndicators.push_back({zone, min, max, label, fPendingMenu, fPendingStatus || fPendingLimit ? -1 : fPendingLed,
                                 fPendingUnit, fPendingLimit});
          fIndicators.back().activity = fPendingActivity;
+         fIndicators.back().digits = fPendingDigits;
       }
 
       const char *displayLabel = label;
@@ -320,6 +325,7 @@ namespace nemesis
          fControls.push_back({zone, min, max, step, input, 0, gate, displayLabel, fPendingMenu, init, false, log, fPendingUnit,
                               fPendingVolts, !fPendingUnlisted});
          fControls.back().name = fPendingName;
+         fControls.back().digits = fPendingDigits;
          Control &added = fControls.back();
          added.cond = fPendingCond;
          added.condOn = fPendingCondOn;
@@ -362,6 +368,7 @@ namespace nemesis
       fPendingMenu = nullptr;
       fPendingLog = false;
       fPendingUnit = nullptr;
+      fPendingDigits = -1;
       fPendingVolts = false;
       fPendingUnlisted = false;
       fPendingName = nullptr;
@@ -386,7 +393,11 @@ namespace nemesis
 
    FLASHMEM void Program::declareProgram(const char *key, const char *value)
    {
-      if (strcmp(key, "output") == 0)
+      if (strcmp(key, "home") == 0)
+         fHomeLayout = value;
+      else if (strcmp(key, "mem16") == 0)
+         fMem16Channels = atoi(value);
+      else if (strcmp(key, "output") == 0)
       {
          int mode = output::modeFromName(value);
          if (mode >= 0)

@@ -142,14 +142,6 @@ namespace nemesis
          }
       }
 
-      FLASHMEM void setPSRAMspeed()
-      {
-         CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_OFF);
-         CCM_CBCMR = (CCM_CBCMR & ~(CCM_CBCMR_FLEXSPI2_PODF_MASK | CCM_CBCMR_FLEXSPI2_CLK_SEL_MASK)) | CCM_CBCMR_FLEXSPI2_PODF(3) // 4 and 2 133MHz
-                     | CCM_CBCMR_FLEXSPI2_CLK_SEL(1);
-         CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_ON);
-      }
-
       FLASHMEM void begin(const Program &program)
       {
          setPSRAMspeed();
@@ -259,6 +251,10 @@ namespace nemesis
       // pending catch: knobs act immediately
       bool isKnob(int index) { return false; }
    }
+
+   // no display on rev1
+   FLASHMEM void printScreen(Stream &out) { out.println("SCREEN none"); }
+   FLASHMEM void printDisplayStats(Stream &out) {}
 }
 
 #endif

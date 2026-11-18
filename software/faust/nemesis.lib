@@ -43,7 +43,13 @@ nm_external       = hslider("transport external [transport:external]", 0, 0, 1, 
 
 // samples since the block position changed, i.e. since the block start while running
 nm_counter(reset) = (+(1) : *(1 - reset)) ~ _;
-nm_position = fmod(nm_block_position + nm_counter(nm_block_position != nm_block_position') * nm_increment, nm_wrap);
+nm_position = nm_wrapped(nm_block_position + nm_counter(nm_block_position != nm_block_position') * nm_increment, nm_wrap);
+
+// x wrapped to 0 .. n: floor is one instruction on the Teensy 4 (vrintm),
+// fmod a call into libm through a flash veneer on every sample, whose cache
+// line evicted mooSpace2's compute() from the instruction cache (95 % instead
+// of 83 % CPU, 2026-11-17); use it instead of fmod / float % in sample loops
+nm_wrapped(x, n) = x - n * floor(x / n);
 
 nm_grid_index(ticks) = floor(nm_position / ticks);
 // compares the step of this and the previous sample with the same length,

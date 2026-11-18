@@ -54,6 +54,9 @@
 
 namespace nemesis
 {
+   // I2C at 400 kHz while the display transfers (the library's default and
+   // the SSD1306's specification): at 1 MHz frames took up to 358 ms
+   // (2026-11-17, timeouts), so changes are sent only when the frame changed
    Adafruit_SSD1306 display(128, 32, &Wire, -1);
 
    namespace hw
@@ -93,21 +96,71 @@ namespace nemesis
          constexpr int ADC_AVERAGING = 32;
          constexpr int ADC_RES = 12;
          constexpr float ADC_MAX = 4095.0f;
-         constexpr uint8_t ADC_ISR_PRIORITY = 192; // below audio
+         constexpr uint8_t ADC_ISR_PRIORITY = 224; // below the audio update (IRQ_SOFTWARE 208; a lower number is a higher priority: 192 preempted the audio ~30000 times a second, mooSpace2 95 % instead of 83, 2026-11-17)
 
          // adaptive one pole filter: slow while a knob rests (removes the
          // remaining noise), fast while it is turned (no lag)
-         constexpr float POT_TAU_REST = 0.02f; // seconds
-         constexpr float POT_SNAP_LSB = 24.0f; // difference for full speed, ~20x the noise
+         constexpr float POT_TAU_REST = 0.05f; // seconds (0.02 let pot A flicker, 2026-11-17)
+         constexpr float POT_SNAP_LSB = 64.0f; // difference for full speed, ~10x the rest noise (sd 6-7 LSB with the audio clock pickup; 24 let it through)
+         // output in steps of 4 LSB (1024 steps, 10 bit), moving only when the
+         // filtered value is 2 steps away: resting pots don't flicker (the
+         // audio clocks couple into the wipers, hardware/rev2/KNOWN_ISSUES.md)
+         constexpr float POT_STEP_LSB = 4.0f;
+         constexpr float POT_HYSTERESIS_LSB = 2.0f * POT_STEP_LSB;
 
          constexpr int led_pin[NUM_LEDS] = {33, 34};
+
+         // LEDs dimmed by pulse density (pin 34 has no hardware PWM): a 4 kHz
+         // timer adds each LED's duty (1/4096 units) to an accumulator and
+         // lights it on the carry; integer work on fixed pins, ~50 cycles a
+         // tick (16 kHz with floats cost mooSpace2 ~4 points: it interrupts
+         // the audio, above it so the LEDs don't stall). The loop shapes on/off
+         // into an envelope: up in 5 ms, off decays (30 ms, gamma 2.2), the
+         // peak from the LED brightness setting: 1..10 = 3 .. 100 % duty,
+         // exponential (lower would flicker at 4 kHz); below 2 % it is off.
+         constexpr uint32_t LED_TICK_US = 250;
+         constexpr uint8_t LED_ISR_PRIORITY = 64;
+         constexpr float LED_ATTACK_S = 0.005f;
+         constexpr float LED_DECAY_S = 0.03f; // 80 ms stayed lit too long when blinking (the user)
+         IntervalTimer led_timer;
+         volatile uint16_t led_duty[NUM_LEDS]; // 0..4096
+         uint16_t led_acc[NUM_LEDS];
+         bool led_on[NUM_LEDS];
+         float led_env[NUM_LEDS];
+         elapsedMicros since_leds;
+
+         void ledTick()
+         {
+            led_acc[0] += led_duty[0];
+            led_acc[1] += led_duty[1];
+            digitalWriteFast(33, led_acc[0] >= 4096 ? HIGH : LOW);
+            digitalWriteFast(34, led_acc[1] >= 4096 ? HIGH : LOW);
+            led_acc[0] &= 4095;
+            led_acc[1] &= 4095;
+         }
+
+         void updateLeds()
+         {
+            float dt = since_leds * 1e-6f;
+            since_leds = 0;
+            float peak = 0.03f * powf(1.0f / 0.03f, (systemSettings().ledBrightness - 1) / 9.0f);
+            for (int i = 0; i < NUM_LEDS; i++)
+            {
+               if (led_on[i])
+                  led_env[i] = min(1.0f, led_env[i] + dt / LED_ATTACK_S);
+               else
+                  led_env[i] *= expf(-dt / LED_DECAY_S);
+               float duty = peak * powf(led_env[i], 2.2f);
+               led_duty[i] = duty < 0.02f ? 0 : (uint16_t)(duty * 4096.0f);
+            }
+         }
          constexpr int switch_pin[NUM_BUTTONS] = {35, 36};
          constexpr int CODEC_ENABLE_PIN = 9;
          constexpr int ENC_A_PIN = 4;
          constexpr int ENC_B_PIN = 5;
          constexpr int ENC_SW_PIN = 6;
 
-         constexpr uint32_t DISPLAY_INTERVAL_MS = 100;
+         constexpr uint32_t DISPLAY_INTERVAL_MS = 25; // redraws; sent only when changed (pushDisplay). 100 ms + transfer gave 8-9 frames/s: breaker's beat count (sixteenths, 125 ms at 120 BPM) skipped steps
 
          ADC adc;
 
@@ -126,7 +179,8 @@ namespace nemesis
             int count = 0;
             int current = 0;
             float filtered[POT_NUM]; // in LSB
-            float last[POT_NUM][2];  // the two conversions before, for the median
+            float stepped[POT_NUM];  // the output, in POT_STEP_LSB steps
+            float last[POT_NUM][4];  // the four conversions before, for the median
             bool primed[POT_NUM];
             float rest_coeff = 0.0f;
             elapsedMicros since_start;
@@ -137,23 +191,38 @@ namespace nemesis
          {
             int pot = s.pots[s.current];
             float now = s.module->readSingle();
-            // median of the last 3 conversions: a single spike (pot D reached
-            // ~30 LSB now and then, 2026-11-11) doesn't count as turning and
-            // can't open the popup; a real movement arrives a conversion later
+            // median of the last 5 conversions: short bursts (one conversion
+            // ~30 LSB off, 2026-11-11; two in a row 50-160 LSB off, from the
+            // audio clock pickup, 2026-11-17) don't count as turning, can't
+            // open the popup or move the stepped output; a real movement
+            // arrives two conversions later (< 1 ms)
             float *h = s.last[s.current];
             if (!s.primed[s.current])
             {
-               h[0] = h[1] = now;
+               h[0] = h[1] = h[2] = h[3] = now;
                s.primed[s.current] = true;
             }
-            float x = max(min(h[0], h[1]), min(max(h[0], h[1]), now));
+            float w[5] = {h[0], h[1], h[2], h[3], now};
+            for (int i = 1; i < 5; i++) // insertion sort of 5
+               for (int j = i; j > 0 && w[j] < w[j - 1]; j--)
+               {
+                  float t = w[j];
+                  w[j] = w[j - 1];
+                  w[j - 1] = t;
+               }
+            float x = w[2];
             h[0] = h[1];
-            h[1] = now;
+            h[1] = h[2];
+            h[2] = h[3];
+            h[3] = now;
             float d = x - s.filtered[s.current];
             float snap = min(fabsf(d) / POT_SNAP_LSB, 1.0f);
             float a = s.rest_coeff + (1.0f - s.rest_coeff) * snap * snap;
             s.filtered[s.current] += a * d;
-            pot_val[pot] = s.filtered[s.current] / ADC_MAX;
+            float &out = s.stepped[s.current];
+            if (fabsf(s.filtered[s.current] - out) > POT_HYSTERESIS_LSB)
+               out = min(roundf(s.filtered[s.current] / POT_STEP_LSB) * POT_STEP_LSB, ADC_MAX);
+            pot_val[pot] = out / ADC_MAX;
 
             s.current = (s.current + 1) % s.count;
             s.module->startSingleRead(pot_pin[s.pots[s.current]]);
@@ -164,6 +233,9 @@ namespace nemesis
 
          bool monitor = true;
          elapsedMillis since_display;
+         // STATUS: frames drawn since the last report, their time (drawing + transfer)
+         uint32_t display_frames = 0, display_us = 0, display_max_us = 0;
+         elapsedMillis display_stats_since;
 
          // screens: home (program, CPU load), program settings (turn the
          // encoder), program list (click), system settings (press and hold)
@@ -189,7 +261,7 @@ namespace nemesis
 
          // entries of the settings lists
          enum ItemKind { ITEM_SETTING, ITEM_ROUTE, ITEM_RUN, ITEM_CLOCK, ITEM_CLOCK_PULSES,
-                         ITEM_TEMPO, ITEM_OFFSET, ITEM_MIDI, ITEM_POPUP, ITEM_BRIGHTNESS, ITEM_CV_RANGE,
+                         ITEM_TEMPO, ITEM_OFFSET, ITEM_MIDI, ITEM_POPUP, ITEM_KNOBS, ITEM_BRIGHTNESS, ITEM_LED_BRIGHTNESS, ITEM_CV_RANGE,
                          ITEM_BLOCK, ITEM_RATE, ITEM_SYSTEM, ITEM_SECTION };
          constexpr int BLOCK_CHOICES[] = {0, 32, 64, 128}; // 0: auto
          constexpr int PPQN_CHOICES[] = {1, 2, 4, 24};
@@ -211,8 +283,11 @@ namespace nemesis
          constexpr uint32_t PARAM_SHOW_MS = 1500;
          constexpr uint32_t ROLL_SHOW_MS = 1500;   // "roll #n" in the header after a roll
          constexpr uint32_t CLIP_SHOW_MS = 500;
-         constexpr uint32_t PARAM_REDRAW_MS = 40;
+         constexpr uint32_t PARAM_REDRAW_MS = 25;
          constexpr float PARAM_MOVE = 0.01f;       // change that counts as turning, ~40x the pot noise
+         // after the start the inputs settle (X/Y/Z read through the CV ADC,
+         // whose smoothing starts at 0): no popup for a turn before this
+         constexpr uint32_t INPUT_SETTLE_MS = 1500;
          constexpr uint32_t PARAM_REST_MS = 500;   // still this long: the movement ended
          constexpr uint32_t PARAM_MOD_MS = 5000;   // moving longer than this: modulation, ignored
          struct InputWatch
@@ -311,6 +386,7 @@ namespace nemesis
                PotScanner &s = scanners[n];
                s.module = modules[n];
                s.filtered[s.count] = s.module->analogRead(pot_pin[i]);
+               s.stepped[s.count] = s.filtered[s.count];
                pot_val[i] = s.filtered[s.count] / ADC_MAX;
                s.pots[s.count++] = i;
             }
@@ -331,6 +407,24 @@ namespace nemesis
                s.module->enableInterrupts(n == 0 ? adc0Isr : adc1Isr, ADC_ISR_PRIORITY);
                s.module->startSingleRead(pot_pin[s.pots[0]]);
             }
+         }
+
+         // sends the frame only when it changed (a checksum of the 512 bytes),
+         // and at least once a second: redrawing every 25 ms costs ~1 ms of
+         // drawing when nothing changes instead of a 12 ms I2C transfer
+         uint32_t sent_sum = 0;
+         elapsedMillis since_sent;
+         void pushDisplay()
+         {
+            const uint8_t *b = display.getBuffer();
+            uint32_t sum = 2166136261u; // FNV-1a
+            for (int i = 0; i < 128 * 32 / 8; i++)
+               sum = (sum ^ b[i]) * 16777619u;
+            if (sum == sent_sum && since_sent < 1000)
+               return;
+            display.display();
+            sent_sum = sum;
+            since_sent = 0;
          }
 
          FLASHMEM void splash(const char *programName)
@@ -543,6 +637,8 @@ namespace nemesis
                return;
             if (c.gate)
                snprintf(text, size, "%s", v > 0.5f ? "on" : "off");
+            else if (c.digits >= 0)
+               snprintf(text, size, "%.*f", c.digits, v);
             else if (c.log) // log ranges: 3 significant places
                snprintf(text, size, fabsf(v) < 10.0f ? "%.2f" : fabsf(v) < 100.0f ? "%.1f" : "%.0f", v);
             else
@@ -623,6 +719,199 @@ namespace nemesis
             display.print(text);
          }
 
+         // ---- the home layout ('declare home "A|B";') --------------------
+
+         // item k of the layout ('|' separated, spaces trimmed), false if none
+         bool layoutItem(const char *layout, int k, char *item, size_t size)
+         {
+            for (int i = 0; layout && i < k; i++)
+            {
+               layout = strchr(layout, '|');
+               if (layout)
+                  layout++;
+            }
+            if (!layout || !*layout)
+               return false;
+            while (*layout == ' ')
+               layout++;
+            size_t n = 0;
+            while (layout[n] && layout[n] != '|')
+               n++;
+            while (n > 0 && layout[n - 1] == ' ')
+               n--;
+            n = min(n, size - 1);
+            memcpy(item, layout, n);
+            item[n] = '\0';
+            // "A=delay A": shown as A, the part after '=' names its controls
+            char *eq = strchr(item, '=');
+            if (eq)
+            {
+               *eq = '\0';
+               for (char *e = eq - 1; e >= item && *e == ' '; e--)
+                  *e = '\0';
+            }
+            return n > 0;
+         }
+
+         // the controls of layout item k ("A=delay A,depth": "delay A,depth";
+         // without '=' the item itself), false if none
+         bool layoutControls(const char *layout, int k, char *controls, size_t size)
+         {
+            for (int i = 0; layout && i < k; i++)
+            {
+               layout = strchr(layout, '|');
+               if (layout)
+                  layout++;
+            }
+            if (!layout || !*layout)
+               return false;
+            const char *end = strchr(layout, '|');
+            size_t n = end ? (size_t)(end - layout) : strlen(layout);
+            const char *eq = (const char *)memchr(layout, '=', n);
+            if (eq)
+            {
+               n -= eq + 1 - layout;
+               layout = eq + 1;
+            }
+            n = min(n, size - 1);
+            memcpy(controls, layout, n);
+            controls[n] = '\0';
+            return true;
+         }
+
+         // a control whose value the home screen shows (its own label, or
+         // named after '=' in the layout): turning it opens no popup
+         bool controlOnHome(const Program &program, const Control &c)
+         {
+            char list[64];
+            for (int k = 0; k < 3 && layoutControls(program.homeLayout(), k, list, sizeof(list)); k++)
+            {
+               for (char *name = strtok(list, ","); name; name = strtok(nullptr, ","))
+               {
+                  while (*name == ' ')
+                     name++;
+                  char *e = name + strlen(name);
+                  while (e > name && e[-1] == ' ')
+                     *--e = '\0';
+                  if (strcmp(name, c.label) == 0 || strcmp(name, c.shown()) == 0)
+                     return true;
+               }
+            }
+            return false;
+         }
+
+         // a bargraph's label that the layout shows big (not in the top line)
+         bool inLayout(const Program &program, const char *label)
+         {
+            char item[24];
+            for (int k = 0; k < 3 && layoutItem(program.homeLayout(), k, item, sizeof(item)); k++)
+               if (strcmp(item, label) == 0)
+                  return true;
+            return false;
+         }
+
+         // the value of a layout item without its unit, its caption, its unit
+         void layoutValue(const Program &program, const char *item, char *value, size_t vsize, const char **unit)
+         {
+            *unit = nullptr;
+            const TransportState &t = transportState();
+            if (strcmp(item, "@tempo") == 0)
+            {
+               snprintf(value, vsize, "%.1f", t.bpm);
+               *unit = "BPM";
+               return;
+            }
+            if (strcmp(item, "@beat") == 0)
+            {
+               // bar.beat.sixteenth over the transport's 16 bars
+               int sixteenths = (int)(t.position / 6.0);
+               if (t.running)
+                  snprintf(value, vsize, "%d.%d.%d", sixteenths / 16 % 16 + 1, sixteenths / 4 % 4 + 1, sixteenths % 4 + 1);
+               else
+                  snprintf(value, vsize, "stop");
+               return;
+            }
+            for (const Indicator &i : program.indicators())
+               if (strcmp(i.label, item) == 0)
+               {
+                  Control c = {};
+                  c.min = i.min;
+                  c.max = i.max;
+                  c.menu = i.menu;
+                  c.digits = i.digits;
+                  formatValue(c, *i.zone, value, vsize);
+                  *unit = i.unit;
+                  return;
+               }
+            for (const Control &k : program.controls())
+               if (strcmp(k.label, item) == 0 || strcmp(k.shown(), item) == 0)
+               {
+                  Control c = k;
+                  c.unit = nullptr;
+                  formatValue(c, k.input < 0 ? k.value : *k.zone, value, vsize);
+                  *unit = k.unit;
+                  return;
+               }
+            snprintf(value, vsize, "?");
+         }
+
+         int textWidth(const char *text)
+         {
+            int16_t x1, y1;
+            uint16_t w, h;
+            display.getTextBounds(text, 0, 20, &x1, &y1, &w, &h);
+            return x1 + w;
+         }
+
+         // the big area under the top line: one value as big as it fits, two
+         // or three side by side with a caption (name and unit) above each
+         FLASHMEM void drawLayout(const Program &program)
+         {
+            char items[3][24];
+            int n = 0;
+            while (n < 3 && layoutItem(program.homeLayout(), n, items[n], sizeof(items[n])))
+               n++;
+            char value[32];
+            const char *unit;
+            if (n == 1)
+            {
+               layoutValue(program, items[0], value, sizeof(value), &unit);
+               if (unit)
+                  snprintf(value + strlen(value), sizeof(value) - strlen(value), " %s", unit);
+               const GFXfont *fonts[] = {&Michroma16, &Michroma13Oblique, &Oxanium10};
+               for (const GFXfont *f : fonts)
+               {
+                  display.setFont(f);
+                  if (textWidth(value) <= 128)
+                     break;
+               }
+               display.setCursor(0, 29);
+               display.print(value);
+               return;
+            }
+            int column = 128 / max(1, n);
+            for (int k = 0; k < n; k++)
+            {
+               int x = k * column;
+               layoutValue(program, items[k], value, sizeof(value), &unit);
+               char caption[32];
+               if (items[k][0] == '@')
+                  snprintf(caption, sizeof(caption), "%s", unit ? unit : items[k] + 1);
+               else if (unit)
+                  snprintf(caption, sizeof(caption), "%s %s", items[k], unit);
+               else
+                  snprintf(caption, sizeof(caption), "%s", items[k]);
+               display.setFont(&Oxanium10);
+               display.setCursor(x, 17);
+               display.print(caption);
+               display.setFont(&Michroma13Oblique);
+               if (textWidth(value) > column - 3)
+                  display.setFont(&Oxanium10);
+               display.setCursor(x, 29); // descenders (y) end 3 px lower
+               display.print(value);
+            }
+         }
+
          FLASHMEM void drawHome()
          {
             char text[16];
@@ -637,8 +926,9 @@ namespace nemesis
             display.getTextBounds(program.name(), 0, 8, &x1, &y1, &w, &h);
             display.setCursor(x1 < 0 ? -x1 : 0, 8);
             bool paged = program.pagerIndex() >= 0;
-            bool homed = !paged && program.homeIndex() >= 0;
-            if (paged || homed) // the big line shows the page or the home setting: the program's name moves up
+            bool laid = !paged && program.homeLayout();
+            bool homed = !paged && !laid && program.homeIndex() >= 0;
+            if (paged || homed || laid) // the big line shows the page, the layout or the home setting: the program's name moves up
             {
                display.print(program.name());
                display.print(' ');
@@ -654,7 +944,9 @@ namespace nemesis
             {
                const TransportState &t = transportState();
                display.print(t.cvClock ? F("IN8 ") : t.external ? F("MIDI ") : F("int "));
-               if (t.running)
+               if (laid && inLayout(program, "@tempo"))
+                  ; // the tempo is in the big area
+               else if (t.running)
                   display.printf("%.1f ", t.bpm);
                else
                   display.print(F("stop "));
@@ -664,26 +956,45 @@ namespace nemesis
             {
                if (i.limit) // linear gain of the limiter
                   limit_db = min(limit_db, 20.0f * log10f(max(*i.zone, 0.001f)));
-               if (i.led >= 0 || i.limit || i.activity >= 0)
+               if (i.led >= 0 || i.limit || i.activity >= 0 || (laid && inLayout(program, i.label)))
                   continue;
                Control c = {};
                c.min = i.min;
                c.max = i.max;
                c.menu = i.menu;
                c.unit = i.unit;
+               c.digits = i.digits;
                formatValue(c, *i.zone, text, sizeof(text));
                display.print(text);
                display.print(' ');
             }
-            // top right: CLIP after an output clipped, else limiting, else the CPU load
+            // top right: CLIP after an output clipped, else limiting, else the
+            // CPU load as a number in the built-in 5 x 7 font (small: "cpu 9%"
+            // took a third of the line, a bar said too little)
             bool clip = millis() - activeProgram().lastClipMillis() < CLIP_SHOW_MS && activeProgram().lastClipMillis() != 0;
-            if (clip)
+            if (!clip && limit_db >= -0.5f)
+            {
+               // updated twice a second: changing every frame, it made every
+               // frame differ and be sent (pushDisplay)
+               static int shown_load = 0;
+               static elapsedMillis since_load = 1000;
+               if (since_load >= 500)
+               {
+                  shown_load = (int)constrain(cpuLoad(), 0.0f, 999.0f);
+                  since_load = 0;
+               }
+               snprintf(text, sizeof(text), "%d%%", shown_load);
+               display.setFont(nullptr); // classic font: the cursor is the top left corner
+               display.setCursor(128 - 6 * (int)strlen(text), 1); // 5 px glyphs, 1 px apart: the last one ends at 127
+               display.print(text);
+               display.setFont(&Michroma16);
+               text[0] = '\0';
+            }
+            else if (clip)
                snprintf(text, sizeof(text), "CLIP");
-            else if (limit_db < -0.5f)
-               snprintf(text, sizeof(text), "lim %d dB", (int)roundf(limit_db));
             else
-               snprintf(text, sizeof(text), "cpu %d%%", (int)cpuLoad());
-            int16_t x = rightAligned(text, 8);
+               snprintf(text, sizeof(text), "lim %d dB", (int)roundf(limit_db));
+            int16_t x = text[0] ? rightAligned(text, 8) : 128;
             if (clip)
             {
                display.fillRect(x - 2, 0, 130 - x, 10, WHITE);
@@ -694,14 +1005,16 @@ namespace nemesis
             display.setTextColor(WHITE);
             display.setFont(&Michroma16);
             display.setCursor(0, 29); // descenders (g, j, p) end 3 px below the baseline
-            if (homed)
+            if (laid)
+               drawLayout(program);
+            else if (homed)
                drawHomeValue(program);
             else if (!paged)
                display.print(program.name());
             else
                drawPage(program);
             display.setFont(&Oxanium10);
-            display.display();
+            pushDisplay();
          }
 
          // the control bound to a hardware input
@@ -720,7 +1033,7 @@ namespace nemesis
             {
                InputWatch &w = watch[i];
                float v = input(i);
-               if (!watch_valid)
+               if (!watch_valid || millis() < INPUT_SETTLE_MS)
                {
                   w.reference = v;
                   continue;
@@ -744,7 +1057,7 @@ namespace nemesis
                param_input = i;
                since_param = 0;
             }
-            watch_valid = true;
+            watch_valid = millis() >= INPUT_SETTLE_MS;
          }
 
          // parameter name (large if it fits), a bar and the value; a page's
@@ -797,7 +1110,7 @@ namespace nemesis
             display.setFont(&Oxanium10);
             display.setCursor(rightAligned(text, 31), 31);
             display.print(text);
-            display.display();
+            pushDisplay();
          }
 
          // ---- settings lists ---------------------------------------------
@@ -854,7 +1167,9 @@ namespace nemesis
                items[item_count++] = {ITEM_OFFSET, 0};
                items[item_count++] = {ITEM_MIDI, 0};
                items[item_count++] = {ITEM_POPUP, 0};
+               items[item_count++] = {ITEM_KNOBS, 0};
                items[item_count++] = {ITEM_BRIGHTNESS, 0};
+               items[item_count++] = {ITEM_LED_BRIGHTNESS, 0};
                items[item_count++] = {ITEM_CV_RANGE, 0};
                items[item_count++] = {ITEM_BLOCK, 0};
                items[item_count++] = {ITEM_RATE, 0};
@@ -886,8 +1201,12 @@ namespace nemesis
                return "MIDI channel";
             case ITEM_POPUP:
                return "knob popup";
+            case ITEM_KNOBS:
+               return "knobs";
             case ITEM_BRIGHTNESS:
                return "brightness";
+            case ITEM_LED_BRIGHTNESS:
+               return "LED brightness";
             case ITEM_CV_RANGE:
                return "CV A-D range";
             case ITEM_BLOCK:
@@ -965,8 +1284,14 @@ namespace nemesis
             case ITEM_POPUP:
                snprintf(text, size, "%s", s.popup ? "on" : "off");
                break;
+            case ITEM_KNOBS:
+               snprintf(text, size, "%s", s.knobJump ? "jump" : "catch");
+               break;
             case ITEM_BRIGHTNESS:
                snprintf(text, size, "%d", s.brightness);
+               break;
+            case ITEM_LED_BRIGHTNESS:
+               snprintf(text, size, "%d", s.ledBrightness);
                break;
             case ITEM_CV_RANGE:
                snprintf(text, size, "0-%dV", s.cvRangeVolts);
@@ -1089,8 +1414,14 @@ namespace nemesis
             case ITEM_POPUP:
                s.popup = delta > 0;
                break;
+            case ITEM_KNOBS:
+               s.knobJump = delta > 0;
+               break;
             case ITEM_BRIGHTNESS:
                s.brightness = constrain(s.brightness + delta, 1, 10);
+               break;
+            case ITEM_LED_BRIGHTNESS:
+               s.ledBrightness = constrain(s.ledBrightness + delta, 1, 10);
                break;
             case ITEM_CV_RANGE:
                s.cvRangeVolts = delta > 0 ? 8 : 5;
@@ -1178,7 +1509,7 @@ namespace nemesis
                display.setTextColor(WHITE);
             }
             drawScrollBar(first, item_count);
-            display.display();
+            pushDisplay();
          }
 
          // three entries around the cursor, '>' marks the cursor, '*' the running program
@@ -1199,7 +1530,7 @@ namespace nemesis
                               index == currentProgram() ? '*' : ' ', program(index)->name());
             }
             drawScrollBar(first, n);
-            display.display();
+            pushDisplay();
          }
 
          // ---- encoder ----------------------------------------------------
@@ -1441,14 +1772,32 @@ namespace nemesis
             display.ssd1306_command(SSD1306_SETCONTRAST);
             display.ssd1306_command(max(1, level * level * 255 / 100));
          }
-      }
 
-      FLASHMEM void setPSRAMspeed()
-      {
-         CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_OFF);
-         CCM_CBCMR = (CCM_CBCMR & ~(CCM_CBCMR_FLEXSPI2_PODF_MASK | CCM_CBCMR_FLEXSPI2_CLK_SEL_MASK)) | CCM_CBCMR_FLEXSPI2_PODF(3) // 4 and 2 133MHz
-                     | CCM_CBCMR_FLEXSPI2_CLK_SEL(1);
-         CCM_CCGR7 |= CCM_CCGR7_FLEXSPI2(CCM_CCGR_ON);
+         // The display froze once while the sound and the firmware went on
+         // (2026-11-17, turning POT A in harmonizer): the SSD1306 probably took
+         // a disturbed I2C byte as a command (another addressing mode, a
+         // scroll) and ignored the frames from then on. Every 2 s its setup
+         // is sent again: Adafruit_SSD1306::begin()'s sequence for 128 x 32
+         // without "display off" (no flash), then the contrast.
+         constexpr uint32_t DISPLAY_SETUP_MS = 2000;
+         elapsedMillis since_setup;
+         void refreshDisplaySetup()
+         {
+            if (since_setup < DISPLAY_SETUP_MS)
+               return;
+            since_setup = 0;
+            static const uint8_t setup[] = {
+                SSD1306_SETDISPLAYCLOCKDIV, 0x80, SSD1306_SETMULTIPLEX, 31,
+                SSD1306_SETDISPLAYOFFSET, 0x00, SSD1306_SETSTARTLINE | 0x0,
+                SSD1306_CHARGEPUMP, 0x14, SSD1306_MEMORYMODE, 0x00,
+                SSD1306_SEGREMAP | 0x1, SSD1306_COMSCANDEC, SSD1306_SETCOMPINS, 0x02,
+                SSD1306_SETPRECHARGE, 0xF1, SSD1306_SETVCOMDETECT, 0x40,
+                SSD1306_DISPLAYALLON_RESUME, SSD1306_NORMALDISPLAY,
+                SSD1306_DEACTIVATE_SCROLL, SSD1306_DISPLAYON};
+            for (uint8_t c : setup)
+               display.ssd1306_command(c);
+            brightness_shown = -1; // applyBrightness() sends the contrast again
+         }
       }
 
       FLASHMEM void begin(const Program &program)
@@ -1458,8 +1807,11 @@ namespace nemesis
          for (int i = 0; i < NUM_LEDS; i++)
          {
             pinMode(led_pin[i], OUTPUT);
+            digitalWriteFast(led_pin[i], LOW);
             setLed(i, false);
          }
+         led_timer.priority(LED_ISR_PRIORITY);
+         led_timer.begin(ledTick, LED_TICK_US);
          for (int i = 0; i < NUM_BUTTONS; i++)
             pinMode(switch_pin[i], INPUT);
          pinMode(ENC_SW_PIN, INPUT_PULLUP);
@@ -1503,8 +1855,10 @@ namespace nemesis
          else if (both_buttons_held >= CALIBRATION_HOLD_MS)
             calibrate();
 
+         updateLeds();
          if (!monitor)
             return;
+         refreshDisplaySetup();
          applyBrightness();
          handleEncoder();
          watchInputs(program);
@@ -1536,9 +1890,13 @@ namespace nemesis
             int target = program.editTarget(*param);
             param = target >= 0 ? &program.controls()[target] : nullptr;
          }
+         // the home screen shows its value already (declare home): no popup
+         if (param && program.homeLayout() && program.pagerIndex() < 0 && controlOnHome(program, *param))
+            param = nullptr;
          bool strip = screen == HOME && program.pagerIndex() >= 0; // flashes of the activity strip
          if (since_display >= (param || strip ? PARAM_REDRAW_MS : DISPLAY_INTERVAL_MS))
          {
+            uint32_t draw_start = micros();
             if (screen == PROGRAMS)
                drawPrograms();
             else if (screen == SETTINGS || screen == SYSTEM)
@@ -1547,6 +1905,10 @@ namespace nemesis
                drawParameter(*param, knob);
             else
                drawHome();
+            uint32_t took = micros() - draw_start;
+            display_frames++;
+            display_us += took;
+            display_max_us = max(display_max_us, took);
             since_display = 0; // counted from the end of the transfer, so loop() gets time in between
          }
       }
@@ -1595,7 +1957,7 @@ namespace nemesis
       }
 
       // LEDs in the push buttons are active high (checked on hardware)
-      void setLed(int index, bool on) { digitalWrite(led_pin[index], on ? HIGH : LOW); }
+      void setLed(int index, bool on) { led_on[index] = on; } // dimmed and shaped: updateLeds()
 
       bool buttonPressed(int index) { return digitalRead(switch_pin[index]) == LOW; }
       // X/Y/Z (knob + CV) and POT A-D; CV A-D are jacks only
@@ -1628,6 +1990,27 @@ namespace nemesis
    FLASHMEM void storeVoltCalibration() { EEPROM.put(hw::VOLT_CALIBRATION_ADDRESS, hw::volts); }
 
    FLASHMEM void resetVoltCalibration() { hw::resetVolts(); }
+
+   // the display's framebuffer as one line "SCREEN <hex>" (128 x 32, SSD1306
+   // pages: byte x + 128 * (y / 8), bit y % 8), to look at the screen remotely
+   FLASHMEM void printDisplayStats(Stream &out)
+   {
+      float secs = hw::display_stats_since / 1000.0f;
+      out.printf("display: %.1f frames/s, %.1f ms per frame (max %.1f ms, drawing + I2C transfer)\n",
+                 hw::display_frames / max(secs, 0.001f), hw::display_frames ? hw::display_us / 1000.0f / hw::display_frames : 0.0f,
+                 hw::display_max_us / 1000.0f);
+      hw::display_frames = hw::display_us = hw::display_max_us = 0;
+      hw::display_stats_since = 0;
+   }
+
+   FLASHMEM void printScreen(Stream &out)
+   {
+      const uint8_t *b = display.getBuffer();
+      out.print("SCREEN ");
+      for (int i = 0; i < 128 * 32 / 8; i++)
+         out.printf("%02x", b[i]);
+      out.println();
+   }
 
    FLASHMEM void printVoltCalibration(Stream &out)
    {

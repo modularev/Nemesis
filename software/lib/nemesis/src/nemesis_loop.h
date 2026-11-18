@@ -13,9 +13,11 @@
 //                                            length of a loop it loaded
 //
 // When the length stays above 0 for half a second, the library writes the
-// loop to /NEMESIS/<program>.WAV (32 bit float, one channel per large delay
-// line, oldest sample first). When the program starts again with freeze on,
-// the file goes back into the delay lines before the program's first block,
+// loop to /NEMESIS/<program>.WAV (one channel per large delay line, 32 bit
+// float, or per channel of a 16 bit memory ('declare mem16', 16 bit PCM),
+// oldest sample first; both formats load into either memory). When the
+// program starts again with freeze on, the file goes back into the memory
+// before the program's first block,
 // where the program continues the loop.
 //
 // The delay lines are FAUST's (>= 256 kB, found by the architecture's memory

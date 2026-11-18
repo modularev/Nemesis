@@ -44,6 +44,7 @@
 //                            NemesisAudio_effect, inserted below), and
 //   NEMESIS_NUM_OUTPUTS      the effect's outputs
 
+#include <nemesis_mem16.h>
 #include <string.h> // for memset
 
 #include "NemesisAudio.h"
@@ -105,16 +106,25 @@
 #define MULT_32 2147483648.0f
 #define DIV_32 4.656612873077392578125e-10f
 
-// DSP memory: small allocations from the heap; delay lines up to
-// NEMESIS_RAM_BUFFER_MAX from the library's RAM arena (fast, read on every
-// sample: PSRAM reads cost a lot of CPU, e.g. mooSpace), the rest from the
-// optional PSRAM (extmem_malloc() falls back to RAM without PSRAM).
-// The arena is emptied whenever a program stops.
+// DSP memory, fastest first: small allocations from the heap; delay lines up
+// to NEMESIS_RAM_BUFFER_MAX from the library's RAM arena (DTCM: fast, read
+// on every sample: PSRAM reads cost a lot of CPU, e.g. mooSpace); delay
+// lines up to NEMESIS_RAM2_BUFFER_MAX that the arena can't take from the
+// heap in RAM2 (on chip, far faster than PSRAM; ~445 kB free while a
+// program runs, NEMESIS_HEAP_RESERVE kept for everything else); the rest
+// from the optional PSRAM (extmem_malloc() falls back to RAM without PSRAM).
+// The arena is emptied whenever a program stops, the heap buffers are freed.
 #ifndef NEMESIS_EXTMEM_THRESHOLD
 #define NEMESIS_EXTMEM_THRESHOLD 1024
 #endif
 #ifndef NEMESIS_RAM_BUFFER_MAX
 #define NEMESIS_RAM_BUFFER_MAX 32768
+#endif
+#ifndef NEMESIS_RAM2_BUFFER_MAX
+#define NEMESIS_RAM2_BUFFER_MAX 131072
+#endif
+#ifndef NEMESIS_HEAP_RESERVE
+#define NEMESIS_HEAP_RESERVE 65536
 #endif
 
 // the large delay lines (>= 256 kB) in allocation order: a frozen loop the
@@ -141,6 +151,10 @@ struct NemesisAudioMemory : public dsp_memory_manager {
         if (size <= NEMESIS_RAM_BUFFER_MAX) {
             void* p = nemesis::arenaAllocate(size);
             if (p) { NEMESIS_TRACE("  alloc %u arena\n", (unsigned)size); return p; }
+        }
+        if (size <= NEMESIS_RAM2_BUFFER_MAX && nemesis::heapFree() >= size + NEMESIS_HEAP_RESERVE) {
+            void* p = malloc(size);
+            if (p) { NEMESIS_TRACE("  alloc %u ram2\n", (unsigned)size); return p; }
         }
         NEMESIS_TRACE("  alloc %u psram\n", (unsigned)size);
         return extmem_malloc(size);
@@ -249,6 +263,20 @@ FLASHMEM bool NemesisAudio::start()
     // before the DSP is initialized for that rate
     NemesisAudioMeta meta(this);
     fDSP->metadata(&meta);
+    // 16 bit memory ('declare mem16'): without it the program can't run
+    if (mem16Channels() > 0 && !nemesis::mem16::begin(mem16Channels())) {
+#ifdef NVOICES
+        delete fDSP;
+        fVoices = nullptr;
+#else
+        mydsp::destroy(fDSP);
+#endif
+        fDSP = nullptr;
+        gLargeCount = 0;
+        nemesis::arenaReset();
+        Serial.println("not enough PSRAM for the 16 bit memory");
+        return false;
+    }
     const int rate = nemesis::applySampleRate(*this);
 
     // with -mem, init() is empty: classInit() plus instanceInit()
@@ -331,6 +359,8 @@ FLASHMEM void NemesisAudio::stop()
     fDSP = nullptr;
     gLargeCount = 0;
     mydsp::classDestroy();
+    if (mem16Channels() > 0)
+        nemesis::mem16::end();
     nemesis::arenaReset();  // this program's delay lines
 }
 
@@ -381,8 +411,11 @@ void NemesisAudio::update(void)
 
     if (nemesis::debugMute)
         for (int c = 0; c < NEMESIS_NUM_OUTPUTS; c++) memset(fOutChannel[c], 0, n * sizeof(float));
-    else
+    else {
+        uint32_t start = ARM_DWT_CYCCNT;
         fDSP->compute(n, fInChannel, fOutChannel);
+        nemesis::recordBlock(ARM_DWT_CYCCNT - start);  // BLOCKS: cycles of compute() per block
+    }
     if (nemesis::debugSilent)
         for (int c = 0; c < NEMESIS_NUM_OUTPUTS; c++) memset(fOutChannel[c], 0, n * sizeof(float));
     fSamples += n;  // instanceClear() below keeps the delay lines' write position
@@ -405,7 +438,8 @@ void NemesisAudio::update(void)
     const float target = nemesis::outputTarget;
     if (g != target || g != 1.0f) {
         const float rate = nemesis::sampleRate();
-        const float step = target < g ? 1.0f / (0.005f * rate) : 1.0f / (0.010f * rate);
+        // out 15 ms, in 30 ms: the outputs are DC coupled (CV), shorter fades clicked
+        const float step = target < g ? 1.0f / (0.015f * rate) : 1.0f / (0.030f * rate);
         float gain = g;
         for (int i = 0; i < n; i++) {
             gain = target < gain ? fmaxf(target, gain - step) : fminf(target, gain + step);

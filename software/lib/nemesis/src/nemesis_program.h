@@ -43,11 +43,18 @@ namespace nemesis
    extern volatile bool debugMute;
    // testing: the DSP is computed, its outputs are replaced by silence
    extern volatile bool debugSilent;
+   // testing (serial BLOCKS): the cycles of compute() of consecutive blocks
+   void recordBlock(uint32_t cycles);
+   void startBlockLog();
+   bool blockLogDone();
+   void printBlockLog(Print &out);
 
    // fast RAM for the delay lines of the running program: a fixed area in
    // RAM1, filled in order and emptied as a whole when the program stops
    // (no fragmentation); null when a buffer doesn't fit
    void *arenaAllocate(size_t size);
+   // free heap (RAM2): never used space above the break plus freed blocks
+   size_t heapFree();
    bool arenaOwns(const void *p);
    void arenaReset();
 
@@ -108,6 +115,7 @@ namespace nemesis
       bool knob = false;
       bool caught = true;
       float catchRef = -1.0f;
+      float jumpRef = -1.0f; // knob jump (system setting): its position when the stored value came
       // edit knob turned with button 1 held: the knob position and every
       // page's value (as position) where the relative edit started
       static constexpr int MAX_PAGES = 8;
@@ -130,6 +138,8 @@ namespace nemesis
       // [title:x]: a knob's popup shows the value name of setting "x" (e.g.
       // what an assignable knob controls) instead of its label
       const char *title = nullptr;
+      // [digits:3]: decimals shown (else 2 below 10, 1 below 1000, none above)
+      int digits = -1;
 
       const char *shown() const { return name ? name : label; }
 
@@ -156,6 +166,7 @@ namespace nemesis
       int led;          // LED index, -1 for a status value
       const char *unit; // [unit:..], or null
       bool limit;       // [limit:1]: gain of a limiter, 0..1 (home screen shows it in dB)
+      int digits = -1;   // [digits:N], as Control
       int activity = -1; // [activity:N]: page N's activity (the home screen strip, > half: lit)
    };
 
@@ -262,6 +273,15 @@ namespace nemesis
       int pagerIndex() const { return fPager; }
       // the [home:1] setting, -1 if none
       int homeIndex() const { return fHome; }
+      // 'declare home "A|B";': values shown big on the home screen, '|'
+      // separated, at most 3: labels of bargraphs ([status:1] ones are then
+      // not repeated in the top line), controls or settings, or @tempo
+      // (transport BPM) / @beat (bar.beat.sixteenth); null for none (the
+      // program's name big). "A=delay A,depth": shown as A, turning the
+      // controls after '=' (or the item's own control) opens no knob popup
+      const char *homeLayout() const { return fHomeLayout; }
+      // 'declare mem16 "2";': channels of 16 bit memory (nemesis_mem16.h)
+      int mem16Channels() const { return fMem16Channels; }
       int page() const;
       void nextPage();
       // [button:N] parameters: 1 while button N is held
@@ -397,6 +417,7 @@ namespace nemesis
       const char *fPendingMenu = nullptr;
       bool fPendingLog = false;
       const char *fPendingUnit = nullptr;
+      int fPendingDigits = -1;
       bool fPendingHidden = false;
       const char *fPendingSection = nullptr;
       int fPendingAction = 0;
@@ -405,6 +426,8 @@ namespace nemesis
       bool fPendingPager = false;
       bool fPendingHome = false;
       int fHome = -1;
+      const char *fHomeLayout = nullptr; // FAUST metadata strings stay valid
+      int fMem16Channels = 0;
       int fPendingButton = -1;
       int fPendingActivity = -1;
       int fPager = -1;
