@@ -21,7 +21,7 @@ fifth     = hslider("fifth [hw:POT_C] [cv:CV_C]", 0.4, 0, 1, 0.01) : si.smoo;
 detune    = hslider("detune [hw:POT_D] [cv:CV_D] [unit:Hz]", 0.5, 0, 5, 0.01) : si.smoo;
 
 octave    = hslider("octave", 0, -2, 2, 1);
-drift     = hslider("drift [midi:ctrl 1]", 0.2, 0, 1, 0.01) : si.smoo;
+drift     = hslider("drift [rev1:CV_F] [midi:ctrl 1]", 0.2, 0, 1, 0.01) : si.smoo;
 gated     = checkbox("gated");
 swell     = hslider("swell [scale:log] [unit:s]", 1, 0.01, 10, 0.01);
 level     = hslider("level", 0.8, 0, 1, 0.01) : si.smoo;

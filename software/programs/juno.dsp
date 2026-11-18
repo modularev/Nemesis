@@ -30,17 +30,17 @@ env_amt   = hslider("Env [hw:CV_Z]", 0.4, 0, 1, 0.001) : vs;
 // 1 ms .. 3.3 s; decay and release to -20 dB, 4 ms .. 22 s
 attack_s(v) = pow(2, curve(T_ATTACK_LOG2MS, 33, v)) * 0.001;
 decrel_s(v) = pow(2, curve(T_DECREL_LOG2MS, 33, v)) * 0.001;
-release   = hslider("Release [hw:POT_D]", 0.4, 0, 1, 0.001) : decrel_s;
+release   = hslider("Release [hw:POT_D] [cv:CV_D]", 0.4, 0, 1, 0.001) : decrel_s;
 // 0.04 .. 30 Hz, the 106's measured curve
-lfo_rate  = hslider("LFO Rate", 0.4, 0, 1, 0.001) : \(v).(pow(2, curve(T_LFO_LOG2HZ, 33, v))) : vs;
+lfo_rate  = hslider("LFO Rate [rev1:CV_E]", 0.4, 0, 1, 0.001) : \(v).(pow(2, curve(T_LFO_LOG2HZ, 33, v))) : vs;
 pwm       = hslider("PWM", 0.3, 0, 1, 0.001) : vs;
 chorus    = hslider("Chorus [style:menu{'off':0;'I':1;'II':2;'I+II':3}]", 1, 0, 3, 1) : int;
 // pitch bend: +-2 semitones (the ratio once per block, then smoothed)
 bend      = hslider("bend [midi:pitchwheel] [hidden:1]", 0, -2, 2, 0.001) : \(b).(pow(2, b / 12)) : vs;
 
-attack    = hslider("Attack [hw:POT_A] [midi:ctrl 73]", 0.01, 0, 1, 0.001) : attack_s;
-decay     = hslider("Decay [hw:POT_B] [midi:ctrl 75]", 0.4, 0, 1, 0.001) : decrel_s;
-sustain   = hslider("Sustain [hw:POT_C] [midi:ctrl 79]", 0.7, 0, 1, 0.001);
+attack    = hslider("Attack [hw:POT_A] [cv:CV_A] [midi:ctrl 73]", 0.01, 0, 1, 0.001) : attack_s;
+decay     = hslider("Decay [hw:POT_B] [cv:CV_B] [midi:ctrl 75]", 0.4, 0, 1, 0.001) : decrel_s;
+sustain   = hslider("Sustain [hw:POT_C] [cv:CV_C] [midi:ctrl 79]", 0.7, 0, 1, 0.001);
 saw_lvl   = hslider("Saw [midi:ctrl 70]", 1, 0, 1, 0.001) : vs;
 pulse_lvl = hslider("Pulse [midi:ctrl 71]", 0, 0, 1, 0.001) : vs;
 // sub and noise levels as measured (the noise: a soft knee fit)
@@ -51,7 +51,7 @@ noise_lvl = hslider("Noise [midi:ctrl 78]", 0, 0, 1, 0.001)
 // 106's four positions: 0 boosts the bass (organ), 1 passes the sound
 // unprocessed, 2 and 3 cut from 236 / 754 Hz (first order)
 hpf_pos   = hslider("HPF [style:menu{'0 boost':0;'1 flat':1;'2':2;'3':3}] [midi:ctrl 81]", 1, 0, 3, 1) : int;
-lfo_vcf   = hslider("LFO VCF [midi:ctrl 76]", 0, 0, 1, 0.001) : vs;
+lfo_vcf   = hslider("LFO VCF [rev1:CV_F] [midi:ctrl 76]", 0, 0, 1, 0.001) : vs;
 lfo_dco   = hslider("LFO DCO [midi:ctrl 1]", 0, 0, 1, 0.001); // mod wheel: vibrato (its curve below, then smoothed)
 kbd       = hslider("Kybd [midi:ctrl 82]", 0.5, 0, 1, 0.001) : vs;
 spread    = hslider("Spread [midi:ctrl 10]", 0.6, 0, 1, 0.01);

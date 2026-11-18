@@ -37,7 +37,8 @@ out 5: random value per grain (0..5 V)  out 6: pitch of the latest grain
 hardware controls (rev2)                      rev1
 position size pitch   X Y Z (knob + CV)        CV X Y Z
 density spray         POT A, POT B (+ CV A, B) CV A, B
-blur mix              POT C, POT D (+ CV C, D) CV C, F
+blur mix              POT C, POT D (+ CV C, D) CV C, D
+reverse tone          settings                 CV E, F
 settings: freeze, memory, sync, scan, reverse, pitch spray, quantize,
   shape, pan spread, tone, blur input (the input into the blur, heard
   also with mix fully dry)

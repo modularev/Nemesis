@@ -28,6 +28,6 @@ hardware controls (rev2)                       rev1
 shift, range, spread    X Y Z (knob + CV)       CV X Y Z
 mix, delay              POT A, B (+ CV A, B)    CV A, B
 feedback, sideband      POT C, D (+ CV C, D)    CV C, D
-damp (feedback lowpass) setting (turn the encoder)
+damp (feedback lowpass) setting (turn the encoder)  CV E
 the home screen shows the shift of the left channel in Hz
 ```

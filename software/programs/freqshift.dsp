@@ -21,7 +21,7 @@ mix         = hslider("mix [hw:POT_A] [cv:CV_A]", 1, 0, 1, 0.01) : si.smoo;
 delay_ms    = hslider("delay [hw:POT_B] [cv:CV_B] [scale:log] [unit:ms]", 100, 1, 1000, 1) : si.smooth(0.9995);
 feedback    = hslider("feedback [hw:POT_C] [cv:CV_C]", 0, 0, 1, 0.01) : si.smoo;
 sideband    = hslider("sideband [hw:POT_D] [cv:CV_D]", 1, 0, 1, 0.01) : si.smoo;  // 0 down, 0.5 both, 1 up
-damp        = hslider("damp", 0.3, 0, 1, 0.01) : si.smoo;
+damp        = hslider("damp [rev1:CV_E]", 0.3, 0, 1, 0.01) : si.smoo;
 
 SPREAD_HZ   = 10;
 shift_hz    = range * shift_knob ^ 3;

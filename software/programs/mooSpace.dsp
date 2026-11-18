@@ -27,7 +27,7 @@ shift			= hslider("modulate [rev1:CV_B] [rev2:POT_B] [cv:CV_B]", 0.5, 0, 1, 0.00
 
 decay  		= hslider("decay [hw:CV_Y]", 0.3, 0, 1., 0.001) : sqrt : si.smoo;
 
-predelay 	= hslider("lag [rev1:CV_D]", 0, 0, 1, 0.001) <: * : si.smoo  : _ * (MAX_LAG - 1);
+predelay 	= hslider("lag [rev1:CV_F]", 0, 0, 1, 0.001) <: * : si.smoo  : _ * (MAX_LAG - 1);
 damp 		= hslider("colour [rev1:CV_C] [rev2:POT_C] [cv:CV_C]", 0.1, 0, 1, 0.01) : si.smoo;
 ducktime 	= 0.2 * (dtime / 2);
 dist_amt 	= hslider("push [rev1:CV_E]", 0, 0, 1, 0.01) : si.smoo;
@@ -35,7 +35,7 @@ filt_ctrl   = hslider("Filter [rev1:CV_A] [rev2:POT_A] [cv:CV_A]", 0.5, 0, 1, 0.
 diff_ctrl   = hslider("input diffusion", 0.5, 0, 1, 0.01) : si.smoo : _ * 1.3  ;
 lp_freq 	= filt_ctrl : clip(0.0, 0.48) * 2.083 <: *       : _ * 15900 : _ + 100 ;
 hp_freq		= filt_ctrl : (clip(0.52, 1) - 0.52) * 2.083  <: *: _ * 4980 : _ + 20 ;
-rev_mix 	= hslider("mix [rev1:CV_F] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01) : si.smoo;
+rev_mix 	= hslider("mix [rev1:CV_D] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01) : si.smoo;
  
 
 // Parameters

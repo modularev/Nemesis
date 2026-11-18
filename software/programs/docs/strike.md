@@ -40,6 +40,7 @@ X Y Z (knob + CV): assignable, for all voices (settings x, y, z: decay,
   hardness, drive, pitch, tone, noise, position, bend, tension, variation,
   rattle; default decay / hardness / drive)      rev1: CV X Y Z
 POT A-D: inharmonic, position, bend, tension of the selected voice
+  (rev1: CV A-D)
 button 1: next voice (on release); held while turning POT A-D: all six
   voices move by the same amount; held while pressing button 2: a new
   random sound for the selected voice (played); button 2: plays the

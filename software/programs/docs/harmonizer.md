@@ -58,6 +58,7 @@ LED 2 flashes at every splice of algorithm 2.
 hardware controls (rev2)                             rev1
 manual, main delay, delay only    X Y Z (knob + CV)  CV X Y Z
 main FB, delay only FB, low, high POT A-D (+ CV A-D) CV A-D
+V/Oct, dry                        - / setting        CV E, F
 settings: function, algorithm, control, quantize, glide, repeat, input,
 dry, main level, delay only level, line (bypass)
 ```

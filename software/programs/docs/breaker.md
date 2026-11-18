@@ -37,7 +37,7 @@ moving a knob adds and drops ghost notes gradually. An open hi-hat chokes
 the closed one on the same step.
 
 ```
-hardware controls (rev2)
+hardware controls (rev2; rev1: the same knobs X Y Z A-D, gates on CV E, F)
 slice length, rev-rep, comb                   X Y Z (knob + CV)
 repeat gate, reverse gate                     CV A, CV B (> 4 V, or 2.5 V with the 0-5 V range)
 crush, drive                                  POT A, POT B

@@ -21,7 +21,7 @@ rep_knob  = hslider("repeats [hw:CV_Z]", 0.4, 0, 1, 0.001);
 corrupt   = hslider("corrupt [rev1:CV_A] [rev2:POT_A] [cv:CV_A]", 0, 0, 1, 0.001);
 depth     = hslider("depth [rev1:CV_B] [rev2:POT_B] [cv:CV_B]", 0.3, 0, 1, 0.001);
 bend      = hslider("bend [rev1:CV_C] [rev2:POT_C] [cv:CV_C]", 0.3, 0, 1, 0.001);
-mix       = hslider("mix [rev1:CV_F] [rev2:POT_D] [cv:CV_D]", 1, 0, 1, 0.01) : si.smoo;
+mix       = hslider("mix [rev1:CV_D] [rev2:POT_D] [cv:CV_D]", 1, 0, 1, 0.01) : si.smoo;
 
 // settings, numbered: FAUST sorts them by label
 sync      = hslider("[01] sync [style:menu{'off':0;'on':1}]", 1, 0, 1, 1) > 0.5;
@@ -30,13 +30,13 @@ pattern   = hslider("[03] pattern [style:menu{'free':0;'2':1;'4':2;'8':3;'16':4;
 seed      = hslider("[04] seed", 0, 0, 99, 1) : int;
 reroll    = hslider("[05] reroll [style:menu{'off':0;'on':1}]", 0, 0, 1, 1) > 0.5;
 w_repeat  = hslider("[10] repeat [section:errors]", 1, 0, 1, 0.01);
-w_jump    = hslider("[11] jump", 0.6, 0, 1, 0.01);
+w_jump    = hslider("[11] jump [rev1:CV_F]", 0.6, 0, 1, 0.01);
 w_reverse = hslider("[12] reverse", 0.5, 0, 1, 0.01);
 w_speed   = hslider("[13] speed", 0.4, 0, 1, 0.01);
 w_stop    = hslider("[14] tape stop", 0.2, 0, 1, 0.01);
 w_gap     = hslider("[15] gap", 0.3, 0, 1, 0.01);
 ctype     = hslider("[20] corrupt type [section:sound] [style:menu{'bits':0;'crush':1;'stall':2;'drop':3}]", 0, 0, 3.999, 1) : int;
-window    = hslider("[21] window", 0.1, 0, 1, 0.01);
+window    = hslider("[21] window [rev1:CV_E]", 0.1, 0, 1, 0.01);
 stereo    = hslider("[22] stereo [style:menu{'linked':0;'split':1}]", 0, 0, 1, 1) > 0.5;
 
 // ---- clock --------------------------------------------------------------------

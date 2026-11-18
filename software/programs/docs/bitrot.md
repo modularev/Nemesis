@@ -53,7 +53,8 @@ channel rolls its own dice.
 hardware controls (rev2)                      rev1
 time, chaos, repeats    X Y Z (knob + CV)     CV X Y Z
 corrupt, depth, bend    POT A B C (+ CV A-C)  CV A B C
-mix                     POT D (+ CV D)        CV F
+mix                     POT D (+ CV D)        CV D
+window, jump weight     settings              CV E, F
 settings (turn the encoder): sync, freeze, pattern, seed, reroll, the
 error weights, corrupt type, window, stereo
 ```

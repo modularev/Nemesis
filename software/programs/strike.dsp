@@ -50,10 +50,10 @@ var_off    = macro(9, 0);
 rattle_off = macro(10, 0);
 
 // POT A-D: edit the selected voice (settings with the most effect on the sound)
-edit_a     = hslider("inharmonic [rev2:POT_A] [edit:v{voice} inharmonic]", 0.5, 0, 1, 0.001);
-edit_b     = hslider("position [rev2:POT_B] [edit:v{voice} position]", 0.5, 0, 1, 0.001);
-edit_c     = hslider("bend [rev2:POT_C] [edit:v{voice} bend]", 0.5, 0, 1, 0.001);
-edit_d     = hslider("tension [rev2:POT_D] [edit:v{voice} tension]", 0.5, 0, 1, 0.001);
+edit_a     = hslider("inharmonic [rev1:CV_A] [rev2:POT_A] [edit:v{voice} inharmonic]", 0.5, 0, 1, 0.001);
+edit_b     = hslider("position [rev1:CV_B] [rev2:POT_B] [edit:v{voice} position]", 0.5, 0, 1, 0.001);
+edit_c     = hslider("bend [rev1:CV_C] [rev2:POT_C] [edit:v{voice} bend]", 0.5, 0, 1, 0.001);
+edit_d     = hslider("tension [rev1:CV_D] [rev2:POT_D] [edit:v{voice} tension]", 0.5, 0, 1, 0.001);
 
 // ---- partial ratios of the objects ------------------------------------------
 

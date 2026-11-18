@@ -47,7 +47,7 @@ reverse_knob = hslider("reverse [rev1:CV_A] [rev2:POT_A] [cv:CV_A]", 0, 0, 1, 0.
 shimmer_knob = hslider("shimmer [rev1:CV_B] [rev2:POT_B] [cv:CV_B]", 0, 0, 1, 0.001);
 mod_knob    = hslider("modulate", 0.5, 0, 1, 0.001);   // a setting: assign it to a CV in the menu
 tone_knob   = hslider("tone [rev1:CV_C] [rev2:POT_C] [cv:CV_C]", 0.5, 0, 1, 0.01);
-rev_mix     = hslider("mix [rev1:CV_F] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01);
+rev_mix     = hslider("mix [rev1:CV_D] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01);
 
 // sync: times snap to the transport tempo (control rate: nm_bpm is a slider)
 sync        = hslider("sync [style:menu{'off':0;'on':1}]", 0, 0, 1, 1) > 0.5;
@@ -56,7 +56,7 @@ snap(len, grid) = select2(sync, len, floor(len / grid + 0.5) * grid);
 
 // lag: in ms, or with sync a note value (two settings shown as "lag", the
 // menu lists the one that applies)
-lag_ms      = hslider("lag ms [name:lag] [ifnot:sync] [unit:ms] [rev1:CV_D]", 0, 0, 1000, 1);
+lag_ms      = hslider("lag ms [name:lag] [ifnot:sync] [unit:ms] [rev1:CV_F]", 0, 0, 1000, 1);
 lag_ticks   = hslider("lag sync [name:lag] [if:sync] [style:menu{'off':0;'1/32':1;'1/16':2;'1/8':3;'1/8.':4;'1/4':5;'1/4.':6;'1/2':7}]", 0, 0, 7.999, 1)
               : int : \(k).(ba.selectn(8, k, 0, 3, 6, 12, 18, 24, 36, 48));
 predelay    = select2(sync, lag_ms * ma.SR / 1000, nm_samples(lag_ticks)) : min(MAX_LAG - 1) : si.smoo;

@@ -32,7 +32,7 @@ pitch_knob = hslider("pitch [hw:CV_Z]", 0.5, 0, 1, 0.001);
 dens_knob  = hslider("density [rev1:CV_A] [rev2:POT_A] [cv:CV_A]", 0.5, 0, 1, 0.001);
 spray_knob = hslider("spray [rev1:CV_B] [rev2:POT_B] [cv:CV_B]", 0, 0, 1, 0.001);
 blur_knob  = hslider("blur [rev1:CV_C] [rev2:POT_C] [cv:CV_C]", 0, 0, 1, 0.001);
-mix_knob   = hslider("mix [rev1:CV_F] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01);
+mix_knob   = hslider("mix [rev1:CV_D] [rev2:POT_D] [cv:CV_D]", 0.5, 0, 1, 0.01);
 
 freeze_raw = hslider("freeze [loop:freeze] [style:menu{'off':0;'on':1}]", 0, 0, 1, 1) > 0.5;
 mem_sel    = hslider("memory [ifnot:sync] [style:menu{'2 s':0;'4 s':1;'8 s':2;'10 s':3}]", 1, 0, 3.999, 1) : int;
@@ -44,12 +44,12 @@ overdub    = hslider("overdub", 0, 0, 1, 0.01) : si.smoo;
 loop_keep  = hslider("loop feedback", 1, 0, 1, 0.01) : si.smoo;
 sync       = hslider("sync [style:menu{'off':0;'on':1}]", 0, 0, 1, 1) > 0.5;
 scan       = hslider("scan", 0, -1, 1, 0.01);
-rev_prob   = hslider("reverse", 0, 0, 1, 0.01);               // share of reversed grains
+rev_prob   = hslider("reverse [rev1:CV_E]", 0, 0, 1, 0.01);               // share of reversed grains
 pitch_rand = hslider("pitch spray [unit:st]", 0, 0, 12, 0.1);
 quant      = hslider("quantize [style:menu{'off':0;'semitones':1;'octaves':2}]", 0, 0, 2.999, 1) : int;
 shape      = hslider("shape [style:menu{'bell':0;'tukey':1;'decay':2;'ramp':3;'square':4;'triangle':5}]", 0, 0, 5.999, 1) : int;
 pan_spread = hslider("pan spread", 0.5, 0, 1, 0.01);
-tone       = hslider("tone", 0.5, 0, 1, 0.01);
+tone       = hslider("tone [rev1:CV_F]", 0.5, 0, 1, 0.01);
 blur_in    = hslider("blur input", 0, 0, 1, 0.01) : si.smoo;   // input into the blur, also when mix is dry
 
 // ---- live memory ------------------------------------------------------------

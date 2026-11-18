@@ -58,9 +58,9 @@ in 1/2: stereo audio    out 1/2: stereo mix (limited to 4.5 V)
 hardware controls (rev2)                      rev1 (knob + CV)
 smear decay drag    X Y Z (knob + CV)          CV X Y Z
 reverse shimmer     POT A, POT B (+ CV A, B)   CV A, B
-tone mix            POT C, POT D (+ CV C, D)   CV C, F
+tone mix            POT C, POT D (+ CV C, D)   CV C, D
 settings (turn the encoder): sync, reverse length, freeze, echoes, echo
   time, duck, gate, lofi, modulate, shift, lag (ms, or a note value with
   sync), push, motion
-  (rev1: lag CV D, push CV E)
+  (rev1: push CV E, lag CV F)
 ```

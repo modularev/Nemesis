@@ -28,6 +28,7 @@ tune, cutoff, resonance   X Y Z (knob + CV)       CV X Y Z
 V/Oct                     CV A (calibrated)       CV E (0..1 taken as 0..5 V)
 root, fourth, fifth       POT A, B, C (+ CV B, C)  CV A B C
 detune                    POT D (+ CV D)          CV D
+drift                     setting                 CV F
 settings (turn the encoder): octave, drift (MIDI mod wheel), gated, swell, level
 MIDI: note, pitch bend (+-2 semitones), CC 1 drift
 ```
