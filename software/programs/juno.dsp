@@ -4,15 +4,7 @@ declare author "Arev Imer";
 declare version "0.17";
 declare options "[midi:on][nvoices:12]";   // 12 at 48 kHz, 6 at 96 kHz (the library halves them)
 
-// Play it over MIDI (USB or the MIDI jack), stereo out on outputs 1/2.
-// Every voice sits at its own place in the stereo field (spread), and notes
-// move through the voices, so chords and repeated notes open up; the chorus
-// then works on both sides.
-//
-// hardware controls            rev2                    rev1
-// cutoff resonance env amount  X Y Z (knob + CV)       CV X Y Z
-// attack decay sustain release POT_A B C D             knob A B C D
-// everything else: settings, MIDI CC (numbers in the labels)
+// Controls, modes and background: docs/juno.md
 
 import("stdfaust.lib");
 // the 106's measured slider curves (cutoff, envelope times, LFO, DCO LFO,
