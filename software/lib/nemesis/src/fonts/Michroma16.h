@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: OFL-1.1
 // Michroma16 16 px, converted from Michroma.ttf with software/lib/nemesis/src/fonts/ttf2gfx.py
 // Michroma: Copyright 2011 The Michroma Project Authors, SIL Open Font License 1.1 (OFL-Michroma.txt)
 #pragma once

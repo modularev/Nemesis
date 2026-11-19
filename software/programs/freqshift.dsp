@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "freqshift";
 declare description "Stereo frequency shifter (Bode style) with spread, feedback delay, sideband outputs and a quadrature oscillator";
 declare author "Arev Imer";
@@ -5,6 +6,7 @@ declare version "0.2";
 declare audio_outputs "1-6";   // the output setting leaves the oscillator on 7/8 exact
 declare block_size "32";
 declare sample_rate "96000";
+declare license "GPL-3.0-or-later";
 
 
 // Controls, modes and background: docs/freqshift.md

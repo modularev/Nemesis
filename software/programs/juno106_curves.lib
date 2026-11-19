@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // juno106_curves.lib - Juno-106 control curves for juno.dsp
 // measured on a real Juno-106 (Ultramaster KR-106 via Youth106's
 // tools/juno106_curves.csv, GPL-3.0): the slider positions 0..1 in equal steps

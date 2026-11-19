@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
 """Juno-106 patches -> presets for the NEMESIS program juno.
 
 Reads a patch library saved by a Juno-106 editor (Java serialized, .106:

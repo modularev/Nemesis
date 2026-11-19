@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "strike";
 declare description "Six voice physical modelling percussion: mallet and noise exciters into modal resonators (string, beam, marimba, drumhead, membrane, plate); triggers on IN 1-6 and MIDI (a channel per voice, or notes 36-41)";
 declare author "Arev Imer";
@@ -5,6 +6,7 @@ declare version "0.6";
 declare block_size "64";            // 2.7 ms round trip; per block work (the modes from the settings) halves against 32
 declare audio_outputs "1-8";
 declare options "[itcm:on]";   // the loop of six voices (~35 kB) outgrew the 32 kB instruction cache: it runs from ITCM
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/strike.md
 

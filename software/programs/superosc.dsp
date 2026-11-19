@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "superosc";
 declare description "Drone generator: root, fourth and fifth, each as 4 detuned saw partials, through a ladder filter; MIDI note and V/Oct";
 declare author "Arev Imer";
 declare version "0.2";
 declare options "[midi:on]";
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/superosc.md
 

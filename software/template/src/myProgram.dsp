@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // FAUST .dsp file for the programmable Eurorack DSP Module NEMESIS by Arev Imer
 //
 // src/myProgram.dsp - the file name becomes the C++ class name (myProgram.h)
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
-// released under GNU GPL v3
+// released under GNU GPL v3 or later (see LICENSE)
 //
 // Parameters are bound to the hardware inputs (values 0..1 scaled to the
 // slider range) in one of three ways:

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // USB product name: "Nemesis rev1" / "Nemesis rev2" instead of "Teensy MIDI"
 // (the MIDI port's name in macOS and DAWs, tells two units apart).
 // Overrides the Teensy core's weak default (usb_names.h).

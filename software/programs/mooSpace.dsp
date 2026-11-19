@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "mooSpace";
 declare description "variable space reverberation audio effect";
 declare author "Arev Imer (arev.imer@students.fhnw.ch)";
 declare copyright "Arev";
 declare version "0.4";
 declare block_size "64";    // audio block (system setting block size: auto)
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/mooSpace.md
 

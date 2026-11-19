@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # faust_build.py by Arev Imer
 #
 # Compiles FAUST programs for the NEMESIS module with the architecture files

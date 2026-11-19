@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "pollen";
 declare description "Live granular sampler: grains from a looping live memory (freeze holds it), position, size, pitch, density, spray, blur reverb; free or synced to the transport";
 declare author "Arev Imer";
@@ -6,6 +7,7 @@ declare block_size "128";       // audio block (system setting block size: auto)
 declare sample_rate "96000";   // system setting sample rate: auto (FM, crush and grains alias less)
 declare audio_outputs "1,2,7,8"; // 3-6 are trigger/CV outputs (left exact)
 declare mem16 "2";               // the live memory: 2 channels of 16 bit samples (nemesis_mem16.h)
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/pollen.md
 

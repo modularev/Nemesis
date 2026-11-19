@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /************************************************************************
  FAUST Architecture File for the NEMESIS Eurorack DSP module
  based on architecture/teensy/teensy.h

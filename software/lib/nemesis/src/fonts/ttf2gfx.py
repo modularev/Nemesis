@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # TTF -> Adafruit GFX font header, 1 bit (no anti-aliasing), optional slant
 # usage: ttf2gfx.py font.ttf size name [slant] [license line] > name.h
 import sys

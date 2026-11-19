@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: OFL-1.1
 // Oxanium10 10 px, converted from Oxanium.ttf with software/lib/nemesis/src/fonts/ttf2gfx.py
 // Oxanium: Copyright 2019 The Oxanium Project Authors, SIL Open Font License 1.1 (OFL-Oxanium.txt)
 #pragma once

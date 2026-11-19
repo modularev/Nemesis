@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 CV input test for the NEMESIS rev2, using DC coupled audio interface outputs
 (e.g. an Expert Sleepers ES-10 on ADAT) as voltage source. Needs the

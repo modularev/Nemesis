@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // test_poly.cpp - nemesis-poly.h against FAUST's poly-dsp.h, with juno
 //
 // 1. the UI paths of both (apart from the note parameters ours hides)

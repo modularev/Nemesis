@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "primetime";
 declare description "Two tap digital delay after the Lexicon Prime Time II (Model 95): one delay line with taps A and B, recirculation with filter and DRC, VCO time base sweep (manual, LFO, envelope), X2 range, infinite repeat, phase invert, input/output mix, clock out";
 declare author "Arev Imer";
@@ -5,6 +6,7 @@ declare version "0.1";
 declare block_size "64";        // audio block (system setting block size: auto)
 declare audio_outputs "1-5";    // 6 mod CV, 7/8 clock pulses (left exact)
 declare home "A=delay A|B=delay B";   // home screen: both delay times big (their knobs open no popup)
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/primetime.md
 

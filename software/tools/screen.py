@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Saves the Nemesis display as a PNG: asks the firmware for SCREEN (the
 SSD1306 framebuffer, 128 x 32) over USB serial and writes it enlarged.
 

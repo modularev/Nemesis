@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Host test of lib/nemesis/src/nemesis_transport_core.h: tempo of the CV
 // clock and the MIDI clock, transients, a clock that stops.
 //   tests/transport/run.sh

@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Library for the programmable Eurorack DSP Module NEMESIS
 //
 // nemesis_tdm.cpp - direct TDM audio, see nemesis_tdm.h
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
-// released under GNU GPL v3
+// released under GNU GPL v3 or later (see LICENSE)
 //
 
 #include "nemesis_tdm.h"

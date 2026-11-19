@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Library for the programmable Eurorack DSP Module NEMESIS
 //
@@ -7,7 +8,7 @@
 // (nemesis_rev1.cpp, nemesis_rev2.cpp). Not meant to be used by sketches.
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
-// released under GNU GPL v3
+// released under GNU GPL v3 or later (see LICENSE)
 //
 
 #ifndef nemesis_hw_h

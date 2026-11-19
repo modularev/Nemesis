@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
 /************************************************************************
  FAUST polyphony for microcontrollers (NEMESIS)
  Copyright (C) 2026 Arev Imer

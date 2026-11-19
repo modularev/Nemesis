@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import("stdfaust.lib");
 
 voct = hslider("CV_X",0.5,0.,1.,0.0001) : *(100)  : si.smooth(0.993);

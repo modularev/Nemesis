@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import("stdfaust.lib");
 
 shiftL = hslider("CV_X: Shift", 0., 0, 1, 0.001) <: * : _ * 10000 + 100 ;

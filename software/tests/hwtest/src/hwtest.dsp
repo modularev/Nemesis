@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // hardware test program
 // outputs: a DC level (dc0..dc7) plus a sine (sine0..sine7 amplitude, freq)
 // per output, set over USB serial

@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "mooSpace2";
 declare description "Moving spaces: mooSpace with wider controls and glide (pitch) or crossfade (no pitch) when the space moves";
 declare author "Arev Imer";
 declare version "2.8";
 declare audio_outputs "1-6";   // 7/8 are envelope CVs
 declare block_size "128";   // audio block (system setting block size: auto); 64 let single slow blocks (cache misses on the PSRAM heads, up to 118 %) arrive late, ~1 click per 7 s; 128 averages them out (2026-11-17)
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/mooSpace2.md
 

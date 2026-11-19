@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import("stdfaust.lib");
 declare options "[midi:on]";
 

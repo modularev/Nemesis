@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "harmonizer";
 declare description "Pitch changer and delay after the Eventide H949 Harmonizer: 1 octave up to 2 octaves down, two splice algorithms, micro pitch change, extended and reverse segments, random delay (ADT), flange, repeat, feedback with EQ; manual, MIDI keyboard or V/Oct";
 declare author "Arev Imer";
@@ -6,6 +7,7 @@ declare options "[midi:on]";      // keyboard control mode: MIDI notes like the 
 declare block_size "64";          // audio block (system setting block size: auto)
 declare audio_outputs "1,2";
 declare home "ratio=manual|function";   // home screen: the pitch ratio (set by manual: no popup) and the function
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/harmonizer.md
 

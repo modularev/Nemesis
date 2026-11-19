@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Pin scanner: reads every Teensy pin that the NEMESIS rev2 doesn't use yet
 // (with pull-up) and prints how often each one changed in the last 250 ms.

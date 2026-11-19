@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "bitrot";
 declare description "Data errors and glitches: a recording buffer that stutters, jumps back, reverses, changes speed, stops like tape and drops out at random on the transport or a free clock; bit flips, crush, stalls and dropouts; repeatable random patterns";
 declare author "Arev Imer";
 declare version "0.1";
 declare block_size "64";            // audio block (system setting block size: auto)
 declare audio_outputs "1,2,5,6";    // 3/4 are a trigger and a random CV (left exact)
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/bitrot.md
 

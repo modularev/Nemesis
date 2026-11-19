@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // juno_levels.cpp - evens out the loudness of juno presets
 //
 // Plays every line of a juno.PRE (software/tools/juno106_presets.py) with
@@ -14,7 +15,7 @@
 //   /tmp/juno_levels juno.PRE [target_rms]
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
-// released under GNU GPL v3
+// released under GNU GPL v3 or later (see LICENSE)
 
 #include <cmath>
 #include <cstdio>

@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-only
 declare name "juno";
 declare description "Juno style polysynth: DCO saw/pulse/sub/noise, HPF, 4 pole VCF, ADSR, LFO, chorus I/II";
 declare author "Arev Imer";
 declare version "0.17";
 declare options "[midi:on][nvoices:12]";   // 12 at 48 kHz, 6 at 96 kHz (the library halves them)
+declare license "GPL-3.0-only";
 
 // Controls, modes and background: docs/juno.md
 

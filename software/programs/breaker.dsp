@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 declare name "breaker";
 declare description "Beat slice repeat and reverse for breakbeats, bit crush, comb filter and drive, plus six drum trigger outputs from a 2D pattern map; MIDI clock or internal tempo";
 declare author "Arev Imer";
@@ -6,6 +7,7 @@ declare block_size "32";   // audio block (system setting block size: auto)
 declare sample_rate "96000";   // system setting sample rate: auto (FM, crush and grains alias less)
 declare output "clip";     // output setting default: hard clip is part of the sound
 declare home "@beat|@tempo";   // home screen: where the transport is, its tempo
+declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/breaker.md
 

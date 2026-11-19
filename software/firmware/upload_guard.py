@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # upload_guard.py - PlatformIO pre-upload check (macOS)
 #
 # The Teensy uploader programs whichever Teensy it finds, so with two units

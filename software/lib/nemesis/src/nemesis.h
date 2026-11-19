@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Library for the programmable Eurorack DSP Module NEMESIS
 //
@@ -13,7 +14,7 @@
 //         inputs CV_X CV_Y CV_Z CV_A CV_B CV_C CV_D POT_A POT_B POT_C POT_D
 //
 // Copyright © 2021 Arev Imer if not mentioned elsewise
-// released under GNU GPL v3
+// released under GNU GPL v3 or later (see LICENSE)
 //
 
 #ifndef nemesis_h

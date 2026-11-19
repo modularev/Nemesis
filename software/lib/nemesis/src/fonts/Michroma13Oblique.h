@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: OFL-1.1
 // Michroma13Oblique 13 px oblique (slant 0.21), converted from Michroma.ttf with software/lib/nemesis/src/fonts/ttf2gfx.py
 // Michroma: Copyright 2011 The Michroma Project Authors, SIL Open Font License 1.1 (OFL-Michroma.txt)
 #pragma once

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //
 // ADC noise measurement for the NEMESIS rev2 pots
 //

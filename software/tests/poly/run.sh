@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # builds and runs test_poly.cpp (FAUST 2.88, Homebrew)
 set -e
 cd "$(dirname "$0")"
