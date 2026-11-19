@@ -30,6 +30,13 @@
 //
 // Use them on audio only: CV, gate and V/Oct outputs must stay exact. Clipped
 // outputs are always detected by the module ("CLIP" on the home screen).
+//
+// Smoothing and fractional delays that stay the same across FAUST releases:
+//
+//   nm_smooth(s)          one pole smoother, as si.smooth up to FAUST 2.88
+//   nm_smoo               nm_smooth with si.smoo's 44.1 Hz pole
+//   nm_fdelay(n, d, x)    linear interpolating delay, as de.fdelay up to 2.88
+//                         (d must stay within 0 .. n: not checked)
 //##############################################################################
 
 nm_ticks_per_quarter = 24;
@@ -57,6 +64,18 @@ nm_grid_index(ticks) = floor(nm_position / ticks);
 // so a length changed between grid points doesn't trigger
 nm_grid(ticks) = (nm_running > 0) & ((floor(nm_position / ticks) != floor(nm_position' / ticks)) | (nm_running' == 0));
 nm_samples(ticks) = ticks * ma.SR * 60 / (nm_ticks_per_quarter * max(1, nm_bpm));
+
+//---- smoothing and fractional delays -----------------------------------------
+
+// FAUST 2.94's libraries made si.smooth store the error and the previous input
+// (no dead band in single precision: a smoothed knob may stop an ulp short,
+// which doesn't matter here) and de.fdelay clamp d before int(). mooSpace2's
+// compute() grew from 25 to 29 kB, near the 32 kB instruction cache: 67 ->
+// 83 % CPU on rev2 (2026-11-19). These keep the 2.88 forms whatever the
+// release.
+nm_smooth(s) = \(x).(fb ~ _ with { fb(y) = (1.0 - s) * x + s * y; });
+nm_smoo = nm_smooth(1 - 44.1 / ma.SR);
+nm_fdelay(n, d, x) = de.delay(n + 1, int(d), x) * (1 - ma.frac(d)) + de.delay(n + 1, int(d) + 1, x) * ma.frac(d);
 
 //---- output protection ------------------------------------------------------
 

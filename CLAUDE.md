@@ -75,8 +75,32 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   libraries/architecture so -i inlines master-dev headers, not /usr/local's).
 - 2.94 vs 2.88 on Nemesis (2026-11-18): all programs compile, but compute()
   grows (juno +13 %, mooSpace +19 %, mooSpace2 +11 % to 28 kB, superosc
-  +22 %): stay on 2.88 until CPU is measured on a module
-  (FAUST=~/GitHub/faust/build/bin/faust for faust_build.py).
+  +22 %) (FAUST=~/GitHub/faust/build/bin/faust for faust_build.py).
+  rev2 CPU 2026-11-19, 2.88 -> 2.94.1 (avg, 10 s each): mooSpace 57 -> 70,
+  mooSpace2 67 -> 87 (peak 97, 1 late block), growler 55 -> 59, superosc
+  25 -> 29, breaker 26 -> 30, others +-2: stay on 2.88. The growth is the
+  libraries, not the compiler (2.94.1 with 2.88's libraries: sizes within
+  +-5 %, juno +9 %); si.smooth's new imp(3) (stores the error and x', since
+  2026-10-28) is part of it (growler, freqshift, bitrot back to 2.88 size
+  with imp(0)); mooSpace(2), juno, superosc still +11..22 % from other
+  library changes (de.fdelay now clamps d before int(): a candidate).
+  mooSpace's CPU swings +-5-10 points with code placement alone (the
+  fdelay clamp changes one line of its C++, yet 59 vs 68 %; old si.smooth
+  smaller but slower): judge library changes by the whole picture.
+  mooSpace2 (2026-11-19): nemesis.lib nm_smooth / nm_smoo / nm_fdelay (the
+  2.88 forms, release independent) instead of si.smoo / de.fdelay: 2.94.1
+  82-84 -> 62 %; LFO rate from the raw knob (no per-sample sin); declare
+  options "[optimize:Os][faust:-mcd 0]": 20.4 kB, 50 % (peak 57, 60 s 0
+  late, block 128); same source with 2.88: 54 % (was 67). Measured with
+  a scratchpad script per variant: build, flash, PROG 3, 2 x 20 s.
+  Upstream si.smoo/de.fdelay + Os + -mcd 0: 61 % (the nm_ forms still
+  matter). All programs (2.94.1): -mcd 0 is neutral or 1-4 points better
+  everywhere -> platformio.ini; Os everywhere made pollen 68 -> 74 and
+  superosc 30 -> 32 % -> only mooSpace and mooSpace2 declare it. mooSpace
+  with Os (14.1 kB) measured 52 or 59 % depending only on its address
+  (cache offset 0x148c vs 0x3458): still placement sensitive, likely its
+  per-sample libm calls through flash veneers (pow x7, log10 x6, tan,
+  tanhf, sin: compressors and filters on smoothed values).
 - Old 2022 fork branches (nemesis, custom-memory-manager, teensy-midi):
   deleted, kept in ~/GitHub/faust-2022-branches.bundle.
 

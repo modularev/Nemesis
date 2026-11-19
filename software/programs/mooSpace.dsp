@@ -5,6 +5,10 @@ declare author "Arev Imer (arev.imer@students.fhnw.ch)";
 declare copyright "Arev";
 declare version "0.4";
 declare block_size "64";    // audio block (system setting block size: auto)
+// optimized for size: compute() ~17-20 kB shares the 32 kB instruction
+// cache, 59 -> 52 % CPU on rev2 (FAUST 2.94.1, 2026-11-19); Os made smaller
+// programs (pollen, superosc) slower
+declare options "[optimize:Os]";
 declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/mooSpace.md

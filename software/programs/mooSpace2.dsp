@@ -5,6 +5,10 @@ declare author "Arev Imer";
 declare version "2.8";
 declare audio_outputs "1-6";   // 7/8 are envelope CVs
 declare block_size "128";   // audio block (system setting block size: auto); 64 let single slow blocks (cache misses on the PSRAM heads, up to 118 %) arrive late, ~1 click per 7 s; 128 averages them out (2026-11-17)
+// optimized for size (with -mcd 0 from platformio.ini): compute() 25.6 ->
+// 20.4 kB, 62 -> 50 % CPU on rev2 with FAUST 2.94.1 (2026-11-19): the code
+// size decides here, compute() shares the 32 kB instruction cache
+declare options "[optimize:Os]";
 declare license "GPL-3.0-or-later";
 
 // Controls, modes and background: docs/mooSpace2.md
@@ -19,7 +23,7 @@ MAX_LATE    = 10;     // drag: late tap multiplier (v1: 5)
 MAX_LAG     = 2^16-2;    // lag up to 1 s / 1/2 note at 96 BPM (PSRAM)
 
 // Computation order (faustdoc "Optimizing"): FAUST computes expressions of a
-// raw slider once per block (control rate), but everything after si.smoo on
+// raw slider once per block (control rate), but everything after nm_smoo on
 // every sample. So curves, pow, sin etc. come first, smoothing last (where
 // it saves work: a linear curve after one shared smoother is just as cheap).
 smear_knob  = hslider("smear [hw:CV_X]", 0.5, 0, 1, 0.001);
@@ -39,10 +43,10 @@ decay_g     = select2(decay_knob > DECAY_TOP, 10 ^ (-0.4 / decay_rt),
 // tank, the loop gain goes to exactly 1 and damping and the tank high-pass
 // open, so the tail holds unchanged (shimmer and modulate keep working on it)
 freeze      = hslider("freeze [style:menu{'off':0;'on':1}]", 0, 0, 1, 1) > 0.5;
-frozen      = freeze : si.smooth(ba.tau2pole(0.02));
+frozen      = freeze : nm_smooth(ba.tau2pole(0.02));
 // 1.004: the interpolating delay reads lose a little treble on every pass
 // (frozen at exactly 1 it faded ~0.5 dB/s); the soft limiters hold the rest
-decay       = decay_g * (1 - freeze) + 1.004 * freeze : si.smoo;
+decay       = decay_g * (1 - freeze) + 1.004 * freeze : nm_smoo;
 // tone and reverse coefficients are computed from the raw knob values: FAUST
 // then evaluates their tan/sin once per block instead of on every sample
 reverse_knob = hslider("reverse [rev1:CV_A] [rev2:POT_A] [cv:CV_A]", 0, 0, 1, 0.01);
@@ -61,21 +65,21 @@ snap(len, grid) = select2(sync, len, floor(len / grid + 0.5) * grid);
 lag_ms      = hslider("lag ms [name:lag] [ifnot:sync] [unit:ms] [rev1:CV_F]", 0, 0, 1000, 1);
 lag_ticks   = hslider("lag sync [name:lag] [if:sync] [style:menu{'off':0;'1/32':1;'1/16':2;'1/8':3;'1/8.':4;'1/4':5;'1/4.':6;'1/2':7}]", 0, 0, 7.999, 1)
               : int : \(k).(ba.selectn(8, k, 0, 3, 6, 12, 18, 24, 36, 48));
-predelay    = select2(sync, lag_ms * ma.SR / 1000, nm_samples(lag_ticks)) : min(MAX_LAG - 1) : si.smoo;
+predelay    = select2(sync, lag_ms * ma.SR / 1000, nm_samples(lag_ticks)) : min(MAX_LAG - 1) : nm_smoo;
 dist_amt    = hslider("push [rev1:CV_E]", 0, 0, 1, 0.01);
-motion      = hslider("motion [style:menu{'off':0;'on':1}]", 1, 0, 1, 1) : si.smoo;   // on: glide (pitch), off: crossfade
+motion      = hslider("motion [style:menu{'off':0;'on':1}]", 1, 0, 1, 1) : nm_smoo;   // on: glide (pitch), off: crossfade
 xfade_ms    = 25;   // the crossfade's sweet spot (was a setting, 3..300 ms)
 
 // knob curves: square laws, so the centre gives v1's default values
 //   smear as v1 (centre 4.75); drag 0.5 -> 2.5 (v1 default), 1 -> 10
 // drag: the diffuser lengths (v1's smear: centre 4.75, top 9.5), smoothed
 // slowly (they glide) ...
-stretch     = drag_knob * MAX_DIFF + 0.05 : si.smooth(0.998);
+stretch     = drag_knob * MAX_DIFF + 0.05 : nm_smooth(0.998);
 // ... and the late taps
 late_raw    = 0.2 + drag_knob * drag_knob * (MAX_LATE - 0.2);   // never 0: the taps would coincide and cancel
 // sync: the main late tap (left, 1800 x late_diff samples) on a 1/32 grid
 late_synced = snap(1800 * late_raw, sixteenth / 2) / 1800 : max(0.2) : min(MAX_LATE);
-late_diff   = late_synced : si.smoo;
+late_diff   = late_synced : nm_smoo;
 // shimmer: a delay line pitch shifter (two heads SHIFT_W apart, crossfaded
 // over SHIFT_X, as ef.transpose but with a buffer that fits in fast RAM) in
 // the tank, where input and feedback enter it; the knob adds the shifted sound
@@ -85,12 +89,12 @@ SHIFT_MAX   = 8192;
 shift_semis = hslider("shift [style:menu{'+12':0;'+7':1;'+5':2;'+19':3;'-12':4}]", 0, 0, 4.999, 1)
               : int : \(k).(ba.selectn(5, k, 12, 7, 5, 19, -12));
 shift_step  = 1 - 2 ^ (shift_semis / 12);   // read head speed, control rate
-pitch_shift(x) = de.fdelay(SHIFT_MAX, d, x) * min(d / SHIFT_X, 1)
-               + de.fdelay(SHIFT_MAX, d + SHIFT_W, x) * (1 - min(d / SHIFT_X, 1))
+pitch_shift(x) = nm_fdelay(SHIFT_MAX, d, x) * min(d / SHIFT_X, 1)
+               + nm_fdelay(SHIFT_MAX, d + SHIFT_W, x) * (1 - min(d / SHIFT_X, 1))
 with {
     d = shift_step : (+ : +(SHIFT_W) : \(v).(nm_wrapped(v, SHIFT_W))) ~ _;   // not fmod: a libm call per sample
 };
-shimmer_amt = shimmer_knob : si.smoo;
+shimmer_amt = shimmer_knob : nm_smoo;
 // the shifted sound is added (the original fades to half), so the shimmer
 // builds up instead of draining the tail; the soft limiters in the tank
 // catch the extra gain. Lowpassed, so the stacking octaves don't turn harsh.
@@ -102,13 +106,13 @@ dark        = max(0, -tone);
 bright      = max(0, tone);
 // damping in the loops: 0.1 at the centre (v1 default), 0.97 fully left
 // (v1 went silent at 1), none fully right
-damp        = select2(tone < 0, 0.1 * (1 - bright), 0.1 + 0.87 * sqrt(dark)) * (1 - freeze) : si.smoo;
+damp        = select2(tone < 0, 0.1 * (1 - bright), 0.1 + 0.87 * sqrt(dark)) * (1 - freeze) : nm_smoo;
 // high-pass right of the centre: 20 Hz .. 2.5 kHz, in the loops and (two
 // pole) at the tank input; low-pass at the input left of it: 18 kHz .. 150 Hz
 hp_freq     = 20 * 125 ^ bright;
 tank_hp     = fi.highpass(1, select2(freeze, hp_freq, 5));
 // the dark side gets make-up gain (up to +18 dB), so a dark space stays audible
-tone_gain   = 10 ^ (0.9 * dark) : si.smoo;
+tone_gain   = 10 ^ (0.9 * dark) : nm_smoo;
 tank_tone   = fi.lowpass(1, 18000 * (150 / 18000) ^ dark) : fi.highpass(2, hp_freq) : *(tone_gain);
 
 // reverse: pieces of REV_LEN samples read backwards (the read position
@@ -130,15 +134,15 @@ with {
     rev_head(ph) = de.delay(2 * REV_MAX, 2 * ph, x) * rev_tri(ph);
 };
 // equal power from forward (0) to reversed (1), gains from the raw knob
-rev_fwd     = cos(reverse_knob * ma.PI / 2) : si.smoo;
-rev_back    = sin(reverse_knob * ma.PI / 2) : si.smoo;
+rev_fwd     = cos(reverse_knob * ma.PI / 2) : nm_smoo;
+rev_back    = sin(reverse_knob * ma.PI / 2) : nm_smoo;
 reverse(x)  = x * rev_fwd + reversed(x) * rev_back;
 
 // echoes: ping-pong taps on the reverse buffers, left at 1 and 3 note values,
 // right at 2 and 4 (the transport's tempo, also when it is stopped), falling
 // like a feedback delay, added to the signal going into the tank (smear
 // blurs them); two reads per side (PSRAM)
-echo_amt    = hslider("echoes", 0, 0, 1, 0.01) : si.smoo;
+echo_amt    = hslider("echoes", 0, 0, 1, 0.01) : nm_smoo;
 echo_ticks  = hslider("echo time [style:menu{'1/16':0;'1/8':1;'1/8.':2;'1/4':3;'1/4.':4}]", 1, 0, 4.999, 1) : int
               : \(k).(ba.selectn(5, k, 6, 12, 18, 24, 36));
 ECHO_T      = nm_samples(echo_ticks) : int : max(1) : min((2 * REV_MAX - 1) / 4 : int);
@@ -148,19 +152,22 @@ rev_echo(side, x) = reverse(x) + echoes(side, x);
 
 // modulate: noon is off, both directions wobble all diffuser lengths, the
 // clockwise side faster; relative to the lengths (works at any smear)
-mod_amount  = mod_knob - 0.5 : *(2) : \(m).(m * m * m) : si.smoo;
-mod_rate    = select2(mod_amount > 0, 0.29, 0.37 + 1.6 * mod_amount);
+mod_raw     = mod_knob - 0.5 : *(2) : \(m).(m * m * m);
+mod_amount  = mod_raw : nm_smoo;
+// the rate from the raw knob: os.oscs takes a sin of its frequency, per sample
+// when the frequency is smoothed; its phase stays continuous when it steps
+mod_rate    = select2(mod_raw > 0, 0.29, 0.37 + 1.6 * mod_raw);
 wobble      = abs(mod_amount) * os.oscs(mod_rate);   // no table: os.osc's is 256 kB
 // relative (+-15 % of the lengths) plus an absolute part like v1 (works at smear 0)
 // smear needs some length to spread a transient: the diffusers are at least
 // smear_min long (0 .. 2.5x the base lengths, 4-20 ms), even at low drag
-smear_min   = 2.5 * smear_knob * smear_knob : si.smooth(0.998);
+smear_min   = 2.5 * smear_knob * smear_knob : nm_smooth(0.998);
 diff_mult   = max(stretch, smear_min) * (1 + 0.15 * wobble) + 0.5 * wobble : max(0.05);
 
 // diffusion: v1's coefficients from the smear centre up, less below it
 // smear: the diffusers' strength, 0.2 .. 1 (v1) at the centre .. 1.2 (the
 // coefficients are capped at 0.9, below that allpasses ring)
-diffusion   = select2(smear_knob < 0.5, 1 + 0.4 * (smear_knob - 0.5), 0.2 + 1.6 * smear_knob) : si.smoo;
+diffusion   = select2(smear_knob < 0.5, 1 + 0.4 * (smear_knob - 0.5), 0.2 + 1.6 * smear_knob) : nm_smoo;
 
 // ---- the moving delay -----------------------------------------------------
 
@@ -179,7 +186,7 @@ xfade_w     = 1 - abs(2 * xfade_ph - 1);                  // 0 .. 1 .. 0
 take_a      = (xfade_ph >= 0.5) & (xfade_ph' < 0.5);      // head A silent
 take_b      = xfade_ph < xfade_ph';                       // head B silent
 
-moving(maxd, len, x) = de.fdelay(maxd, da, x) * (1 - xfade_w) + de.fdelay(maxd, db, x) * xfade_w
+moving(maxd, len, x) = nm_fdelay(maxd, da, x) * (1 - xfade_w) + nm_fdelay(maxd, db, x) * xfade_w
 with {
     d  = len : max(0) : min(maxd - 3);
     da = motion * d + (1 - motion) * ba.sAndH(take_a, d);
@@ -229,8 +236,8 @@ clip(lo, hi) = min(hi) : max(lo);
 // equal power crossfade; the sin gains come from the raw knob (control rate)
 balance(mix, dry_l, wet_l, dry_r, wet_r) = pan(dry_l, wet_l), pan(dry_r, wet_r)
 	with {
-			wet_gain = sin(mix*ma.PI/2) : si.smoo;
-			dry_gain = sin((1-mix)*ma.PI/2) : si.smoo;
+			wet_gain = sin(mix*ma.PI/2) : nm_smoo;
+			dry_gain = sin((1-mix)*ma.PI/2) : nm_smoo;
 			pan(dry, wet) = wet_gain * wet + dry_gain * dry;
 		  };
 
@@ -301,7 +308,7 @@ multi_tap_allpass_r(dt, coeff) =
 // tank delays and taps as in v1 (moving them too costs more CPU than the
 // Teensy has); the sdelay taps follow drag like in v1
 tank_delay(dt) = de.delay(dt, dt);
-tank_tap(dt, ratio) = de.fdelay(dt, dt / ratio);
+tank_tap(dt, ratio) = nm_fdelay(dt, dt / ratio);
 tank_sdtap(dt, ratio) = de.sdelay(dt, 1024, late_diff * dt / ratio : min(dt - 3));
 
 left_side =
@@ -370,12 +377,12 @@ lofi(x)     = select2(lofi_amt > 0.005, x, ba.sAndH(lofi_trig, x) * lofi_q + 0.5
 // duck (setting): the wet sound goes down while the input plays and blooms
 // when it stops; gate (setting): the wet sound is chopped on the transport's
 // grid (open the first half of every step, while the transport runs)
-duck_amt    = hslider("duck", 0, 0, 1, 0.01) : si.smoo;
+duck_amt    = hslider("duck", 0, 0, 1, 0.01) : nm_smoo;
 gate_ticks  = hslider("gate [style:menu{'off':0;'1/16':1;'1/8':2;'1/4':3;'1/2':4}]", 0, 0, 4.999, 1) : int
               : \(k).(ba.selectn(5, k, 0, 6, 12, 24, 48));
 gate_open   = select2((gate_ticks > 0) & (nm_running > 0), 1,
                 ma.frac(nm_position * (1 / max(1, gate_ticks))) < 0.5)
-            : si.smooth(ba.tau2pole(0.003));
+            : nm_smooth(ba.tau2pole(0.003));
 
 // outputs: 1/2 the mix (limited), 3/4 rear: the differences of the tank's
 // taps (decorrelated from 1/2: quad with 1/2 in front), 5/6 wet only,
@@ -394,13 +401,13 @@ with {
 };
 
 input_proc = par(i,2,
-	de.fdelay(MAX_LAG, predelay) : rev_echo(i) : input_diff : tank_filter : tank_tone : *(1 - frozen));
+	nm_fdelay(MAX_LAG, predelay) : rev_echo(i) : input_diff : tank_filter : tank_tone : *(1 - frozen));
 
 distortion_stereo(distortion) = par(i,2,cubic_distort(distortion, 0))
 	with {
 		cubic_distort(drive, offset) = * (pregain) : + (offset) : clip(-1, 1) : cubic
 			with {
-    			pregain = pow(10.0, 2 * drive) : si.smoo;   // pow at control rate
+    			pregain = pow(10.0, 2 * drive) : nm_smoo;   // pow at control rate
     			clip(lo, hi) = min(hi) : max(lo);
     			cubic(x) = x - x*x*x / 3;
 		};
