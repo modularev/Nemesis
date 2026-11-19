@@ -59,6 +59,35 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 - The user patches cables and turns knobs on request; say exactly what to
   patch and wait for confirmation.
 
+## FAUST upstream work
+
+- Fork ~/GitHub/faust (origin modularev/faust, upstream grame-cncm/faust),
+  branch teensy-poly-memory on master-dev (2.94.1, 2026-11-19), pushed:
+  faust/dsp/mcu-poly-dsp.h (= nemesis-poly.h, class mcu_dsp_poly),
+  faust/dsp/tiered-memory-manager.h, faust/dsp/teensy-memory.h, teensy.cpp
+  -mem and -nvoices without RTTI (upstream -nvoices didn't build on Teensy
+  4: dynamic_cast), fprintf macro / MIDICTRL / destructor fixes; host tests
+  tests/polyphonic-tests (make mcu-poly), tests/memory-manager-tests. All
+  LGPL-2.1-or-later + FAUST exception. Not yet: running on a Teensy, a
+  GRAME issue/PR (ask the user), Daisy tiers (user has a Daisy).
+- Local master-dev compiler: ~/GitHub/faust/build/bin/faust (build/local,
+  light backends; build/share/faust and build/include link the repo's
+  libraries/architecture so -i inlines master-dev headers, not /usr/local's).
+- 2.94 vs 2.88 on Nemesis (2026-11-18): all programs compile, but compute()
+  grows (juno +13 %, mooSpace +19 %, mooSpace2 +11 % to 28 kB, superosc
+  +22 %): stay on 2.88 until CPU is measured on a module
+  (FAUST=~/GitHub/faust/build/bin/faust for faust_build.py).
+- Old 2022 fork branches (nemesis, custom-memory-manager, teensy-midi):
+  deleted, kept in ~/GitHub/faust-2022-branches.bundle.
+
+## Licenses (2026-11-19)
+
+- SPDX line in every source file, `declare license` in programs; software
+  GPL-3.0-or-later, juno.dsp / juno106_curves.lib / juno106_presets.py
+  GPL-3.0-only (Ultramaster KR-106 is GPL v3 only), nemesis-poly.h
+  LGPL-2.1-or-later + FAUST exception, fonts OFL-1.1; hardware stays
+  CC BY-NC-SA 4.0 (the user's choice). README lists the exceptions.
+
 ## Simulator
 
 - Nemesis Sim (AU/VST3 plugins that run the .dsp files in Ableton) lives in
