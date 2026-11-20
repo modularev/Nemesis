@@ -32,6 +32,8 @@ namespace nemesis
    {
       Channel channel[NEMESIS_SPECTRAL_CHANNELS];
       volatile int requested = 0;
+      const char *const profileName[PROFILE_STEPS] = {"window+fft", "levels+energy", "peaks", "turns",
+                                                       "smear", "frozen", "inverse+ola", "corrections"};
 
       namespace
       {
@@ -68,13 +70,15 @@ namespace nemesis
             float targetT = 0;         // the input's energy per sample at the capture
          };
 
-         // the smear: per bin a level and a phase turn that follow the input
-         // with inertia, and the phase they move
+         // the smear: per bin a level that follows the input with inertia;
+         // the phases turn with the input's current turn where a stable
+         // partial is (locked to its peak), else get a random phase. (Gliding
+         // the turns as well left the frames out of step with the waveform
+         // inside them: a buzz, sidebands at the frame rate 34 dB down.)
          struct Smear
          {
             float *mag = nullptr;      // K
             float *z = nullptr;        // N
-            float *rot = nullptr;      // N
             float *weight = nullptr;   // K: tilt per bin (follow speed relative to the middle)
             float tilt = 2.0f;         // the tilt weight was made for (2: none yet)
             float g = 0;               // fade (smear on/off, d > 0)
@@ -90,6 +94,9 @@ namespace nemesis
             float *syn = nullptr;    // N: the spectrum to resynthesize
             float *turn = nullptr;   // N: this frame's phase turns, locked to the peaks
             float *lastTurn = nullptr;   // N: the previous frame's (stability: tonal or not)
+            float *tonalNow = nullptr;   // K: this frame's tonal flags (per peak, see tonality())
+            float *mag = nullptr;    // K: this frame's levels (RAM2; copied into the PSRAM history:
+                                     // read from there, the peak search took 115k cycles a frame)
             float *hist = nullptr;   // M * K: the levels of the last M frames, a ring (PSRAM)
             int histPos = 0;         // the ring's next frame
             int *peak = nullptr;     // K (scratch): each bin's nearest peak
@@ -111,6 +118,21 @@ namespace nemesis
          float fps = 48000.0f / 256;   // frames per second (setRate): time constants in seconds, not frames
          float rate = 48000.0f;
          int used = 0;
+         // profile: cycles per step, summed
+         volatile uint32_t profSum[PROFILE_STEPS];
+         volatile uint32_t profFrames = 0;
+#ifdef NM_SPECTRAL_CMSIS
+         inline uint32_t now() { return ARM_DWT_CYCCNT; }
+#else
+         inline uint32_t now() { return 0; }
+#endif
+         uint32_t profMark = 0;
+         inline void lap(int step)
+         {
+            uint32_t t = now();
+            profSum[step] += t - profMark;
+            profMark = t;
+         }
 
          // a one-pole coefficient per frame for a time constant in seconds
          inline float perFrame(float seconds) { return 1.0f - expf(-1.0f / (seconds * fps)); }
@@ -254,6 +276,34 @@ namespace nemesis
             }
          }
 
+         // tonal: a stable partial, decided per peak for all its bins (f.tonalNow).
+         // Where partials are closer than the window resolves (a low chord
+         // at 1024 or 2048 points), a bin holds a beating mixture: held on
+         // with its turn, it played tones that weren't there (178 and 299 Hz
+         // for 196/247/294); with a new random phase every frame it keeps its
+         // level as texture instead. A peak is tonal when its turn is the
+         // same as one frame earlier (within ~18 degrees) and puts its
+         // frequency within 0.6 bins of the peak bin (a bin's phase turns
+         // pi/2 per bin and hop of N/4)
+         FLASHMEM void tonality(State &f)
+         {
+            for (int k = 1; k < N / 2; k++)
+            {
+               if (f.peak[k] != k)
+                  continue;
+               float tr = f.turn[2 * k], ti = f.turn[2 * k + 1];
+               float stab = tr * f.lastTurn[2 * k] + ti * f.lastTurn[2 * k + 1];
+               // within 0.6 bins of the bin centre: the angle to the centre's
+               // turn (i^k) below 0.6 * pi/2, i.e. their dot product above
+               // cos(0.94) (no atan2: 100k cycles a frame at 2048 points)
+               static const float centre[4][2] = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+               float near = tr * centre[k & 3][0] + ti * centre[k & 3][1];
+               f.tonalNow[k] = (stab > 0.95f && near > 0.5878f) ? 1.0f : 0.0f;
+            }
+            for (int k = 1; k < N / 2; k++)
+               f.tonalNow[k] = f.tonalNow[f.peak[k]];
+         }
+
          // the history into a layer (the other one if the current still
          // sounds: the two crossfade), with this frame's phases and turns
          FLASHMEM void capture(State &f, float a)
@@ -278,32 +328,8 @@ namespace nemesis
                L.peakOf[k] = f.peak[k];
                L.rot[2 * k] = f.turn[2 * k];
                L.rot[2 * k + 1] = f.turn[2 * k + 1];
-               // tonal (decided per peak, below)
-               L.tonal[k] = 0.0f;
+               L.tonal[k] = f.tonalNow[k];
             }
-            // tonal: a stable partial, decided per peak for all its bins.
-            // Where partials are closer than the window resolves (a low
-            // chord at 1024 or 2048 points), a bin holds a beating mixture:
-            // held on with its turn, it played tones that weren't there (178
-            // and 299 Hz for 196/247/294); with a new random phase every
-            // frame it keeps its level as texture instead. A peak is tonal
-            // when its turn is the same as one frame earlier (within ~18
-            // degrees) and puts its frequency within 0.6 bins of the peak
-            // bin (a bin's phase turns pi/2 per bin and hop of N/4)
-            for (int k = 1; k < N / 2; k++)
-            {
-               if (f.peak[k] != k)
-                  continue;
-               float tr = f.turn[2 * k], ti = f.turn[2 * k + 1];
-               float stab = tr * f.lastTurn[2 * k] + ti * f.lastTurn[2 * k + 1];
-               float dev = atan2f(ti, tr) - 1.5707963f * (k & 3);   // against the bin centre's turn
-               while (dev > 3.14159265f) dev -= TAU;
-               while (dev < -3.14159265f) dev += TAU;
-               dev /= 1.5707963f;   // in bins
-               L.tonal[k] = (stab > 0.95f && fabsf(dev) < 0.6f) ? 1.0f : 0.0f;
-            }
-            for (int k = 1; k < N / 2; k++)
-               L.tonal[k] = L.tonal[f.peak[k]];
             // level match: a capture right after an attack holds a loud
             // stretch, one late in a decaying note a quiet one (+-11 dB
             // with a struck chord): the played levels are steered to the
@@ -339,8 +365,6 @@ namespace nemesis
                   float m = mag[k];
                   if (m > 1e-12f) { S.z[2 * k] = cr / m; S.z[2 * k + 1] = ci / m; }
                   else { S.z[2 * k] = 1.0f; S.z[2 * k + 1] = 0.0f; }
-                  S.rot[2 * k] = f.turn[2 * k];
-                  S.rot[2 * k + 1] = f.turn[2 * k + 1];
                }
                S.primed = true;
             }
@@ -355,35 +379,73 @@ namespace nemesis
                S.tilt = tilt;
             }
             float base = 1.0f / (seconds * fps);   // per frame, at the middle
+            // the peaks of tonal partials carry the phase on, turning by
+            // their measured turn
+            for (int k = 1; k < N / 2; k++)
+            {
+               if (f.peak[k] != k || f.tonalNow[k] < 0.5f)
+                  continue;
+               float rr = f.turn[2 * k], ri = f.turn[2 * k + 1];
+               float zr = S.z[2 * k], zi = S.z[2 * k + 1];
+               float nr = zr * rr - zi * ri, ni = zr * ri + zi * rr;
+               float fix = 1.5f - 0.5f * (nr * nr + ni * ni);
+               S.z[2 * k] = nr * fix;
+               S.z[2 * k + 1] = ni * fix;
+            }
             for (int k = 1; k < N / 2; k++)
             {
                float a = base * S.weight[k];
                a = a > 1.0f ? 1.0f : a;
                S.mag[k] += (mag[k] - S.mag[k]) * a;
-               // the turn glides towards the input's (a unit vector again)
-               float rr = S.rot[2 * k] + (f.turn[2 * k] - S.rot[2 * k]) * a;
-               float ri = S.rot[2 * k + 1] + (f.turn[2 * k + 1] - S.rot[2 * k + 1]) * a;
-               float n2 = rr * rr + ri * ri;
-               if (n2 > 1e-12f)
+               float nr, ni;
+               int p = f.peak[k];
+               if (f.tonalNow[k] > 0.5f)
                {
-                  float inv = 1.0f / sqrtf(n2);
-                  rr *= inv;
-                  ri *= inv;
+                  // identity phase locking per frame (Laroche & Dolson): the
+                  // peak's phase plus this bin's phase offset to the peak in
+                  // the input now, so a partial keeps its shape (set once at
+                  // the start, the offsets came from a half empty window: a
+                  // smeared sine lost half its level and had sidebands at
+                  // the frame rate)
+                  float zr = S.z[2 * p], zi = S.z[2 * p + 1];
+                  if (p == k)
+                  {
+                     nr = zr;
+                     ni = zi;
+                  }
+                  else
+                  {
+                     float xr = f.spec[2 * k], xi = f.spec[2 * k + 1];
+                     float pr = f.spec[2 * p], pi = f.spec[2 * p + 1];
+                     float dr = xr * pr + xi * pi, di = xi * pr - xr * pi;   // x * conj(peak)
+                     float dm = dr * dr + di * di;
+                     if (dm > 1e-30f)
+                     {
+                        float inv = 1.0f / sqrtf(dm);
+                        dr *= inv;
+                        di *= inv;
+                     }
+                     else
+                     {
+                        dr = 1.0f;
+                        di = 0.0f;
+                     }
+                     nr = zr * dr - zi * di;
+                     ni = zr * di + zi * dr;
+                  }
                }
                else
                {
-                  rr = f.turn[2 * k];
-                  ri = f.turn[2 * k + 1];
+                  noise(f.rng);   // old or noisy energy: a random phase
+                  const float *u = unitTable[f.rng >> 24];
+                  nr = u[0];
+                  ni = u[1];
+                  if (p == k)
+                  {
+                     S.z[2 * k] = nr;   // a peak that becomes tonal starts from here
+                     S.z[2 * k + 1] = ni;
+                  }
                }
-               S.rot[2 * k] = rr;
-               S.rot[2 * k + 1] = ri;
-               float zr = S.z[2 * k], zi = S.z[2 * k + 1];
-               float nr = zr * rr - zi * ri, ni = zr * ri + zi * rr;
-               float fix = 1.5f - 0.5f * (nr * nr + ni * ni);
-               nr *= fix;
-               ni *= fix;
-               S.z[2 * k] = nr;
-               S.z[2 * k + 1] = ni;
                float m = S.mag[k] * w;
                f.syn[2 * k] += m * nr;
                f.syn[2 * k + 1] += m * ni;
@@ -422,8 +484,10 @@ namespace nemesis
             if (!any && ws <= 0.0f)
                return;
             memset(f.syn, 0, N * sizeof(float));
+            lap(3);
             if (ws > 0.0f)
                smear(f, mag, seconds > 0.05f ? seconds : 0.05f, tilt, ws * S.corr);
+            lap(4);
 
             // drift: every peak's pitch wanders by up to +-15 cents (a
             // random target every ~0.34 s, glided to); the deviation turns
@@ -514,9 +578,11 @@ namespace nemesis
                   L.norm += (want - L.norm) * perFrame(0.016f);
                }
             }
+            lap(5);
             inverse(f.syn, f.time);
             for (int i = 0; i < N; i++)
                s.out[(s.pos + i) & MASK] += f.time[i] * window[i] * gain;
+            lap(6);
 
             // output corrections: the overlap-add loses level where the
             // bins of close partials share a turn (a low chord: -2.5 dB),
@@ -544,6 +610,7 @@ namespace nemesis
                   corr = clamp(corr, 0.5f, 2.0f);
                }
             }
+            lap(7);
          }
       }
 
@@ -553,15 +620,17 @@ namespace nemesis
          State &f = state[c];
          if (!f.block)
             return;
+         profMark = now();
          // the last N input samples, oldest first
          for (int i = 0; i < N; i++)
             f.time[i] = s.in[(s.pos + i) & MASK] * window[i];
          forward(f.time, f.spec);
+         lap(0);
          if (s.kernel == FREEZE)
          {
             // this frame's levels into the history, its energy, its peaks
             // and locked turns
-            float *h = f.hist + f.histPos * K;
+            float *h = f.mag;
             h[0] = 0.0f;
             h[K - 1] = 0.0f;
             float e = 0.0f;
@@ -572,6 +641,7 @@ namespace nemesis
                h[k] = sqrtf(m2);
                e += m2;
             }
+            memcpy(f.hist + f.histPos * K, h, K * sizeof(float));   // into the history (PSRAM) in one go
             f.histPos = (f.histPos + 1) % M;
             f.energy += (e - f.energy) * perFrame(0.68f);
             float et = 0.0f;   // the input's last HOP samples
@@ -581,9 +651,13 @@ namespace nemesis
                et += x * x;
             }
             f.energyT += (et / HOP - f.energyT) * perFrame(0.68f);
+            lap(1);
             findPeaks(h, f.peak);
+            lap(2);
             lockedTurns(f);
+            tonality(f);
             freeze(s, f, h);
+            profFrames++;
             memcpy(f.lastTurn, f.turn, N * sizeof(float));
          }
          memcpy(f.prev, f.spec, N * sizeof(float));
@@ -610,7 +684,7 @@ namespace nemesis
          // in PSRAM: three level buffers of M frames (the history and the
          // two layers' frames, which a capture swaps; writing the history
          // there costs ~2 % in a frame's block)
-         const size_t fastFloats = 8 * N + 2 * (2 * N + 3 * K) + (2 * N + 2 * K);
+         const size_t fastFloats = 8 * N + 2 * K + 2 * (2 * N + 3 * K) + (N + 2 * K);
          const size_t fastInts = 3 * K;
          const size_t fast = fastFloats * sizeof(float) + fastInts * sizeof(int);
          const size_t slow = (size_t)3 * M * K * sizeof(float);
@@ -651,6 +725,8 @@ namespace nemesis
             f.syn = p; p += N;
             f.turn = p; p += N;
             f.lastTurn = p; p += N;
+            f.mag = p; p += K;
+            f.tonalNow = p; p += K;
             for (int l = 0; l < 2; l++)
             {
                f.layer[l].z = p; p += N;
@@ -662,7 +738,6 @@ namespace nemesis
             f.smear.mag = p; p += K;
             f.smear.weight = p; p += K;
             f.smear.z = p; p += N;
-            f.smear.rot = p; p += N;
             int *ip = (int *)p;
             f.peak = ip; ip += K;
             f.layer[0].peakOf = ip; ip += K;
@@ -729,6 +804,17 @@ namespace nemesis
       }
 
       int channels() { return used; }
+
+      void profile(uint32_t *cycles, uint32_t &frames)
+      {
+         frames = profFrames;
+         for (int i = 0; i < PROFILE_STEPS; i++)
+         {
+            cycles[i] = frames ? profSum[i] / frames : 0;
+            profSum[i] = 0;
+         }
+         profFrames = 0;
+      }
 
       char placement(int c)
       {

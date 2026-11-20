@@ -102,6 +102,11 @@ namespace nemesis
       char placement(int c);
       // one frame of channel c (nm_spectral calls it every hop)
       void frame(int c);
+      // profile (Teensy): average cycles per frame of each step since the
+      // last call (names in profileName), then reset; PROFILE_STEPS steps
+      constexpr int PROFILE_STEPS = 8;
+      extern const char *const profileName[PROFILE_STEPS];
+      void profile(uint32_t *cycles, uint32_t &frames);
    }
 }
 

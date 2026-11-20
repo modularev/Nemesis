@@ -28,6 +28,7 @@
 #include "nemesis_programs.h"
 #include <nemesis_hw.h>
 #include <nemesis_remote.h>
+#include <nemesis_spectral.h>
 
 extern "C" uint8_t external_psram_size; // MB, set by the startup code
 extern "C" char *__brkval;
@@ -262,6 +263,20 @@ FLASHMEM void readCommands()
          for (int i = 0; i < nemesis::NUM_INPUTS; i++)
             Serial.printf(" %.4f", nemesis::hw::rawInput(i));
          Serial.printf(" %.1f\n", tempmonGetTemp());
+      }
+      else if (strcmp(command, "SPECPROF") == 0)
+      {
+         // the spectral stage: average cycles per frame of each step
+         uint32_t cyc[nemesis::spectral::PROFILE_STEPS], frames;
+         nemesis::spectral::profile(cyc, frames);
+         Serial.printf("SPECPROF %lu frames, %d points:", (unsigned long)frames, nemesis::spectral::size());
+         uint32_t total = 0;
+         for (int i = 0; i < nemesis::spectral::PROFILE_STEPS; i++)
+         {
+            Serial.printf(" %s %lu", nemesis::spectral::profileName[i], (unsigned long)cyc[i]);
+            total += cyc[i];
+         }
+         Serial.printf("  total %lu\n", (unsigned long)total);
       }
       else if (strcmp(command, "HANG") == 0)
       {
