@@ -398,6 +398,8 @@ namespace nemesis
          fHomeLayout = value;
       else if (strcmp(key, "mem16") == 0)
          fMem16Channels = atoi(value);
+      else if (strcmp(key, "spectral") == 0)
+         fSpectralChannels = atoi(value);
       else if (strcmp(key, "output") == 0)
       {
          int mode = output::modeFromName(value);
@@ -903,7 +905,7 @@ namespace nemesis
       p.changed = true;
    }
 
-   void Program::randomize(int page)
+   FLASHMEM void Program::randomize(int page)
    {
       static uint32_t seed = 0x9E3779B9u ^ micros();
       float amount = 1.0f;

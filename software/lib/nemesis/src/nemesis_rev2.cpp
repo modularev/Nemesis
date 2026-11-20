@@ -1116,7 +1116,7 @@ namespace nemesis
 
          // ---- settings lists ---------------------------------------------
 
-         void buildItems()
+         FLASHMEM void buildItems()
          {
             item_count = 0;
             items_program = currentProgram();

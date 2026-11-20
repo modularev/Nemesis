@@ -54,6 +54,11 @@ namespace nemesis
    }
 }
 
+// spectral processing (nemesis_spectral.cpp is compiled in by run.sh)
+#ifdef PROG_SPECTRAL
+#include "nemesis_spectral.h"
+#endif
+
 #include PROG_H
 #ifdef PROG_VOICES
 #include PROG_EFFECT_H
@@ -165,6 +170,14 @@ int main(int argc, char **argv)
    if (B <= 0 || B > 128)
       B = 64;
 
+#ifdef PROG_SPECTRAL
+   if (!nemesis::spectral::begin(PROG_SPECTRAL))
+   {
+      printf("spectral: no memory\n");
+      return 1;
+   }
+   nemesis::spectral::setRate(SR);
+#endif
    dsp *d;
 #ifdef PROG_VOICES
    const int voices = SR > 48000 ? (PROG_VOICES + 1) / 2 : PROG_VOICES;   // the library halves them at 96 kHz
@@ -268,6 +281,10 @@ int main(int argc, char **argv)
       d->instanceClear();
       for (int c = 0; c < NEMESIS_MEM16_CHANNELS; c++)
          memset(nemesis::mem16::buffer[c], 0, NEMESIS_MEM16_LENGTH * sizeof(int16_t));
+#ifdef PROG_SPECTRAL
+      nemesis::spectral::begin(PROG_SPECTRAL);   // cleared, as at a program start
+      nemesis::spectral::setRate(SR);
+#endif
       pos = 0;
       t = 0;
    };
@@ -357,6 +374,9 @@ int main(int argc, char **argv)
             }
          }
          d->compute(B, ip.data(), op.data());
+#ifdef PROG_SPECTRAL
+         nemesis::spectral::service();   // as the module's main loop
+#endif
          for (int c = 0; c < nout; c++)
             for (int s = 0; s < B; s++)
                r.out[c].add(out[c][s]);

@@ -56,6 +56,11 @@ SECTIONS
 		*libSD.a:*(.text*)
 		*libSerialFlash.a:*(.text*)
 		*libAdafruit*:*(.text*)
+		/* CMSIS-DSP stays in ITCM: from flash its unrolled FFT code (and,
+		   worse, its tables: 150 % of a block per 2048 point frame) was
+		   several times slower (2026-11-20). Room made by moving main loop
+		   code to flash (readCommands, loop::service, buildItems,
+		   randomize) */
 		. = ALIGN(4);
 	} > FLASH
 

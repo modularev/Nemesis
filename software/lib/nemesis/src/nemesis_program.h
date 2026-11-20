@@ -283,6 +283,8 @@ namespace nemesis
       const char *homeLayout() const { return fHomeLayout; }
       // 'declare mem16 "2";': channels of 16 bit memory (nemesis_mem16.h)
       int mem16Channels() const { return fMem16Channels; }
+      // 'declare spectral "2";': channels of spectral processing (nemesis_spectral.h)
+      int spectralChannels() const { return fSpectralChannels; }
       int page() const;
       void nextPage();
       // [button:N] parameters: 1 while button N is held
@@ -429,6 +431,7 @@ namespace nemesis
       int fHome = -1;
       const char *fHomeLayout = nullptr; // FAUST metadata strings stay valid
       int fMem16Channels = 0;
+      int fSpectralChannels = 0;
       int fPendingButton = -1;
       int fPendingActivity = -1;
       int fPager = -1;

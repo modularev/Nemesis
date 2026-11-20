@@ -13,6 +13,7 @@
 
 #include <malloc.h>
 #include "nemesis.h"
+#include "nemesis_spectral.h"
 #include "nemesis_tdm.h"
 #include "nemesis_hw.h"
 #include "nemesis_settings.h"
@@ -232,6 +233,9 @@ namespace nemesis
    {
       out.printf("SD: %s; failed starts before this one: %d\n", sdProblem() ? sdProblem() : "in use", bootFailures());
       out.printf("watchdog: CS %08lx TOVAL %lu\n", (unsigned long)watchdog_cs, (unsigned long)watchdog_toval);
+      if (spectral::channels() > 0)
+         out.printf("spectral: %d points, %d channels, buffers %c%c (R RAM2, P PSRAM)\n", spectral::size(),
+                    spectral::channels(), spectral::placement(0), spectral::placement(1));
       out.printf("audio: block %d samples, round trip %d samples; output written late %lu of %lu blocks\n",
                  tdm::blockSize(), 2 * tdm::blockSize(), (unsigned long)tdm::lateWrites(),
                  (unsigned long)tdm::writes());
@@ -713,6 +717,7 @@ namespace nemesis
             if (i.led >= 0)
                hw::setLed(i.led, *i.zone > 0.5f * (i.min + i.max));
          hw::service(*active);
+         spectral::service();   // a spectral size change a program asked for
       }
    }
 

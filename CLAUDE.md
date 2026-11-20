@@ -112,6 +112,34 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   LGPL-2.1-or-later + FAUST exception, fonts OFL-1.1; hardware stays
   CC BY-NC-SA 4.0 (the user's choice). README lists the exceptions.
 
+## Spectral processing (2026-11-20)
+
+- lib nemesis_spectral.h/.cpp: a phase vocoder for FAUST programs
+  (`declare spectral "2"`, ffunction nm_spectral(ch, kernel, size, x,
+  a..g) per sample, nm_spectral_level). 1024 or 2048 points, hop N/4,
+  Hann; size changes are reallocated in the main loop (service()), never
+  in the audio interrupt. CMSIS FFT set up by hand per size
+  (arm_rfft_fast_init_f32 pulled in every size's tables: ~70 kB RAM1).
+  CMSIS code and tables must stay in ITCM/RAM: from flash a 2048 frame
+  took 150 % of a 64 block (tables) / 80 % (code). Frame functions run
+  from flash (FLASHMEM, ITCM at 4 blocks); room made by moving
+  readCommands, loop::service, buildItems, randomize to flash.
+- FREEZE kernel: level history of 32 frames (PSRAM; capture swaps
+  buffers: copying 66 kB was a late block = click), identity phase
+  locking, tonal test per peak (stable turn + frequency within 0.6 bins,
+  else random phase: unresolved partials played wrong tones, the
+  user's buzz), level match (played energy -> input average) + output
+  correction, drift = slow pitch wander per peak (random turns per frame
+  buzzed), smear layer (levels and turns follow with inertia, tilt),
+  time constants in seconds (setRate). Close low notes (< ~2 bins) can
+  only freeze as texture; 4096 points would resolve them but doesn't
+  fit RAM2 for stereo as laid out.
+- slush (program 13): freeze/smear; block 128 (a 2048 frame with smear
+  ~40 % of a 128 block, between frames 3 %). Mac tests: scratchpad st/
+  (direct.cpp, bz/pc/lv/xf), tests/programs/run.sh slush. Not yet
+  measured on rev2 with CMSIS back in ITCM; the user still heard a buzz
+  (not reproduced on the Mac: ask for a recording of out 3).
+
 ## Simulator
 
 - Nemesis Sim (AU/VST3 plugins that run the .dsp files in Ableton) lives in

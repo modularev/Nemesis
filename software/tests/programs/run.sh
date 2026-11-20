@@ -43,8 +43,12 @@ for P in $PROGRAMS; do
         "$FAUST" -lang cpp $FOPTS -cn ProgEffect -pn effect -I "$SW/programs" -I "$SW/faust" "$DSP" -o "$OUT/${P}_effect.h"
         DEFS="-DPROG_VOICES=$NV -DPROG_EFFECT_H=\"${P}_effect.h\""
     fi
+    SPEC=$(sed -n 's/^declare spectral "\([0-9]*\)".*/\1/p' "$DSP")
+    if [ -n "$SPEC" ]; then
+        DEFS="$DEFS -DPROG_SPECTRAL=$SPEC $SW/lib/nemesis/src/nemesis_spectral.cpp"
+    fi
     c++ -O2 -std=c++17 -w -I"$OUT" -I"$SW/faust" -I"$SW/lib/nemesis/src" -I"$FINC" \
-        -DPROG_H="\"$P.h\"" $DEFS program_test.cpp -o "$OUT/$P"
+        -DPROG_H="\"$P.h\"" program_test.cpp $DEFS -o "$OUT/$P"
     "$OUT/$P" "$P" "$SEED" || FAILED="$FAILED $P"
 done
 

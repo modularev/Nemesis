@@ -3,6 +3,9 @@
 # module.py - every program on a connected Nemesis: CPU load, peaks, late
 # audio blocks, NaN resets, the free heap while each runs and after
 # switching through all (back at the program running at the start).
+# The load depends on the knob-bound values (the physical knobs): each
+# result keeps them, and a CPU rise with knobs moved since the baseline is
+# reported as such, not as a regression.
 #
 #   tests/.venv/bin/python tests/programs/module.py            measure, compare with the baseline
 #   tests/.venv/bin/python tests/programs/module.py --save     measure and store as the new baseline
@@ -104,8 +107,17 @@ def main():
             if x and late is not None:
                 break
         h, _ = m.ask("MEM", HEAP)
+        # the knob-bound values: the load depends on them (pollen 59 % with
+        # density and pitch in the middle, 78 % at full), and they are
+        # wherever the physical knobs are
+        js, _ = m.ask("JSON", re.compile(r"^JSON (.*)$"))
+        knobs = {}
+        if js:
+            for c in json.loads(js.group(1)).get("controls", []):
+                if c.get("input"):
+                    knobs[c["label"]] = round(c["value"], 2)
         r = {"cpu": round(sum(cpu) / len(cpu), 1) if cpu else None, "peak": peak, "late": late, "nan": nan,
-             "heap_kb": int(h.group(1)) if h else None}
+             "heap_kb": int(h.group(1)) if h else None, "knobs": knobs}
         results[name] = r
         print("  %-11s CPU %5s %%  peak %5.1f %%  late %s  NaN resets %d  heap free %s kB" %
               (name, r["cpu"], peak, "?" if late is None else late, nan, r["heap_kb"]), flush=True)
@@ -140,7 +152,15 @@ def main():
         for name, r in results.items():
             b = base["programs"].get(name)
             if b and b["cpu"] is not None and r["cpu"] is not None and r["cpu"] > b["cpu"] + 3:
-                problems.append("%s: CPU %.1f %% (baseline %.1f %%)" % (name, r["cpu"], b["cpu"]))
+                moved = [k for k, v in r.get("knobs", {}).items()
+                         if k in b.get("knobs", {}) and abs(v - b["knobs"][k]) > 0.05]
+                if moved:
+                    print("  %s: CPU %.1f %% (baseline %.1f %%) with knobs moved since the baseline: %s" %
+                          (name, r["cpu"], b["cpu"], ", ".join("%s %.2f (was %.2f)" % (k, r["knobs"][k], b["knobs"][k]) for k in moved)))
+                elif "knobs" not in b:
+                    problems.append("%s: CPU %.1f %% (baseline %.1f %%; the baseline has no knob positions)" % (name, r["cpu"], b["cpu"]))
+                else:
+                    problems.append("%s: CPU %.1f %% (baseline %.1f %%)" % (name, r["cpu"], b["cpu"]))
         if heap_kb is not None and base.get("heap_kb") and base.get("start") == programs[start] \
                 and heap_kb < base["heap_kb"] - 16:
             problems.append("heap %d kB (baseline %d kB)" % (heap_kb, base["heap_kb"]))

@@ -2,90 +2,218 @@
  "date": "2026-11-20",
  "programs": {
   "juno": {
-   "cpu": 3.1,
-   "peak": 6.6,
+   "cpu": 3.5,
+   "peak": 4.4,
    "late": 0,
    "nan": 0,
-   "heap_kb": 427
+   "heap_kb": 431,
+   "knobs": {
+    "Attack": 0.0,
+    "Cutoff": 0.39,
+    "Decay": 0.24,
+    "Env": 1.0,
+    "Release": 0.32,
+    "Resonance": 0.03,
+    "Sustain": 0.12
+   }
   },
   "mooSpace": {
-   "cpu": 49.0,
-   "peak": 55.1,
+   "cpu": 48.2,
+   "peak": 54.7,
    "late": 0,
    "nan": 0,
-   "heap_kb": 78
+   "heap_kb": 67,
+   "knobs": {
+    "Filter": 0.59,
+    "colour": 0.75,
+    "decay": 0.3,
+    "drag": 0.3,
+    "mix": 0.66,
+    "modulate": 1.0,
+    "smear": 0.51
+   }
   },
   "mooSpace2": {
-   "cpu": 53.8,
-   "peak": 60.9,
+   "cpu": 51.1,
+   "peak": 61.0,
    "late": 0,
    "nan": 0,
-   "heap_kb": 56
+   "heap_kb": 52,
+   "knobs": {
+    "decay": 0.24,
+    "drag": 0.42,
+    "mix": 1.0,
+    "reverse": 1.0,
+    "shimmer": 1.0,
+    "smear": 0.23,
+    "tone": 1.0
+   }
   },
   "freqshift": {
-   "cpu": 29.4,
-   "peak": 33.0,
+   "cpu": 29.5,
+   "peak": 35.1,
    "late": 0,
    "nan": 0,
-   "heap_kb": 445
+   "heap_kb": 449,
+   "knobs": {
+    "delay": 3.97,
+    "feedback": 1.0,
+    "mix": 1.0,
+    "range": 37.2,
+    "shift": 0.25,
+    "sideband": 1.0,
+    "spread": -1.0
+   }
   },
   "superosc": {
-   "cpu": 24.9,
-   "peak": 27.5,
+   "cpu": 23.1,
+   "peak": 28.6,
    "late": 0,
    "nan": 0,
-   "heap_kb": 446
+   "heap_kb": 450,
+   "knobs": {
+    "cutoff": 6824.65,
+    "detune": 0.32,
+    "fifth": 0.38,
+    "fourth": 0.49,
+    "resonance": 0.0,
+    "root": 0.59,
+    "tune": -0.07,
+    "v-oct": -0.0
+   }
   },
   "breaker": {
-   "cpu": 25.6,
-   "peak": 34.9,
+   "cpu": 24.9,
+   "peak": 34.7,
    "late": 0,
    "nan": 0,
-   "heap_kb": 445
+   "heap_kb": 448,
+   "knobs": {
+    "comb": -0.23,
+    "crush": 0.28,
+    "drive": 0.25,
+    "pattern x": 0.35,
+    "pattern y": 0.59,
+    "repeat gate": 0.0,
+    "rev-rep": 0.32,
+    "reverse gate": 0.0,
+    "slice": 4.13
+   }
   },
   "growler": {
-   "cpu": 52.2,
-   "peak": 59.9,
-   "late": 1,
+   "cpu": 51.4,
+   "peak": 62.8,
+   "late": 0,
    "nan": 0,
-   "heap_kb": 444
+   "heap_kb": 447,
+   "knobs": {
+    "cross": 0.0,
+    "cutoff": 3759.21,
+    "feedback": 0.32,
+    "mod 2": 0.33,
+    "mod 3": 0.41,
+    "mod 4": 0.58,
+    "ratios": 11.83
+   }
   },
   "pollen": {
-   "cpu": 58.9,
-   "peak": 67.2,
+   "cpu": 76.1,
+   "peak": 87.3,
    "late": 0,
    "nan": 0,
-   "heap_kb": 440
+   "heap_kb": 443,
+   "knobs": {
+    "blur": 0.58,
+    "density": 1.0,
+    "mix": 0.48,
+    "pitch": 1.0,
+    "position": 0.39,
+    "size": 0.3,
+    "spray": 0.21
+   }
   },
   "strike": {
-   "cpu": 51.2,
-   "peak": 52.0,
+   "cpu": 52.3,
+   "peak": 53.3,
    "late": 0,
    "nan": 0,
-   "heap_kb": 404
+   "heap_kb": 405,
+   "knobs": {
+    "X": 0.0,
+    "Y": 0.12,
+    "Z": 0.6,
+    "bend": 0.5,
+    "inharmonic": 0.5,
+    "position": 0.5,
+    "tension": 0.5
+   }
   },
   "bitrot": {
-   "cpu": 10.4,
-   "peak": 13.5,
+   "cpu": 9.5,
+   "peak": 12.9,
    "late": 0,
    "nan": 0,
-   "heap_kb": 443
+   "heap_kb": 444,
+   "knobs": {
+    "bend": 0.73,
+    "chaos": 0.34,
+    "corrupt": 0.58,
+    "depth": 0.59,
+    "mix": 1.0,
+    "repeats": 0.76,
+    "time": 0.24
+   }
   },
   "primetime": {
-   "cpu": 13.4,
-   "peak": 17.9,
+   "cpu": 13.1,
+   "peak": 16.0,
    "late": 0,
    "nan": 0,
-   "heap_kb": 437
+   "heap_kb": 437,
+   "knobs": {
+    "A-FB": 0.0,
+    "B-FB": 0.01,
+    "delay A": 0.62,
+    "delay B": 0.35,
+    "depth": 0.04,
+    "manual sweep": 0.0,
+    "rate": 0.54
+   }
   },
   "harmonizer": {
-   "cpu": 9.9,
-   "peak": 13.9,
+   "cpu": 9.2,
+   "peak": 12.4,
    "late": 0,
    "nan": 0,
-   "heap_kb": 317
+   "heap_kb": 317,
+   "knobs": {
+    "delay FB": 0.42,
+    "delay only": 0.42,
+    "high": 0.0,
+    "low": 0.33,
+    "main FB": 0.53,
+    "main delay": 0.24,
+    "manual": 0.23
+   }
+  },
+  "slush": {
+   "cpu": 3.9,
+   "peak": 12.0,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 235,
+   "knobs": {
+    "drift": 0.39,
+    "fade": 1.0,
+    "freeze cv": 0.0,
+    "level": 0.0,
+    "mix": 1.0,
+    "motion": 0.0,
+    "speed": 0.65,
+    "tone": 0.5
+   }
   }
  },
- "heap_kb": 427,
- "start": "juno"
+ "heap_kb": 235,
+ "start": "slush"
 }

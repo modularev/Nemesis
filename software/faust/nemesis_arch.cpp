@@ -46,6 +46,7 @@
 //   NEMESIS_NUM_OUTPUTS      the effect's outputs
 
 #include <nemesis_mem16.h>
+#include <nemesis_spectral.h>
 #include <string.h> // for memset
 
 #include "NemesisAudio.h"
@@ -265,7 +266,22 @@ FLASHMEM bool NemesisAudio::start()
     NemesisAudioMeta meta(this);
     fDSP->metadata(&meta);
     // 16 bit memory ('declare mem16'): without it the program can't run
+    // spectral processing ('declare spectral'): its buffers, else no start
+    if (spectralChannels() > 0 && !nemesis::spectral::begin(spectralChannels())) {
+#ifdef NVOICES
+        delete fDSP;
+        fVoices = nullptr;
+#else
+        mydsp::destroy(fDSP);
+#endif
+        fDSP = nullptr;
+        gLargeCount = 0;
+        nemesis::arenaReset();
+        Serial.println("not enough memory for the spectral processing");
+        return false;
+    }
     if (mem16Channels() > 0 && !nemesis::mem16::begin(mem16Channels())) {
+        nemesis::spectral::end();
 #ifdef NVOICES
         delete fDSP;
         fVoices = nullptr;
@@ -279,6 +295,8 @@ FLASHMEM bool NemesisAudio::start()
         return false;
     }
     const int rate = nemesis::applySampleRate(*this);
+    if (spectralChannels() > 0)
+        nemesis::spectral::setRate(rate);
 
     // with -mem, init() is empty: classInit() plus instanceInit()
     NEMESIS_TRACE("  classInit %d\n", rate);
@@ -362,6 +380,8 @@ FLASHMEM void NemesisAudio::stop()
     mydsp::classDestroy();
     if (mem16Channels() > 0)
         nemesis::mem16::end();
+    if (spectralChannels() > 0)
+        nemesis::spectral::end();
     nemesis::arenaReset();  // this program's delay lines
 }
 

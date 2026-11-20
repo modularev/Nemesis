@@ -58,7 +58,8 @@ static inline float nm16_put(int channel, int index, float x)
 {
    float s = x * 32767.0f;
    s = s > 32767.0f ? 32767.0f : (s < -32767.0f ? -32767.0f : s);
-   nemesis::mem16::buffer[channel][(uint32_t)index & nemesis::mem16::MASK] = (int16_t)lrintf(s);
+   // rounded inline (lrintf was a libm call per sample through a flash veneer)
+   nemesis::mem16::buffer[channel][(uint32_t)index & nemesis::mem16::MASK] = (int16_t)(s + (s < 0.0f ? -0.5f : 0.5f));
    return x;
 }
 

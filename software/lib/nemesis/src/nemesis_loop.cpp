@@ -188,7 +188,7 @@ namespace nemesis
          }
       }
 
-      void service(Program &program)
+      FLASHMEM void service(Program &program)   // main loop: from flash (ITCM room for the FFT)
       {
          float *zone = program.loopLength();
          if (&program != watched)

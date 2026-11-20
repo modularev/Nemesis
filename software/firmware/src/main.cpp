@@ -41,7 +41,8 @@ elapsedMillis sinceReport;
 char command[64];
 size_t commandLength = 0;
 
-void readCommands()
+// main loop only, rarely busy: from flash (ITCM room for the FFT, 2026-11-20)
+FLASHMEM void readCommands()
 {
    while (Serial.available())
    {
