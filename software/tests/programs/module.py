@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # module.py - every program on a connected Nemesis: CPU load, peaks, late
-# audio blocks, NaN resets and the heap after switching through all.
+# audio blocks, NaN resets, the free heap while each runs and after
+# switching through all (back at the program running at the start).
 #
 #   tests/.venv/bin/python tests/programs/module.py            measure, compare with the baseline
 #   tests/.venv/bin/python tests/programs/module.py --save     measure and store as the new baseline
@@ -82,9 +83,9 @@ def main():
     for n, name in enumerate(programs):
         if only and name not in only:
             continue
-        before, _ = m.ask("STATUS", LATE)
         m.s.write(("PROG %d\n" % (n + 1)).encode())
         list(m.lines(3.0))   # settling: the start and the switch
+        before, _ = m.ask("STATUS", LATE)   # late blocks counted from here
         cpu, peak = [], 0.0
         for l in m.lines(args.secs):
             c = CPU.search(l)
@@ -102,21 +103,26 @@ def main():
                 nan = int(y.group(1))
             if x and late is not None:
                 break
-        r = {"cpu": round(sum(cpu) / len(cpu), 1) if cpu else None, "peak": peak, "late": late, "nan": nan}
+        h, _ = m.ask("MEM", HEAP)
+        r = {"cpu": round(sum(cpu) / len(cpu), 1) if cpu else None, "peak": peak, "late": late, "nan": nan,
+             "heap_kb": int(h.group(1)) if h else None}
         results[name] = r
-        print("  %-11s CPU %5s %%  peak %5.1f %%  late %s  NaN resets %d" %
-              (name, r["cpu"], peak, "?" if late is None else late, nan), flush=True)
+        print("  %-11s CPU %5s %%  peak %5.1f %%  late %s  NaN resets %d  heap free %s kB" %
+              (name, r["cpu"], peak, "?" if late is None else late, nan, r["heap_kb"]), flush=True)
 
+    # the heap after all programs, back at the one running at the start (a
+    # program's own buffers in RAM2 count while it runs)
+    m.s.write(("PROG %d\n" % (start + 1)).encode())
+    list(m.lines(2.5))
     heap, _ = m.ask("MEM", HEAP)
     heap_kb = int(heap.group(1)) if heap else None
-    print("  heap free after all programs: %s kB" % heap_kb)
-    m.s.write(("PROG %d\n" % (start + 1)).encode())
-    time.sleep(1.0)
+    print("  heap free after all programs, back at %s: %s kB" % (programs[start], heap_kb))
 
     base_file = os.path.join(HERE, "baseline_rev%d.json" % rev)
     if args.save:
         with open(base_file, "w") as f:
-            json.dump({"date": time.strftime("%Y-%m-%d"), "programs": results, "heap_kb": heap_kb}, f, indent=1)
+            json.dump({"date": time.strftime("%Y-%m-%d"), "programs": results, "heap_kb": heap_kb,
+                       "start": programs[start]}, f, indent=1)
         print("saved %s" % os.path.relpath(base_file))
         return
 
@@ -135,7 +141,8 @@ def main():
             b = base["programs"].get(name)
             if b and b["cpu"] is not None and r["cpu"] is not None and r["cpu"] > b["cpu"] + 3:
                 problems.append("%s: CPU %.1f %% (baseline %.1f %%)" % (name, r["cpu"], b["cpu"]))
-        if heap_kb is not None and base.get("heap_kb") and heap_kb < base["heap_kb"] - 16:
+        if heap_kb is not None and base.get("heap_kb") and base.get("start") == programs[start] \
+                and heap_kb < base["heap_kb"] - 16:
             problems.append("heap %d kB (baseline %d kB)" % (heap_kb, base["heap_kb"]))
     else:
         print("no baseline yet for rev%d (--save stores one)" % rev)

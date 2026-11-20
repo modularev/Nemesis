@@ -1,0 +1,91 @@
+{
+ "date": "2026-11-20",
+ "programs": {
+  "juno": {
+   "cpu": 3.1,
+   "peak": 6.6,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 427
+  },
+  "mooSpace": {
+   "cpu": 49.0,
+   "peak": 55.1,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 78
+  },
+  "mooSpace2": {
+   "cpu": 53.8,
+   "peak": 60.9,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 56
+  },
+  "freqshift": {
+   "cpu": 29.4,
+   "peak": 33.0,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 445
+  },
+  "superosc": {
+   "cpu": 24.9,
+   "peak": 27.5,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 446
+  },
+  "breaker": {
+   "cpu": 25.6,
+   "peak": 34.9,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 445
+  },
+  "growler": {
+   "cpu": 52.2,
+   "peak": 59.9,
+   "late": 1,
+   "nan": 0,
+   "heap_kb": 444
+  },
+  "pollen": {
+   "cpu": 58.9,
+   "peak": 67.2,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 440
+  },
+  "strike": {
+   "cpu": 51.2,
+   "peak": 52.0,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 404
+  },
+  "bitrot": {
+   "cpu": 10.4,
+   "peak": 13.5,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 443
+  },
+  "primetime": {
+   "cpu": 13.4,
+   "peak": 17.9,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 437
+  },
+  "harmonizer": {
+   "cpu": 9.9,
+   "peak": 13.9,
+   "late": 0,
+   "nan": 0,
+   "heap_kb": 317
+  }
+ },
+ "heap_kb": 427,
+ "start": "juno"
+}
