@@ -8,6 +8,8 @@
 #   ./run.sh juno pollen      some of them
 #   SEED=3 ./run.sh           other random settings (default 1)
 #   FAUST=/path/to/faust ./run.sh   another FAUST compiler (default: faust on PATH)
+#   INPUTS=audio ./run.sh strike    audio even on trigger inputs (test_inputs "trig")
+#   TRACE=1 ./run.sh pollen         every random set's peaks and settings
 #
 # With a built firmware (firmware/.pio/build/rev2/firmware.elf) it also lists
 # the size of every program's compute(): above ~30 kB it no longer fits the

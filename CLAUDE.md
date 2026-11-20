@@ -188,10 +188,14 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   program on the Mac (NaN, runaway, loudness, DC, culprit search, compute()
   sizes); run it after changing a program or the FAUST version.
   `module.py` measures all programs on a module against
-  baseline_rev<N>.json (no baseline saved yet). First run: all pass with
-  intended inputs; strike gives NaN that stays (until the library's NaN
-  reset) with audio into its trigger inputs at max settings; pollen one
-  random combination peaks 52 on out 8 after earlier sets (state builds up).
+  baseline_rev<N>.json (no baseline saved yet). INPUTS=audio (audio into
+  trigger inputs), TRACE=1 (every random set). Found and fixed
+  (2026-11-20): strike with audio into its triggers at max settings grew
+  modes until inf/NaN (hits in phase with a mode: resonance) -> resonator
+  state clamped +-8 (RES_MAX), voice outs 3-8 soft clipped like the mix;
+  pollen out 7/8 burst to 52 when tone jumped (fi.lowpass/highpass biquads
+  with a sudden cutoff change) -> fi.svf.lp/hp (same Butterworth response,
+  cutoffs still per block). CPU of both not yet measured on the module.
 - tests/hwtest serial commands: see the top of `software/tests/hwtest/src/main.cpp`
   (DC/SINE/FREQ per output, AIN meters, REG codec write, CVCAL/OUTCAL/CALSTORE).
 

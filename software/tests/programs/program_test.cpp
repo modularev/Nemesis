@@ -22,7 +22,8 @@
 // outputs with the defaults, DC offset, clipping, a tail that doesn't settle.
 // For a failing phase the test looks for the culprit: every setting alone
 // at its failing value (the others at their defaults, the program's state
-// cleared), 2 s each.
+// cleared), 2 s each; if none fails alone, every setting put back to its
+// default while the others stay (the settings the failure needs).
 //
 // usage: program_test <name> [seed]
 
@@ -157,7 +158,9 @@ int main(int argc, char **argv)
       probe.metadata(&decl);
    }
    int SR = decl.values.count("sample_rate") ? atoi(decl.values["sample_rate"].c_str()) : 48000;
-   bool allTrig = decl.values["test_inputs"] == "trig";
+   // INPUTS=audio: the test signals even on trigger inputs (audio-rate triggering)
+   const char *inputsEnv = getenv("INPUTS");
+   bool allTrig = decl.values["test_inputs"] == "trig" && !(inputsEnv && strcmp(inputsEnv, "audio") == 0);
    int B = decl.values.count("block_size") ? atoi(decl.values["block_size"].c_str()) : 64;
    if (B <= 0 || B > 128)
       B = 64;
@@ -402,7 +405,26 @@ int main(int argc, char **argv)
             found++;
          }
       }
-      return s.empty() ? std::string("\n      no single setting: a combination") : s;
+      if (!s.empty()) return s;
+      // a combination: which settings, put back to their defaults one at a
+      // time, make it pass (each of them is needed for the failure)
+      s = "\n      no single setting; needed for the failure (back at its default it passes):";
+      found = 0;
+      for (size_t i = 0; i < NP && found < 12; i++)
+      {
+         if (v[i] == defaults[i]) continue;
+         std::vector<float> most = v;
+         most[i] = defaults[i];
+         reset();
+         if (!failed(run(most, 2.0, false)))
+         {
+            snprintf(buf, sizeof buf, "\n      \"%s\" = %g (default %g)", settable[i]->label.c_str(), v[i], defaults[i]);
+            s += buf;
+            found++;
+         }
+      }
+      if (!found) s += "\n      none alone (several ways to fail)";
+      return s;
    };
 
    int failures = 0, warnings = 0;
@@ -482,6 +504,15 @@ int main(int argc, char **argv)
    for (int k = 0; k < 24; k++)
    {
       Result r = run(sets[k], 1.0, false);
+      if (getenv("TRACE"))   // TRACE=1: every random set's peaks and settings
+      {
+         printf("  set %2d:", k + 1);
+         for (int c = 0; c < nout; c++) printf(" %.2f", r.out[c].peak);
+         printf("\n        ");
+         for (size_t i = 0; i < NP; i++)
+            if (sets[k][i] != defaults[i]) printf(" %s=%g", settable[i]->label.c_str(), sets[k][i]);
+         printf("\n");
+      }
       for (int c = 0; c < nout; c++)
       {
          rnd.out[c].peak = fmax(rnd.out[c].peak, r.out[c].peak);

@@ -197,7 +197,11 @@ with {
 // ---- tone and blur -------------------------------------------------------------
 
 tt      = tone * 2 - 1;
-tone_f  = fi.lowpass(2, 20000 * 0.01 ^ max(0, -tt)) : fi.highpass(2, 20 * 100 ^ max(0, tt));
+// state variable filters (trapezoidal, as Butterworth with Q 1/sqrt 2): the
+// biquads of fi.lowpass/highpass burst up to 40x when the cutoff jumps (a
+// turn of tone; tests/programs found it), the SVF stays smooth; the
+// cutoffs from the raw knob, so no tan/pow per sample
+tone_f  = fi.svf.lp(20000 * 0.01 ^ max(0, -tt), 0.7071) : fi.svf.hp(20 * 100 ^ max(0, tt), 0.7071);
 
 allpass_fixed(n, coeff) = (+ <: de.delay(n, n - 1), *(coeff)) ~ *(-coeff) : mem, _ : +;
 

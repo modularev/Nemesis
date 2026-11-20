@@ -78,7 +78,7 @@ cos_p(s) = 1 - s2 / 2 * (1 - s2 / 12 * (1 - s2 / 30 * (1 - s2 / 56))) with { s2 
 // (variance / (2 (1 - r^2))): it comes in scaled by sqrt(2 (1 - r^2)), so a
 // noise burst of a given level rings as loud as a mallet of that level.
 // cos(w) = 1 - 2 sin^2(w/2) keeps low frequencies exact in float.
-mode(f, r, amp, m, nz) = (m + nz * sqrt(2 * (1 - r * r))) * amp * sinw * audible : fi.tf2(1, 0, 0, -2 * r * cosw, r * r)
+mode(f, r, amp, m, nz) = (m + nz * sqrt(2 * (1 - r * r))) * amp * sinw * audible : resonator(-2 * r * cosw, r * r)
 with {
     w       = 2 * ma.PI * f / ma.SR : min(0.95 * ma.PI);
     s       = w / 2;
@@ -86,6 +86,18 @@ with {
     cosw    = 1 - 2 * sn * sn;
     sinw    = 2 * sn * cos_p(s);
     audible = f < 0.45 * ma.SR;
+};
+
+// fi.tf2(1, 0, 0, a1, a2) with its state held within +-RES_MAX: hits faster
+// than the mode decays (audio into a trigger input) add up in phase, and
+// with long decays a mode grew until it overflowed (inf, then NaN that
+// stayed: tests/programs, INPUTS=audio). Like a material that saturates;
+// normal hits stay far below the limit.
+RES_MAX = 8;
+resonator(a1, a2) = (sub : max(0 - RES_MAX) : min(RES_MAX)) ~ fb
+with {
+    fb(y1) = a1 * y1 + a2 * y1';
+    sub(t, x) = x - t;   // ~ feeds back into the first input
 };
 
 // ---- a voice ------------------------------------------------------------------
@@ -239,8 +251,8 @@ with {
 // ---- process ----------------------------------------------------------------
 
 // IN 1-6 trigger the voices; out 1/2 the panned mix (drive, limiter), 3-8
-// the voices
-process(i1, i2, i3, i4, i5, i6) = (stereo : drive_st : par(c, 2, nm_softclip(0.9)) : meters, _), par(v, NV, vo(v + 1))
+// the voices (soft clipped like the mix)
+process(i1, i2, i3, i4, i5, i6) = (stereo : drive_st : par(c, 2, nm_softclip(0.9)) : meters, _), par(v, NV, vo(v + 1) : nm_softclip(0.9))
 with {
     // activity per voice (150 ms after a trigger): the home screen strip,
     // LED 1 the selected voice, LED 2 any voice

@@ -31,7 +31,7 @@ MIDI (setting "midi"): channels: voice 1-6 on channels base..base+5 (the
         voice's pitch (the last note also sets the pitch for input
         triggers), with velocity; notes: notes 36-41 (C1-F1) on the
         base channel
-out 1/2: stereo mix (soft clipped at 4.5 V)   out 3-8: voices 1-6 (mono)
+out 1/2: stereo mix (soft clipped at 4.5 V)   out 3-8: voices 1-6 (mono, soft clipped at 4.5 V)
 ```
 
 ```
