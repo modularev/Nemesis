@@ -29,18 +29,19 @@
 // - silent voices are skipped: a voice is computed from its note on until
 //   its output stayed below kStopLevel (-66 dB peak) for 10 ms after
 //   the note off (poly-dsp.h: one block below -90 dB rms);
-// - a new note takes the free voice unused longest (notes move through the
-//   voices, as on the Juno), else the oldest releasing one, else the oldest
-//   playing one. A voice that still sounds fades out in 3 ms with its gate
+// - a new note takes the free voice unused longest (notes rotate through
+//   the voices), else the oldest releasing one, else the oldest playing
+//   one. A voice that still sounds fades out in 3 ms with its gate
 //   off, takes the new note and fades in over 3 ms: no jump in pitch or
 //   level at full volume; the envelopes go on from their level, as a
 //   retrigger (poly-dsp.h: fades over half a block);
-// - assign modes as the Juno-106 (a parameter with [poly:mode], 0..2, or
-//   setAssignMode()): Poly 1 as above; Poly 2 takes the lowest free or
-//   releasing voice and stops the other release tails, so only the last
-//   notes played together keep their release; Unison puts every voice on
-//   the last note held (legato over held keys, a new start after all were
-//   up);
+// - assign modes (a parameter with [poly:mode], 0..2, or setAssignMode()):
+//   ROTATE (0) as above, release tails ring on; REUSE (1) takes the lowest
+//   free or releasing voice and stops the other release tails, so only the
+//   last notes played together keep their release; UNISON (2) puts every
+//   voice on the last note held (legato over held keys, a new start after
+//   all were up); juno's "keys" setting names them poly 1 / poly 2 /
+//   unison as the Juno-106;
 // - a parameter with [poly:voice] gets the voice's number (0, 1, ..; not
 //   shared), e.g. for a fixed place in the stereo field per voice; in
 //   FAUST's own poly-dsp.h it keeps its default.
@@ -185,7 +186,7 @@ class nemesis_poly : public dsp, public midi {
         int fLimit;               // voices in use (setVoiceLimit)
         bool fControl;            // false: every voice always runs (poly-dsp.h 'control')
         bool fRetrigger = true;   // a held note played again restarts its voice
-        // assign mode (the Juno-106's): POLY1, POLY2, UNISON; from a [poly:mode]
+        // assign mode: ROTATE, REUSE, UNISON; from a [poly:mode]
         // parameter if the program has one, else setAssignMode()
         FAUSTFLOAT* fModeZone = nullptr;
         int fAssign = 0;
@@ -284,7 +285,7 @@ class nemesis_poly : public dsp, public midi {
         int wantedMode() const
         {
             int m = fModeZone ? int(*fModeZone + FAUSTFLOAT(0.5)) : fAssign;
-            return m < POLY1 ? POLY1 : m > UNISON ? UNISON : m;
+            return m < ROTATE ? ROTATE : m > UNISON ? UNISON : m;
         }
         // a new mode: every voice stopped first
         void checkMode()
@@ -296,10 +297,10 @@ class nemesis_poly : public dsp, public midi {
             fMode = m;
         }
 
-        // Poly 2: the lowest voice that is free or only releasing (else the
+        // REUSE: the lowest voice that is free or only releasing (else the
         // oldest playing one); the other release tails stop, so only the
-        // last notes played together keep their release (the 106's manual)
-        Voice* allocatePoly2()
+        // last notes played together keep their release
+        Voice* allocateReuse()
         {
             Voice* v = nullptr;
             Voice* playing = nullptr;
@@ -467,7 +468,7 @@ class nemesis_poly : public dsp, public midi {
                 for (int i = 0; i < fCount && !v; i++)
                     if (fVoices[i].fHeld && fVoices[i].fNote == pitch && fVoices[i].fChannel == channel) v = &fVoices[i];
             }
-            if (!v) v = fMode == POLY2 ? allocatePoly2() : allocate();
+            if (!v) v = fMode == REUSE ? allocateReuse() : allocate();
             if (!v) return nullptr;
             // still sounding (playing or releasing): fade out with the gate
             // off, then the new note fades in
@@ -501,7 +502,7 @@ class nemesis_poly : public dsp, public midi {
             else if (ctrl == ALL_SOUND_OFF) notesOff(channel, true);
         }
 
-        enum { POLY1 = 0, POLY2 = 1, UNISON = 2 };
+        enum { ROTATE = 0, REUSE = 1, UNISON = 2 };
         // the assign mode when the program has no [poly:mode] parameter
         void setAssignMode(int mode) { fAssign = mode; }
         int assignMode() const { return fMode; }
