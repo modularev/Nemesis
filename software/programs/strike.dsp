@@ -5,6 +5,7 @@ declare author "Arev Imer";
 declare version "0.6";
 declare block_size "64";            // 2.7 ms round trip; per block work (the modes from the settings) halves against 32
 declare audio_outputs "1-8";
+declare test_inputs "trig";        // tests/programs: IN 1-6 get trigger pulses
 declare options "[itcm:on]";   // the loop of six voices (~35 kB) outgrew the 32 kB instruction cache: it runs from ITCM
 declare license "GPL-3.0-or-later";
 

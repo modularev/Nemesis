@@ -184,6 +184,14 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   (a rev2 build once went to rev1).
 - The transport PLL (`lib/nemesis/src/nemesis_transport_core.h`) is plain C++: test changes on
   the Mac with a host harness before flashing.
+- Program tests (2026-11-20): `software/tests/programs/run.sh` renders every
+  program on the Mac (NaN, runaway, loudness, DC, culprit search, compute()
+  sizes); run it after changing a program or the FAUST version.
+  `module.py` measures all programs on a module against
+  baseline_rev<N>.json (no baseline saved yet). First run: all pass with
+  intended inputs; strike gives NaN that stays (until the library's NaN
+  reset) with audio into its trigger inputs at max settings; pollen one
+  random combination peaks 52 on out 8 after earlier sets (state builds up).
 - tests/hwtest serial commands: see the top of `software/tests/hwtest/src/main.cpp`
   (DC/SINE/FREQ per output, AIN meters, REG codec write, CVCAL/OUTCAL/CALSTORE).
 

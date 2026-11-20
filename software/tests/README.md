@@ -29,3 +29,29 @@ with `-D USB_MIDI_SERIAL` (as `software/firmware` is).
 `lib/nemesis/src/nemesis_transport_core.h` on the Mac: CV clock tempo, a
 transient on the clock input, the tempo after the clock stops, bunched MIDI
 clocks. Run it after changing the transport core, before flashing.
+
+## programs
+
+Checks for every program in `firmware/platformio.ini`, in two parts.
+
+`programs/run.sh` (on the Mac, ~30 s): compiles each program with the
+firmware's FAUST options and renders it with `program_test.cpp`, the way
+the module plays it: transport at 120 BPM, notes and triggers for
+`[mono:...]` programs, chords for polyphonic ones, signals on every input.
+Phases: defaults, 24 random settings, all minimum, all maximum, recovery
+(defaults with silent inputs). It fails on NaN/inf on an output or meter,
+an output beyond +-100 (runaway feedback), an audio output beyond +-4 with
+the defaults, NaN that stays after the settings are back to normal; it
+warns about loud outputs (> 4) with other settings, DC offset, clipping,
+silence. A failing phase is searched for its culprit: each setting alone at
+its failing value. With a built firmware it also lists the size of every
+program's `compute()` against the instruction cache (`codesize.py`).
+`./run.sh juno pollen` checks some programs, `SEED=3` other random
+settings, `FAUST=...` another compiler. A program whose inputs are all
+triggers declares `declare test_inputs "trig";`.
+
+`programs/module.py` (on the module, ~2 min): switches through all
+programs and reports CPU, peak, late audio blocks, NaN resets and the heap
+after all. `--save` stores the result as `programs/baseline_rev<N>.json`;
+without it the run is compared with that baseline (CPU 3 points higher,
+peaks above 95 %, late blocks, NaN resets, 16 kB less heap).
