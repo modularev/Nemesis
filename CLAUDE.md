@@ -70,12 +70,13 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   tests/polyphonic-tests (make mcu-poly), tests/memory-manager-tests. All
   LGPL-2.1-or-later + FAUST exception. Not yet: running on a Teensy, a
   GRAME issue/PR (ask the user), Daisy tiers (user has a Daisy).
-- PRs (2026-11-21, no Claude attribution): #1403 faust2teensy build fixes,
+- PRs (2026-11-21, no Claude attribution): #1403 faust2teensy build fixes
+  + MidiUI started on the first update() (a global object's MidiUI crashed
+  before setup(): static init order; init_priority sections are dropped by
+  the Teensy linker script; moved there from #1406 at sletz's request),
   #1404 mcu-poly-dsp.h (branch teensy-mcu-poly), #1405 tiered memory
-  (teensy-tiered-memory), #1406 faust2teensy -mem/-nvoices + MidiUI started
-  on the first update() (teensy-poly-memory-integration; a global object's
-  MidiUI crashed before setup(): static init order, init_priority sections
-  are dropped by the Teensy linker script). Daisy PRs later.
+  (teensy-tiered-memory), #1406 faust2teensy -mem/-nvoices
+  (teensy-poly-memory-integration, on #1403's head). Daisy PRs later.
   Hardware test of faust2teensy on rev2: scratchpad-style project with a
   stock Audio library sketch needs pin 9 HIGH (codec reset) and codec 03h =
   0xF5 (the library's 0xF4 left the outputs silent).
