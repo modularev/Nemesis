@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 declare name "slush";
-declare description "Spectral freeze and smear (a phase vocoder): holds the input as an endless sound that keeps moving, or smears it continuously; drift, crossfades";
+declare description "Spectral freeze and smear (a phase vocoder): holds the input as an endless sound that keeps moving, or smears it continuously; drift, morphs, layers, pitch, grain";
 declare author "Arev Imer";
-declare version "0.3";
+declare version "0.4";
 declare audio_outputs "1-4";
 declare block_size "128";        // a frame (2048 points, smear on) takes ~80 % of a 64 sample block: ~40 % of 128
 declare spectral "2";            // two channels of spectral processing (nemesis_spectral.h)
@@ -13,7 +13,7 @@ declare license "GPL-3.0-or-later";
 import("stdfaust.lib");
 import("nemesis.lib");
 
-spectral = ffunction(float nm_spectral(int, int, int, float, float, float, float, float, float, float, float), "nemesis_spectral.h", "");
+spectral = ffunction(float nm_spectral(int, int, int, float, float, float, float, float, float, float, float, float, float, float, float), "nemesis_spectral.h", "");
 frozen_level = ffunction(float nm_spectral_level(int, float), "nemesis_spectral.h", "");
 FREEZE   = 0;      // the kernel
 SIZE     = select2(res_k, 1024, 2048) : int;   // FFT points (the library reallocates when it changes)
@@ -36,6 +36,10 @@ speed_k = hslider("[01] speed", 0.3, 0, 1, 0.001);
 tilt    = hslider("[02] tilt", 0, -1, 1, 0.01);
 res_k   = hslider("[03] resolution [style:menu{'1024':0;'2048':1}]", 1, 0, 1, 1) > 0.5;
 width   = hslider("[04] width", 1, 0, 1, 0.01) : si.smoo;
+morph   = hslider("[05] morph", 0.5, 0, 1, 0.01);
+layer   = hslider("[06] layer", 0, 0, 1, 0.01);
+grain   = hslider("[07] grain", 0, 0, 1, 0.01);
+pitch   = hslider("[08] pitch [unit:st]", 0, -24, 24, 1);
 btn     = button("freeze [button:1]");
 gate    = hslider("freeze cv [rev2:CV_A] [rev1:CV_E]", 0, 0, 1, 0.001) > 0.5;
 
@@ -59,6 +63,9 @@ rate(c)   = 0.05 * pow(40, speed_k) * (1 + 0.13 * c);
 // smear: off at the left end, then 0.05 .. 20 s
 smear_s   = select2(smear_k < 0.02, 0.05 * pow(400, (smear_k - 0.02) / 0.98), 0);
 speed(c)  = 2 * motion * 31 * rate(c) * HOP / ma.SR;
+// pitch of the frozen sound as a ratio (from the raw setting: no pow per
+// sample; the library glides it)
+ratio     = pow(2, pitch / 12);
 
 // tone as pollen's: state variable filters (they stay smooth when the
 // cutoff jumps), cutoffs from the raw knob
@@ -82,8 +89,8 @@ aligned(g) = g @ ALIGN : si.smooth(ba.tau2pole(0.005));
 // alone
 process(inl, inr) = ol, or, fl, fr
 with {
-    xl  = spectral(0, FREEZE, SIZE, inl, a, step, drift, smear_s, motion, speed(0), tilt);
-    xr  = spectral(1, FREEZE, SIZE, inr, a, step, drift, smear_s, motion, speed(1), tilt);
+    xl  = spectral(0, FREEZE, SIZE, inl, a, step, drift, smear_s, motion, speed(0), tilt, morph, layer, grain, ratio);
+    xr  = spectral(1, FREEZE, SIZE, inr, a, step, drift, smear_s, motion, speed(1), tilt, morph, layer, grain, ratio);
     gl  = frozen_level(0, xl) : aligned;
     gr  = frozen_level(1, xr) : aligned;
     sl  = xl : tone_f : *(level);

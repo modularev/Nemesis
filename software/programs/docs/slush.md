@@ -1,8 +1,8 @@
 # slush
 
-Spectral freeze and smear (a phase vocoder): holds the input as an endless sound that keeps moving, or smears it continuously; drift, crossfades.
+Spectral freeze and smear (a phase vocoder): holds the input as an endless sound that keeps moving, or smears it continuously; drift, morphs, layers, pitch, grain.
 
-Source: [`slush.dsp`](../slush.dsp), version 0.1. The spectral part is in the library: [`nemesis_spectral.h`](../../lib/nemesis/src/nemesis_spectral.h).
+Source: [`slush.dsp`](../slush.dsp), version 0.4. The spectral part is in the library: [`nemesis_spectral.h`](../../lib/nemesis/src/nemesis_spectral.h).
 
 The first program with FFT processing. A freeze takes a snapshot of the
 input's spectrum (1024 points, 21 ms) and plays it on: every frequency
@@ -21,7 +21,20 @@ noise stays as it was, without the loop seam of a sampler.
   - smear: every frequency follows the input with inertia (0.05 .. 20 s;
     off at the left end): a continuously smeared, morphing copy of the
     input; freeze crossfades from it into the held sound and back. tilt
-    (setting): highs follow faster (left) or slower (right) than lows
+    (setting): highs follow faster (left) or slower (right) than lows.
+    Every bin is an oscillator that keeps its frequency and phase; it
+    learns them only while the input carries it steadily as a tone, so a
+    fading note keeps its own pitch and partials don't step or flicker
+  - morph (setting): a new capture glides each held partial to the
+    nearest new one (within half an octave) over the fade instead of
+    crossfading; 0 = plain crossfade
+  - layer (setting): the previous capture stays under the new one at
+    this level (two layers, kept at equal loudness)
+  - grain (setting): a random phase offset per bin: from clean tones to
+    a grainy, noisy version of the frozen sound
+  - pitch (setting, -24 .. +24 semitones): moves every partial (peaks
+    and their bins move together, so the timbre stays); it glides over
+    ~30 ms. With smear off and not frozen it is a live pitch shifter
   - resolution (setting): 1024 or 2048 points (43 ms at 48 kHz, finer in
     frequency: closer notes stay tonal). Changing it restarts the spectral
     part (a short silence)
@@ -51,7 +64,7 @@ fade 0.02 .. 8 s; level 0 .. 2x; tone a low-pass (left) or high-pass (right)
 
 ## How it works
 
-An STFT: 1024 point frames every 256 samples (4x overlap, Hann windows),
+An STFT: 1024 or 2048 point frames every N/4 samples (4x overlap, Hann windows),
 CMSIS-DSP's real FFT. The output is 1024 samples (21 ms) behind the input;
 it only carries the frozen sound, so the delay doesn't matter. At a capture
 each frequency bin keeps its magnitude, its phase and its phase turn per

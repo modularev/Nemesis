@@ -149,6 +149,26 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   (direct.cpp, bz/pc/lv/xf), tests/programs/run.sh slush. Not yet
   measured on rev2 with CMSIS back in ITCM; the user still heard a buzz
   (not reproduced on the Mac: ask for a recording of out 3).
+- slush 0.4 (2026-11-21): morph (capture matches peaks to the nearest
+  old ones within 0.5 oct, bends glide over the fade), layer (previous
+  capture held, two layers normalised 1/sqrt(g0^2+g1^2); a sounding slot
+  fades ~12 ms before a capture into it), grain (random phase +-grain^2 pi
+  per tonal bin, output only), pitch (peaks move lrint(f(R-1)) bins, turn
+  at f R via quarterTurns: polynomials, no libm; fastAtan2 < 2e-4 rad);
+  smear runs with no inertia when off and pitch != 1 = live shifter.
+  nm_spectral now takes a..k (15 arguments; the simulator's slush isn't
+  synced). Smear rewritten as learning oscillators (the user's "peaks
+  toggle", also before): a bin learns frequency + phase offset to its
+  peak only when fresh (> 0.7 x smeared level, hysteresis 0.4), steady
+  (level >= 0.95 x last frame) and tonal (tv smoothed, on 0.6 / off
+  0.3), else runs on at its frequency; switching input phase / own turn
+  per bin was the beads; learning in transition frames made tails take
+  the next note's pitch. Level correction: planned (sum S.mag^2) vs
+  played energy, 0.3 s / 0.5 s (chasing the input wobbled 2 dB at
+  2-4 Hz). Pops (strong bins +6 dB over a +-8 frame median, scratchpad
+  pops.py): piano 1.25 -> 0.44 %, juno 3.6 -> 2.0, church 4.0 -> 0.6;
+  noise ~6 % by nature. rev2 48k 2048: 26.4 % (peak 31.5), pitch 27.8
+  (34); captures with two layers peak 44-45 %. The user: smooth now.
 
 ## Switching, CPU meter, spectral fixes (2026-11-21)
 

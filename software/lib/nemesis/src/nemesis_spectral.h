@@ -9,14 +9,14 @@
 //
 //   declare spectral "2";                      // channels: the library
 //                                              // allocates them at start
-//   spectral = ffunction(float nm_spectral(int, int, int, float, float, float, float, float, float, float, float),
-//                        "nemesis_spectral.h", "");
-//   y = spectral(channel, kernel, size, x, a, b, c, d, e, f, g);
+//   spectral = ffunction(float nm_spectral(int, int, int, float, float, float, float, float, float, float, float,
+//                        float, float, float, float), "nemesis_spectral.h", "");
+//   y = spectral(channel, kernel, size, x, a, b, c, d, e, f, g, h, i, j, k);
 //
 // Per sample nm_spectral() puts x into a ring and returns the next sample
 // of the overlap-added output; every HOP = size / 4 samples it runs a frame:
 // the last `size` input samples, Hann windowed, through the FFT, a kernel
-// on the bins (the parameters a..g as they were on that sample), the
+// on the bins (the parameters a..k as they were on that sample), the
 // inverse FFT, the window again, added into the output ring. The synthesis
 // (kernel, inverse FFT, overlap-add) runs hop / 4 samples after the
 // analysis, so the halves of a frame fall into different blocks: the output
@@ -50,6 +50,16 @@
 //     f: speed: frames per frame of that movement (0..4)
 //     g: tilt -1..1: the smear time of high frequencies against low ones
 //        (-1: highs follow 4x faster, 1: 4x slower)
+//     h: morph 0..1: a new capture's partials glide in from the nearest
+//        partials of the sound before (within half an octave), over the
+//        fade time; a capture that fades out glides towards the new one.
+//        0: a plain crossfade, 1: the whole way
+//     i: layer 0..1: the level the previous capture keeps under the new
+//        one (0: it fades out)
+//     j: grain 0..1: a random phase per bin and frame on the stable
+//        partials (from clean to noise; no pitch wander)
+//     k: pitch ratio of the frozen sound (0.25..4, glided): every peak
+//        moves with its bins and turns faster or slower (not the smear)
 //   nm_spectral_level(channel, after): how present the wet sound is (0..1,
 //     updated every frame; the sound follows a little later: slush aligns
 //     it by 192 samples at 1024 points, 640 at 2048, measured). `after` is ignored: pass the
@@ -85,7 +95,7 @@ namespace nemesis
          int pos = 0;            // ring position: in[pos] the oldest sample, out[pos] the next output
          int count = 0;          // samples since the last frame
          int kernel = 0;
-         float p[7] = {0, 0, 0, 0, 0, 0, 0};
+         float p[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
          float level = 0;        // FREEZE: how present the wet sound is (0..1), set every frame
       };
       extern Channel channel[NEMESIS_SPECTRAL_CHANNELS];
@@ -116,7 +126,7 @@ namespace nemesis
 }
 
 static inline float nm_spectral(int c, int kernel, int size, float x, float a, float b, float cc, float d, float e,
-                                float f, float g)
+                                float f, float g, float h, float i, float j, float k)
 {
    nemesis::spectral::Channel &s = nemesis::spectral::channel[c];
    if (size != s.n)
@@ -135,6 +145,10 @@ static inline float nm_spectral(int c, int kernel, int size, float x, float a, f
    s.p[4] = e;
    s.p[5] = f;
    s.p[6] = g;
+   s.p[7] = h;
+   s.p[8] = i;
+   s.p[9] = j;
+   s.p[10] = k;
    if (++s.count >= s.hop)
    {
       s.count = 0;
