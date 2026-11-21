@@ -134,7 +134,12 @@ age        = wrapL((1 - pos_knob) * L + drift + spray_off);
 // recording: forward grains may start at the newest sample unless pitched
 // up; frozen: a grain moves towards the seam by ratio * S
 age_lo     = select2(freeze, select2(reversed, 2 + S * max(0, ratio - 1), 2 + ratio * S), 2 + ratio * S);
-age_hi     = select2(reversed, L - 4 - S * max(0, 1 - ratio), L - 4 - S);
+// and no further back than recorded since the start (a restored loop is
+// complete): a grain across the edge of the still empty memory set fresh
+// audio against silence, crackles while the memory first filled
+recorded   = (+(1) : min(MAXL)) ~ _;
+reach      = select2(restored > 0, recorded, MAXL);
+age_hi     = select2(reversed, L - 4 - S * max(0, 1 - ratio), L - 4 - S) : min(reach - 4 - S * max(1, 2 - ratio));
 d_start    = wrapL((age : max(age_lo) : min(age_hi)) + since_frz);
 
 

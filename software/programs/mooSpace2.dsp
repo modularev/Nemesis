@@ -5,6 +5,7 @@ declare author "Arev Imer";
 declare version "2.8";
 declare audio_outputs "1-6";   // 7/8 are envelope CVs
 declare block_size "128";   // audio block (system setting block size: auto); 64 let single slow blocks (cache misses on the PSRAM heads, up to 118 %) arrive late, ~1 click per 7 s; 128 averages them out (2026-11-17)
+declare warmup "250";       // runs silently 250 ms after a start: the smoothed knobs settle first (the diffusers swept from 0: a noise burst)
 // optimized for size (with -mcd 0 from platformio.ini): compute() 25.6 ->
 // 20.4 kB, 62 -> 50 % CPU on rev2 with FAUST 2.94.1 (2026-11-19): the code
 // size decides here, compute() shares the 32 kB instruction cache
@@ -129,9 +130,13 @@ rev_free    = (+(1) : %(REV_LEN)) ~ _;
 rev_beat    = int(ma.frac(nm_position / (6 * rev_div)) * REV_LEN) : min(REV_LEN - 1);
 rev_phase   = select2(sync & (nm_running > 0), rev_free, rev_beat);
 rev_tri(ph) = 1 - abs(2 * ph / REV_LEN - 1);
+rev_rec     = (+(1) : min(2 * REV_MAX)) ~ _;   // samples recorded since the start
 reversed(x) = rev_head(rev_phase) + rev_head((rev_phase + int(REV_LEN / 2)) % REV_LEN)   // integer %, not fmod
 with {
-    rev_head(ph) = de.delay(2 * REV_MAX, 2 * ph, x) * rev_tri(ph);
+    // a piece reads up to 2 x REV_LEN back by its end: it plays only if
+    // that much was recorded since the start (decided where its window is
+    // 0); reading into the still empty buffer crackled for the first second
+    rev_head(ph) = de.delay(2 * REV_MAX, 2 * ph, x) * rev_tri(ph) * ba.sAndH((ph < ph') | (ph == 0), rev_rec >= REV_LEN);
 };
 // equal power from forward (0) to reversed (1), gains from the raw knob
 rev_fwd     = cos(reverse_knob * ma.PI / 2) : nm_smoo;

@@ -975,13 +975,16 @@ namespace nemesis
             bool clip = millis() - activeProgram().lastClipMillis() < CLIP_SHOW_MS && activeProgram().lastClipMillis() != 0;
             if (!clip && limit_db >= -0.5f)
             {
-               // updated twice a second: changing every frame, it made every
+               // the largest block of the last 500 ms: how close the program
+               // comes to a late block (the average hides programs whose
+               // work comes in some blocks, like an FFT frame every 4).
+               // Updated twice a second: changing every frame, it made every
                // frame differ and be sent (pushDisplay)
                static int shown_load = 0;
                static elapsedMillis since_load = 1000;
                if (since_load >= 500)
                {
-                  shown_load = (int)constrain(cpuLoad(), 0.0f, 999.0f);
+                  shown_load = (int)constrain(cpuLoadPeak() + 0.5f, 0.0f, 999.0f);
                   since_load = 0;
                }
                snprintf(text, sizeof(text), "%d%%", shown_load);
@@ -1840,6 +1843,9 @@ namespace nemesis
          codec.enable();
          codecWrite(0x03, codecFunctionalMode()); // MCLK range of the sample rate the program asked for
          codecWrite(0x05, 0x00);        // ADC control
+         codecWrite(0x06, 0x43);        // volume and mute changes as a soft ramp (~21 ms at 48k); the
+                                        // library's 0x63 waited for zero crossings: quiet or offset
+                                        // channels unmuted slowly, one after the other
          codec.invertDAC(0xFF);         // the output stages invert, measured on rev2
          codec.volume(1.0);
       }

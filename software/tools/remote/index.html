@@ -350,7 +350,7 @@ function update(s) {
   if (!busy("prog")) prog.value = s.current;
 
   const t = s.transport || {};
-  setStatus(`rev${s.rev} · CPU ${s.cpu.toFixed(1)} % · ${s.audio.sampleRate / 1000} kHz / ${s.audio.blockSize}` +
+  setStatus(`rev${s.rev} · CPU ${s.cpu.toFixed(1)} %${s.cpuPeak !== undefined ? ` (peak ${s.cpuPeak.toFixed(1)} %)` : ''} · ${s.audio.sampleRate / 1000} kHz / ${s.audio.blockSize}` +
             (s.sd ? ` · ${s.sd === "in use" ? "SD" : s.sd}` : "") +
             (t.running ? ` · ▶ ${t.bpm.toFixed(1)} BPM${t.external ? " ext" : ""}` : ""), true);
 

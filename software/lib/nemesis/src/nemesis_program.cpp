@@ -414,6 +414,10 @@ namespace nemesis
       {
          fBlockSize = atoi(value);
       }
+      else if (strcmp(key, "warmup") == 0)
+      {
+         fWarmupMs = constrain(atoi(value), 0, 1000);
+      }
       else if (strcmp(key, "sample_rate") == 0)
       {
          fSampleRate = atoi(value);

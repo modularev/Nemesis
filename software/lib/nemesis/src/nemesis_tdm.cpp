@@ -9,6 +9,7 @@
 //
 
 #include "nemesis_tdm.h"
+#include "nemesis_program.h" // outputCorrection()
 
 namespace nemesis
 {
@@ -51,6 +52,25 @@ namespace nemesis
       const int32_t *volatile ready = nullptr; // the receive half filled last
       int32_t *writing = nullptr;
       volatile uint32_t late = 0;
+
+      // load: the cycles of the program's audio update (addLoad(), full 32
+      // bit counts) and the blocks that passed. The library's figure is the
+      // last block only, and its 16 bit count (cycles / 64) wraps at 4.19M
+      // cycles: a 4.8M cycle frame read as a few %.
+      volatile uint64_t load_sum = 0;
+      volatile uint32_t load_peak = 0;
+      volatile uint32_t load_count = 0;
+
+      // test capture (startCapture): one input channel straight from the DMA
+      EXTMEM int32_t capture_buf[tdm::CAPTURE_MAX];
+      volatile int capture_channel = 0;
+      volatile int capture_len = 0;
+      volatile int capture_pos = 0;
+      template <typename F> inline void measured(F update)   // F: the ISR's update_all() (protected)
+      {
+         load_count++;
+         update();
+      }
       volatile uint32_t written = 0;
 
       // the start of a DMA buffer: the current address minus how far the DMA
@@ -99,6 +119,40 @@ namespace nemesis
             late++;
          written++;
          writing = nullptr;
+      }
+
+      void startCapture(int channel, int samples)
+      {
+         __disable_irq();
+         capture_channel = channel < 0 ? 0 : channel > CHANNELS - 1 ? CHANNELS - 1 : channel;
+         capture_len = samples < 0 ? 0 : samples > tdm::CAPTURE_MAX ? tdm::CAPTURE_MAX : samples;
+         capture_pos = 0;
+         __enable_irq();
+      }
+
+      int captured(const int32_t *&samples)
+      {
+         samples = capture_buf;
+         return capture_pos;
+      }
+
+      void addLoad(uint32_t cycles)
+      {
+         load_sum += cycles;
+         if (cycles > load_peak)
+            load_peak = cycles;
+      }
+
+      void takeLoad(uint64_t &sum, uint32_t &peak, uint32_t &count)
+      {
+         __disable_irq();
+         sum = load_sum;
+         peak = load_peak;
+         count = load_count;
+         load_sum = 0;
+         load_peak = 0;
+         load_count = 0;
+         __enable_irq();
       }
 
       uint32_t lateWrites() { return late; }
@@ -196,8 +250,18 @@ namespace nemesis
       uint32_t *done = (daddr < (uint32_t)(rxBuffer + half_words)) ? rxBuffer + half_words : rxBuffer;
       arm_dcache_delete(done, half_words * 4);
       ready = (const int32_t *)done;
+      if (capture_pos < capture_len)
+      {
+         const int32_t *src = (const int32_t *)done + capture_channel;
+         int n = block, p = capture_pos;
+         if (n > capture_len - p)
+            n = capture_len - p;
+         for (int i = 0; i < n; i++)
+            capture_buf[p + i] = src[i * tdm::CHANNELS];
+         capture_pos = p + n;
+      }
       if (update_responsibility)
-         update_all();
+         measured([] { update_all(); });
    }
 
    FLASHMEM OutputTDM::OutputTDM() : AudioOutputTDM()
@@ -214,9 +278,22 @@ namespace nemesis
       uint32_t saddr = (uint32_t)dma.TCD->SADDR;
       dma.clearInterrupt();
       uint32_t *next = (saddr < (uint32_t)(txBuffer + half_words)) ? txBuffer + half_words : txBuffer;
-      memset(next, 0, half_words * 4);
+      // each output's calibrated zero (its offset), not digital 0: while no
+      // program writes (a switch stops one and starts the next, ~7 ms) the
+      // DC coupled outputs lost their offset, a DC pulse heard as a click
+      int32_t zero[tdm::CHANNELS];
+      for (int c = 0; c < tdm::CHANNELS; c++)
+      {
+         float scale, offset;
+         outputCorrection(c, scale, offset);
+         float v = offset * offsetGain * 2147483648.0f;
+         zero[c] = v >= 2147483647.0f ? INT32_MAX : v <= -2147483648.0f ? INT32_MIN : (int32_t)v;
+      }
+      for (uint32_t i = 0; i < half_words; i += tdm::CHANNELS)
+         for (int c = 0; c < tdm::CHANNELS; c++)
+            next[i + c] = zero[c];
       arm_dcache_flush_delete(next, half_words * 4);
       if (update_responsibility)
-         update_all();
+         measured([] { update_all(); });
    }
 }

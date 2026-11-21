@@ -78,6 +78,21 @@ namespace nemesis
    // block size and sample rate changes); outputGain is where it got
    extern volatile float outputTarget;
    extern volatile float outputGain;
+   // the share of each output's calibration offset that is applied (0..1),
+   // ramping to offsetTarget in OFFSET_RAMP_S: 0 before the codec's clocks
+   // change (sample rate, block size), so a muted or clockless DAC (at its
+   // midpoint, without the offset) sits where the output already is; a step
+   // of the offset was a click, a mute ramp of it a thump (2026-11-21)
+   constexpr float OFFSET_RAMP_S = 0.06f;
+   // after the codec's clocks changed its ADCs ring for a moment (up to full
+   // scale): the programs' inputs stay 0 for inputHold samples, then fade in
+   // over INPUT_RAMP_S (a reverb rang like a struck plate from that impulse)
+   constexpr float INPUT_HOLD_S = 0.03f;
+   constexpr float INPUT_RAMP_S = 0.005f;
+   extern volatile int inputHold;
+   extern volatile float inputRamp;
+   extern volatile float offsetTarget;
+   extern volatile float offsetGain;
    void printMidiStatus(Print &out);
 
    // a FAUST parameter: driven by a hardware input (knob or CV jack), or a
@@ -335,6 +350,10 @@ namespace nemesis
       int blockSizeHint() const { return fBlockSize; }
       // 'declare sample_rate "96000";' (system setting sample rate: auto), 0 if it doesn't say
       int sampleRateHint() const { return fSampleRate; }
+      // 'declare warmup "150";': after a start the program runs silently this
+      // many ms before it fades in (its smoothed parameters glide from 0 to
+      // the knobs' values: mooSpace2's diffusers swept, a noise burst)
+      int warmupMs() const { return fWarmupMs; }
       // 'declare cpu_mhz "600";': a lower processor clock for the program
       // (dense code from ITCM at 816 MHz browned out the module), 0: F_CPU
       int cpuMHz() const { return fCpuMHz; }
@@ -452,6 +471,7 @@ namespace nemesis
       int fOutputDefault = output::SOFT;
       uint32_t fAudioOutputs = output::DEFAULT_OUTPUTS;
       int fBlockSize = 0;
+      int fWarmupMs = 0;
       int fCpuMHz = 0;
       int fSampleRate = 0;
    };

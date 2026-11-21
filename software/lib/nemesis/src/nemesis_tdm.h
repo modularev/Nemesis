@@ -55,6 +55,18 @@ namespace nemesis
       uint32_t lateWrites();
       uint32_t writes();
 
+      // load since the last call: the cycles of the program's updates (their
+      // sum, the largest one) and the blocks that passed; then reset
+      void takeLoad(uint64_t &sum, uint32_t &peak, uint32_t &count);
+      // the program's audio update adds its cycles (one call per update)
+      void addLoad(uint32_t cycles);
+      // test capture: input channel `channel` (0..7) from the receive DMA,
+      // `samples` of them (at most CAPTURE_MAX) into PSRAM from now on
+      constexpr int CAPTURE_MAX = 4 * 96000;
+      void startCapture(int channel, int samples);
+      // the samples captured so far (24 bit values, left justified in 32)
+      int captured(const int32_t *&samples);
+
       // samples per block (per update): 32, 64 or 128 (AUDIO_BLOCK_SAMPLES,
       // the size of the DMA buffers, is the maximum); switching stops the
       // audio for a moment

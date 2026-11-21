@@ -149,6 +149,47 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   measured on rev2 with CMSIS back in ITCM; the user still heard a buzz
   (not reproduced on the Mac: ask for a recording of out 3).
 
+## Switching, CPU meter, spectral fixes (2026-11-21)
+
+- Program switch click: while no program writes (~7 ms) the DMA sent
+  digital 0 and the DC calibrated outputs lost their offset (a DC pulse,
+  measured). OutputTDM's ISR now fills each output's calibrated zero
+  (outputCorrection offset x offsetGain). Clock changes (sample rate, block
+  size): the offsets ramp to 0 (offsetGain, OFFSET_RAMP_S 60 ms, applied
+  in nemesis_arch.cpp), DACs muted (no step at offset 0), clocks change,
+  unmute 30 ms later, offsets ramp back, then the fade in. A DAC mute with
+  the offsets applied was a low thump; muting while the codec's ramp still
+  ran clicked. Codec 06h = 0x43 (soft ramp, no zero cross wait): 0x63 made
+  quiet channels unmute slowly one after the other. After a clock change
+  the ADCs ring up to full scale: inputs held at 0 for 30 ms + 5 ms fade
+  (inputHold; mooSpace rang like a struck plate). `declare warmup "250"`:
+  the fade in waits (mooSpace, mooSpace2: smoothed knobs glide from 0).
+- Buffers read backwards / far back must not reach past what was recorded
+  since the start (crackles while filling): mooSpace2 reverse (a piece
+  plays only if REV_LEN were recorded, decided where its window is 0),
+  pollen grains (age <= recorded).
+- CPU meter: AudioProcessorUsage() is the last block only and its 16 bit
+  count (cycles/64) wraps at 4.19M cycles. Now the program's whole update()
+  is timed (32 bit, LoadTimer in nemesis_arch.cpp), blocks counted in the
+  DMA ISR, 500 ms windows: cpuLoad() average, cpuLoadPeak() largest block
+  (display shows the peak), report "CPU avg% (max peak%)", JSON cpuPeak.
+  update_all() on Teensy 4 only sets the software interrupt pending: time
+  around it measures nothing.
+- slush/spectral: one 160 kB block per channel landed in PSRAM once RAM2
+  was fragmented (after visiting programs); a 2048 frame there took 220 %
+  of a 128 block (stutter on OUT 2, two channels = watchdog). Every array is
+  now its own malloc in RAM2, never PSRAM (history stays PSRAM). Frames run
+  in two halves (analysis, synthesis HOP/4 later, other blocks): peak 96k
+  71 -> 41-45 % (freeze pressed: 105 % = click before), 48k 35 -> 21 %;
+  wet latency + N/16.
+- CAPTURE <input> <samples> / CAPDUMP: an input recorded from the DMA into
+  PSRAM (patch an output into a free input); scratchpad-style analysis with
+  numpy (spikes, levels). Input side rings at every clock change: a
+  loopback can't judge the output at that moment.
+- tests/programs/run.sh takes CXXFLAGS (e.g. -fsanitize=address -g).
+- faust2teensy on stock Teensy sketches for rev2: pin 9 HIGH (codec reset),
+  codec 03h = 0xF5.
+
 ## Simulator
 
 - Nemesis Sim (AU/VST3 plugins that run the .dsp files in Ableton) lives in

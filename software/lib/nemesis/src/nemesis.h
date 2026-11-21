@@ -75,10 +75,13 @@ namespace nemesis
    // applySampleRate(): see nemesis_program.h
    // CS42448 register 03h for the sample rate: MFREQ of MCLK = 512 fs
    uint8_t codecFunctionalMode();
-   // CPU load of the audio update in % of the block's time (the Audio
-   // library's figures assume AUDIO_BLOCK_SAMPLES)
+   // CPU load of the audio update in % of a block's time, over the last
+   // 500 ms: the average, and the largest single block (what decides a late
+   // block); the max is the largest block since cpuLoadMaxReset()
    float cpuLoad();
+   float cpuLoadPeak();
    float cpuLoadMax();
+   void cpuLoadMaxReset();
 
    // several programs in one firmware: the last selected one is restored at
    // power up, on rev2 the encoder selects (turn) and loads (push) a program

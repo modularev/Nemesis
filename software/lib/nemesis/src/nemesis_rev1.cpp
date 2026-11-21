@@ -215,6 +215,9 @@ namespace nemesis
          codecWrite(0x02, 0xFF);        // power down while configuring
          codecWrite(0x03, codecFunctionalMode()); // functional mode
          codecWrite(0x05, 0x00);        // ADC control
+         codecWrite(0x06, 0x43);        // volume and mute changes as a soft ramp (~21 ms at 48k); the
+                                        // library's 0x63 waited for zero crossings: quiet or offset
+                                        // channels unmuted slowly, one after the other
          codecWrite(0x02, 0x00);        // power up
          codec.volume(1.0);
 

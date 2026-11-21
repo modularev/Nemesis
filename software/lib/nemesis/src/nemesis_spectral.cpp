@@ -108,8 +108,16 @@ namespace nemesis
             float energy = 0;        // the input's energy per frame, averaged over ~0.7 s
             float energyT = 0;       // the same per input sample (time domain)
             float corr = 1;          // freeze output level correction, kept from capture to capture
-            void *block = nullptr;   // RAM2
-            void *slow = nullptr;    // PSRAM
+            // RAM2: every array its own allocation (they fit into the holes
+            // of a heap fragmented by other programs; one block per channel
+            // didn't and went to PSRAM, where a 2048 frame took 220 % of a
+            // 128 sample block: stutter, and with both channels the main
+            // loop starved, watchdog reset)
+            static constexpr int MAX_PARTS = 32;
+            void *parts[MAX_PARTS] = {};
+            int nparts = 0;
+            void *slow = nullptr;    // PSRAM: the level history
+            bool pending = false;    // analysed, synthesis() still to run
          };
 
          State state[NEMESIS_SPECTRAL_CHANNELS];
@@ -618,7 +626,7 @@ namespace nemesis
       {
          Channel &s = channel[c];
          State &f = state[c];
-         if (!f.block)
+         if (!f.nparts)
             return;
          profMark = now();
          // the last N input samples, oldest first
@@ -656,11 +664,27 @@ namespace nemesis
             lap(2);
             lockedTurns(f);
             tonality(f);
-            freeze(s, f, h);
-            profFrames++;
             memcpy(f.lastTurn, f.turn, N * sizeof(float));
+            lap(3);   // turns (the synthesis adds its start to it)
+            f.pending = true;   // freeze() a quarter hop later: synthesis()
          }
-         memcpy(f.prev, f.spec, N * sizeof(float));
+         memcpy(f.prev, f.spec, N * sizeof(float));   // synthesis reads spec, turn, mag: not prev
+      }
+
+      // the second half of a frame, HOP / 4 samples after the analysis (in
+      // another block from 2048 points on at 128 samples): the smear, the
+      // frozen layers, the inverse FFT and the overlap-add. A whole frame in
+      // one block peaked at 105 % of a 96 kHz block when freezing (a click).
+      FLASHMEM void synthesis(int c)
+      {
+         Channel &s = channel[c];
+         State &f = state[c];
+         if (!f.pending || !f.nparts)
+            return;
+         f.pending = false;
+         profMark = now();
+         freeze(s, f, f.mag);
+         profFrames++;
       }
 
       FLASHMEM bool begin(int n, int size)
@@ -684,64 +708,60 @@ namespace nemesis
          // in PSRAM: three level buffers of M frames (the history and the
          // two layers' frames, which a capture swaps; writing the history
          // there costs ~2 % in a frame's block)
-         const size_t fastFloats = 8 * N + 2 * K + 2 * (2 * N + 3 * K) + (N + 2 * K);
-         const size_t fastInts = 3 * K;
-         const size_t fast = fastFloats * sizeof(float) + fastInts * sizeof(int);
          const size_t slow = (size_t)3 * M * K * sizeof(float);
          for (int c = 0; c < n; c++)
          {
-            void *b = malloc(fast);
+            State &f = state[c];
+            Channel &s = channel[c];
+            bool ok = true;
+            // one zeroed array in RAM2 (never PSRAM: see State::parts)
+            auto take = [&](size_t count, size_t size) -> void * {
+               void *m = ok && f.nparts < State::MAX_PARTS ? malloc(count * size) : nullptr;
+               if (!m)
+               {
+                  ok = false;
+                  return nullptr;
+               }
+               memset(m, 0, count * size);
+               f.parts[f.nparts++] = m;
+               return m;
+            };
+            auto takeF = [&](size_t count) { return (float *)take(count, sizeof(float)); };
+            s.in = takeF(N);
+            s.out = takeF(N);
+            f.time = takeF(N);
+            f.spec = takeF(N);
+            f.prev = takeF(N);
+            f.syn = takeF(N);
+            f.turn = takeF(N);
+            f.lastTurn = takeF(N);
+            f.mag = takeF(K);
+            f.tonalNow = takeF(K);
+            for (int l = 0; l < 2; l++)
+            {
+               f.layer[l].z = takeF(N);
+               f.layer[l].rot = takeF(N);
+               f.layer[l].wander = takeF(K);
+               f.layer[l].aim = takeF(K);
+               f.layer[l].tonal = takeF(K);
+               f.layer[l].peakOf = (int *)take(K, sizeof(int));
+            }
+            f.smear.mag = takeF(K);
+            f.smear.weight = takeF(K);
+            f.smear.z = takeF(N);
+            f.peak = (int *)take(K, sizeof(int));
 #ifdef NM_SPECTRAL_CMSIS
-            if (!b)
-               b = extmem_malloc(fast);
             void *sl = extmem_malloc(slow);
 #else
             void *sl = malloc(slow);
 #endif
-            if (!b || !sl)
+            f.slow = sl;
+            if (!ok || !sl)
             {
-#ifdef NM_SPECTRAL_CMSIS
-               if (b) extmem_free(b);
-               if (sl) extmem_free(sl);
-#else
-               free(b);
-               free(sl);
-#endif
-               end();
+               end();   // frees this channel's parts too
                return false;
             }
-            memset(b, 0, fast);
             memset(sl, 0, slow);
-            float *p = (float *)b;
-            State &f = state[c];
-            Channel &s = channel[c];
-            f.block = b;
-            f.slow = sl;
-            s.in = p; p += N;
-            s.out = p; p += N;
-            f.time = p; p += N;
-            f.spec = p; p += N;
-            f.prev = p; p += N;
-            f.syn = p; p += N;
-            f.turn = p; p += N;
-            f.lastTurn = p; p += N;
-            f.mag = p; p += K;
-            f.tonalNow = p; p += K;
-            for (int l = 0; l < 2; l++)
-            {
-               f.layer[l].z = p; p += N;
-               f.layer[l].rot = p; p += N;
-               f.layer[l].wander = p; p += K;
-               f.layer[l].aim = p; p += K;
-               f.layer[l].tonal = p; p += K;
-            }
-            f.smear.mag = p; p += K;
-            f.smear.weight = p; p += K;
-            f.smear.z = p; p += N;
-            int *ip = (int *)p;
-            f.peak = ip; ip += K;
-            f.layer[0].peakOf = ip; ip += K;
-            f.layer[1].peakOf = ip;
             float *q = (float *)sl;
             f.hist = q; q += M * K;
             for (int l = 0; l < 2; l++)
@@ -761,6 +781,7 @@ namespace nemesis
             s.n = N;
             s.mask = MASK;
             s.hop = HOP;
+            s.split = HOP / 4;
             s.pos = 0;
             s.count = c * (HOP / 2);   // channel 1 half a hop later: frames in other blocks
             used = c + 1;
@@ -781,7 +802,9 @@ namespace nemesis
             xx += (double)f.prev[i] * f.prev[i];
          }
          gain = (float)(1.0 / ((xx > 0 ? xy / xx : 1.0) * 1.5));
-         memset(f.time, 0, 4 * N * sizeof(float));   // time, spec, prev, syn
+         float *const scratch[] = {f.time, f.spec, f.prev, f.syn};   // separate allocations
+         for (float *a : scratch)
+            memset(a, 0, N * sizeof(float));
          requested = 0;
          return true;
       }
@@ -790,11 +813,11 @@ namespace nemesis
       {
          for (int c = 0; c < NEMESIS_SPECTRAL_CHANNELS; c++)
          {
+            for (int i = 0; i < state[c].nparts; i++)
+               free(state[c].parts[i]);
 #ifdef NM_SPECTRAL_CMSIS
-            if (state[c].block) extmem_free(state[c].block);   // frees heap blocks too
             if (state[c].slow) extmem_free(state[c].slow);
 #else
-            free(state[c].block);
             free(state[c].slow);
 #endif
             state[c] = State();
@@ -818,8 +841,8 @@ namespace nemesis
 
       char placement(int c)
       {
-         uintptr_t a = (uintptr_t)state[c].block;
-         return !a ? '-' : (a >= 0x70000000u ? 'P' : 'R');
+         // the frame buffers are always RAM2 now; the level history PSRAM
+         return state[c].nparts ? 'R' : '-';
       }
       int size() { return used ? N : 0; }
 

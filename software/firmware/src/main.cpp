@@ -19,7 +19,8 @@
 // "RATE <Hz>" (sample rate setting, 0 auto), "WRITE <path> <bytes>" + the
 // bytes (a file on the SD card), "RAW" (control inputs unfiltered),
 // "BLOCKS" (cycles of compute() of 4096 consecutive audio blocks: find slow
-// single blocks), "MONITOR 0|1" (display updates off/on), "SCREEN" (the
+// single blocks), "CAPTURE <input> <samples>" / "CAPDUMP" (an input recorded
+// from the DMA into PSRAM, then printed: patch an output into it), "MONITOR 0|1" (display updates off/on), "SCREEN" (the
 // display's framebuffer as hex), "PSRAMTEST" (4 MB pattern written and read back 4 times: errors of the
 // PSRAM bus), "HANG" (loop() stops: the watchdog resets the module after 4 s).
 //
@@ -28,6 +29,7 @@
 #include "nemesis_programs.h"
 #include <nemesis_hw.h>
 #include <nemesis_remote.h>
+#include <nemesis_tdm.h>
 #include <nemesis_spectral.h>
 
 extern "C" uint8_t external_psram_size; // MB, set by the startup code
@@ -91,6 +93,30 @@ FLASHMEM void readCommands()
             delay(10);
          }
          nemesis::printBlockLog(Serial);
+      }
+      else if (strncmp(command, "CAPTURE ", 8) == 0)
+      {
+         // test: CAPTURE <input 1..8> <samples>: records that input from the
+         // DMA into PSRAM (patch an output into it: clicks, levels)
+         int input = 1, samples = 0;
+         sscanf(command + 8, "%d %d", &input, &samples);
+         nemesis::tdm::startCapture(input - 1, samples);
+         Serial.printf("OK CAPTURE %d %d\n", input, samples);
+      }
+      else if (strcmp(command, "CAPDUMP") == 0)
+      {
+         // the captured samples as 24 bit values, 16 per line
+         const int32_t *x;
+         int n = nemesis::tdm::captured(x);
+         Serial.printf("CAPDUMP %d %d\n", n, nemesis::sampleRate());
+         for (int i = 0; i < n; i++)
+         {
+            Serial.print(x[i] >> 8);
+            Serial.print((i % 16 == 15 || i == n - 1) ? '\n' : ' ');
+            if (i % 4096 == 0)
+               nemesis::watchdogFeed();
+         }
+         Serial.println("CAPDUMP end");
       }
       else if (strcmp(command, "SCREEN") == 0)
          nemesis::printScreen(Serial);
@@ -360,6 +386,6 @@ void loop()
                     nemesis::currentProgram() + 1, nemesis::program(nemesis::currentProgram())->name(),
                     nemesis::cpuLoad(), nemesis::cpuLoadMax(), AudioMemoryUsage(), AudioMemoryUsageMax(),
                     (unsigned long)millis(), (unsigned long)resetCause, tempmonGetTemp());
-      AudioProcessorUsageMaxReset();
+      nemesis::cpuLoadMaxReset();
    }
 }

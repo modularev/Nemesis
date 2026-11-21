@@ -388,6 +388,11 @@ FLASHMEM void NemesisAudio::stop()
 void NemesisAudio::update(void)
 {
     if (!fReady) return;  // not started, or start() is still allocating
+    // the CPU load: cycles of the whole update, whichever way it returns
+    struct LoadTimer {
+        uint32_t start = ARM_DWT_CYCCNT;
+        ~LoadTimer() { nemesis::tdm::addLoad(ARM_DWT_CYCCNT - start); }
+    } loadTimer;
     // samples in this block (set at runtime, at most the buffers' 128)
     const int n = nemesis::tdm::blockSize();
     // transport position for this block ([transport:..] parameters)
@@ -428,6 +433,26 @@ void NemesisAudio::update(void)
         for (int i = 0; i < n; i++) {
             fInChannel[channel][i] = src[i * nemesis::tdm::CHANNELS] * scale;
         }
+    }
+
+    // after a clock change: inputs 0 while the codec's ADCs ring, then a fade in
+    if (nemesis::inputHold > 0 || nemesis::inputRamp < 1.0f) {
+        int hold = nemesis::inputHold;
+        float ramp = nemesis::inputRamp;
+        const float step = 1.0f / (nemesis::INPUT_RAMP_S * nemesis::sampleRate());
+        for (int i = 0; i < n; i++) {
+            float g;
+            if (hold > 0) {
+                hold--;
+                g = 0.0f;
+            } else {
+                ramp = fminf(1.0f, ramp + step);
+                g = ramp;
+            }
+            for (int channel = 0; channel < FAUST_INPUTS; channel++) fInChannel[channel][i] *= g;
+        }
+        nemesis::inputHold = hold;
+        nemesis::inputRamp = ramp;
     }
 
     if (nemesis::debugMute)
@@ -481,6 +506,12 @@ void NemesisAudio::update(void)
     // interrupt: unused channels stay silent)
     int32_t* out = nemesis::tdm::output();
     if (!out) return;
+    // the calibration offsets' share, ramped linearly over the block
+    const float og0 = nemesis::offsetGain, ogT = nemesis::offsetTarget;
+    const float ogStep = 1.0f / (nemesis::OFFSET_RAMP_S * nemesis::sampleRate());
+    const float og1 = ogT > og0 ? fminf(ogT, og0 + ogStep * n) : fmaxf(ogT, og0 - ogStep * n);
+    nemesis::offsetGain = og1;
+    const float ogInc = (og1 - og0) / n;
     for (int channel = 0; channel < NEMESIS_NUM_OUTPUTS && channel < nemesis::tdm::CHANNELS; channel++) {
         // per output gain and offset calibration of the module
         float scale, offset;
@@ -488,7 +519,7 @@ void NemesisAudio::update(void)
         int32_t* dest = out + channel;
         uint32_t clipped = 0;  // samples beyond the DAC range, shown as CLIP
         for (int i = 0; i < n; i++) {
-            float sample = fOutChannel[channel][i] * scale + offset;
+            float sample = fOutChannel[channel][i] * scale + offset * (og0 + ogInc * (i + 1));
             int32_t val;
             if (sample >= 1.0f) {
                 val = INT32_MAX;

@@ -27,7 +27,7 @@ namespace nemesis
    namespace
    {
       bool codec_ready = false; // hw::begin() set the codec up (applySampleRate())
-      uint32_t unmute_at = 0;   // millis() when the codec's outputs come back (start, rate change)
+      uint32_t unmute_at = 0;   // millis() when the codec's outputs come back after the start
       bool fade_in_at_unmute = false; // start: the program fades in once the DACs are on
       // after power up the codec's outputs stay muted this long (its reference
       // settles) and the program silent; a restart clicked loudly (2026-11-17)
@@ -43,9 +43,58 @@ namespace nemesis
          outputGain = 0.0f;
       }
       void fadeIn() { outputTarget = 1.0f; }
+      bool restore_offsets = false;   // the offsets ramp back when the DACs come on
+      // the inputs silent while the ADCs ring after a clock change (inputHold)
+      void holdInputs()
+      {
+         inputRamp = 0.0f;
+         inputHold = (int)(INPUT_HOLD_S * tdm::sampleRate());
+      }
+      // the fade in after a switch waits for the program's warm-up
+      // (Program::warmupMs) and, after a clock change, for the DACs
+      uint32_t warm_until = 0;
+      bool fade_in_pending = false;
+      void requestFadeIn() { fade_in_pending = true; }
+
+      // before the codec's clocks change: the program faded out (by the
+      // caller), the outputs' calibration offsets ramped to 0 (a program must
+      // be running: it applies the ramp) and the DACs muted; update() unmutes
+      // them 30 ms after (unmuteAfterClockChange) and the offsets ramp back
+      void quietForClockChange()
+      {
+         if (!codec_ready || offsetGain <= 0.0f)
+            return;
+         offsetTarget = 0.0f;
+         for (uint32_t start = millis(); offsetGain > 0.0f && millis() - start < 150;)
+         {
+            delay(1);
+            watchdogFeed();
+         }
+         offsetGain = 0.0f;
+         codecWrite(0x07, 0xFF);   // the output is at the DAC's midpoint already: no step
+         delay(2);
+      }
+      // after the clocks changed: DACs on in 30 ms, then offsets and program back
+      void unmuteAfterClockChange()
+      {
+         if (!codec_ready || offsetTarget > 0.0f)
+         {
+            requestFadeIn();
+            return;
+         }
+         uint32_t at = millis() + 30;
+         if (!unmute_at || (int32_t)(at - unmute_at) > 0)
+            unmute_at = at;   // a pending start mute keeps its longer time
+         restore_offsets = true;
+         fade_in_at_unmute = true;
+      }
    }
    volatile float outputTarget = 1.0f;
    volatile float outputGain = 1.0f;
+   volatile float offsetTarget = 1.0f;
+   volatile float offsetGain = 1.0f;
+   volatile int inputHold = 0;
+   volatile float inputRamp = 1.0f;
 
    uint32_t watchdog_cs = 0, watchdog_toval = 0; // as read back after watchdogBegin()
 
@@ -124,10 +173,14 @@ namespace nemesis
             return;
          bool playing = outputTarget > 0.0f;
          if (playing)
+         {
             fadeOut();
+            quietForClockChange();
+         }
          tdm::setBlockSize(wanted); // the audio stops for a moment
+         holdInputs();
          if (playing)
-            fadeIn();
+            unmuteAfterClockChange();
       }
    }
 
@@ -157,6 +210,8 @@ namespace nemesis
       // silent until the codec has settled (START_MUTE_MS, update())
       outputGain = 0.0f;
       outputTarget = 0.0f;
+      offsetGain = 0.0f;   // ramp in after the start mute (no step at the unmute)
+      offsetTarget = 0.0f;
       tdm::begin(); // MCLK for both sample rates, before the codec starts
       settings::begin(!safe);
       transport::begin();
@@ -173,10 +228,20 @@ namespace nemesis
       codecWrite(0x07, 0xFF); // hw::begin's codec.volume() unmuted the DACs at once
       unmute_at = millis() + START_MUTE_MS;
       fade_in_at_unmute = true;
+      restore_offsets = true;
       applyBlockSize();
    }
 
    int blockSize() { return tdm::blockSize(); }
+
+   int wantedBlockSize(const Program *program)
+   {
+      int setting = systemSettings().blockSize;
+      if (setting)
+         return setting;
+      int hint = program ? program->blockSizeHint() : 0;
+      return (hint == 32 || hint == 64 || hint == 128) ? hint : DEFAULT_BLOCK_SIZE;
+   }
 
    int wantedBlockSize()
    {
@@ -187,9 +252,32 @@ namespace nemesis
       return (hint == 32 || hint == 64 || hint == 128) ? hint : DEFAULT_BLOCK_SIZE;
    }
 
-   // the Audio library's figures assume AUDIO_BLOCK_SAMPLES at AUDIO_SAMPLE_RATE_EXACT
-   float cpuLoad() { return AudioProcessorUsage() * AUDIO_BLOCK_SAMPLES / tdm::blockSize() * tdm::sampleRate() / AUDIO_SAMPLE_RATE_EXACT; }
-   float cpuLoadMax() { return AudioProcessorUsageMax() * AUDIO_BLOCK_SAMPLES / tdm::blockSize() * tdm::sampleRate() / AUDIO_SAMPLE_RATE_EXACT; }
+   // CPU load in windows of LOAD_WINDOW_MS: the average and the largest
+   // block, in % of a block's time (the Audio library's figure is the last
+   // block only: for a program whose work comes in some blocks, like an FFT
+   // frame every 4 blocks, it jumped between both)
+   constexpr uint32_t LOAD_WINDOW_MS = 500;
+   elapsedMillis sinceLoad;
+   float load_avg = 0, load_peak = 0, load_max = 0;
+   void measureLoad()
+   {
+      if (sinceLoad < LOAD_WINDOW_MS)
+         return;
+      sinceLoad = 0;
+      uint64_t sum;
+      uint32_t peak, count;
+      tdm::takeLoad(sum, peak, count);
+      // cycles of one block's time
+      float block = (float)F_CPU_ACTUAL * tdm::blockSize() / tdm::sampleRate();
+      load_avg = count ? 100.0f * (float)sum / count / block : 0.0f;
+      load_peak = 100.0f * peak / block;
+      if (load_peak > load_max)
+         load_max = load_peak;
+   }
+   float cpuLoad() { return load_avg; }
+   float cpuLoadPeak() { return load_peak; }
+   float cpuLoadMax() { return load_max; }
+   void cpuLoadMaxReset() { load_max = load_peak; }
 
    int sampleRate() { return tdm::sampleRate(); }
 
@@ -217,14 +305,12 @@ namespace nemesis
       if (wanted == tdm::sampleRate())
          return wanted;
       // MCLK and the codec's settings stay (nemesis_tdm.cpp): only LRCK and
-      // the bit clock change; the DACs muted while the codec follows
-      // (unmuted ~30 ms after, in update())
-      if (codec_ready)
-      {
-         codecWrite(0x07, 0xFF);
-         unmute_at = millis() + 30;
-      }
+      // the bit clock change. No DAC mute (2026-11-21): the outputs are DC
+      // calibrated and a muted DAC loses the offset correction, a low thump
+      // on mute and unmute; the program is faded out and the DMA holds each
+      // output's calibrated zero (nemesis_tdm.cpp) while the clocks change
       tdm::setSampleRate(wanted);
+      holdInputs();
       Serial.printf("sample rate %d\n", tdm::sampleRate());
       return tdm::sampleRate();
    }
@@ -259,6 +345,12 @@ namespace nemesis
       // RAM; its settings are written before (its update() is still called,
       // it returns early without a DSP)
       fadeOut(); // no click from the old program stopping
+      // the next program changes the codec's clocks: quiet them first, while
+      // the old program still runs (it applies the offset ramp)
+      const bool clockChange = previous && (wantedSampleRate(next) != tdm::sampleRate() ||
+                                            wantedBlockSize(next) != tdm::blockSize());
+      if (clockChange)
+         quietForClockChange();
       if (previous && (previous != next || restarting))
       {
          settings::flush(*previous);
@@ -279,7 +371,7 @@ namespace nemesis
       AudioInterrupts();
       if (!started)
       {
-         fadeIn();
+         unmuteAfterClockChange();
          return false;
       }
       NEMESIS_TRACE("switch: load settings\n");
@@ -302,7 +394,8 @@ namespace nemesis
       active = next;
       current = index;
       AudioInterrupts();
-      fadeIn();
+      warm_until = millis() + next->warmupMs();
+      unmuteAfterClockChange();   // fades in at once when no clock changed (after the warm-up)
 
       storePending = true;
       sinceSelect = 0;
@@ -622,6 +715,12 @@ namespace nemesis
    void update()
    {
       watchdogFeed();
+      measureLoad();
+      if (fade_in_pending && (int32_t)(millis() - warm_until) >= 0)
+      {
+         fade_in_pending = false;
+         fadeIn();
+      }
       if (!boot_cleared && millis() > HEALTHY_MS)
       {
          boot_cleared = true; // this start is a good one
@@ -641,11 +740,16 @@ namespace nemesis
          if (unmute_at && (int32_t)(millis() - unmute_at) >= 0)
          {
             unmute_at = 0;
-            codecWrite(0x07, 0x00); // the DACs after the start or a rate change (soft ramp, register 06h)
+            codecWrite(0x07, 0x00); // the DACs after the start or a clock change (soft ramp, register 06h)
+            if (restore_offsets)
+            {
+               restore_offsets = false;
+               offsetTarget = 1.0f;   // ramps back (OFFSET_RAMP_S)
+            }
             if (fade_in_at_unmute)
             {
                fade_in_at_unmute = false;
-               fadeIn();
+               requestFadeIn();
             }
          }
          if (wantedSampleRate(nullptr) != tdm::sampleRate())

@@ -17,8 +17,10 @@
 // of the overlap-added output; every HOP = size / 4 samples it runs a frame:
 // the last `size` input samples, Hann windowed, through the FFT, a kernel
 // on the bins (the parameters a..g as they were on that sample), the
-// inverse FFT, the window again, added into the output ring. The output is
-// `size` samples late. Channel 1 runs half a hop after channel 0, so their
+// inverse FFT, the window again, added into the output ring. The synthesis
+// (kernel, inverse FFT, overlap-add) runs hop / 4 samples after the
+// analysis, so the halves of a frame fall into different blocks: the output
+// is size + size / 16 samples late. Channel 1 runs half a hop after channel 0, so their
 // frames fall into different audio blocks. CMSIS-DSP's real FFT on the
 // Teensy, a plain FFT elsewhere (tests on the Mac).
 //
@@ -79,6 +81,7 @@ namespace nemesis
          int n = 0;              // FFT size (0: not allocated)
          int mask = 0;           // n - 1
          int hop = 0;            // n / 4
+         int split = 0;          // hop / 4: samples from a frame's analysis to its synthesis
          int pos = 0;            // ring position: in[pos] the oldest sample, out[pos] the next output
          int count = 0;          // samples since the last frame
          int kernel = 0;
@@ -100,8 +103,10 @@ namespace nemesis
       void service();
       // where channel c's buffers are: 'R' RAM2, 'P' PSRAM, '-' none (STATUS)
       char placement(int c);
-      // one frame of channel c (nm_spectral calls it every hop)
+      // one frame of channel c in two halves (nm_spectral calls them): the
+      // analysis every hop, the synthesis hop / 4 samples later
       void frame(int c);
+      void synthesis(int c);
       // profile (Teensy): average cycles per frame of each step since the
       // last call (names in profileName), then reset; PROFILE_STEPS steps
       constexpr int PROFILE_STEPS = 8;
@@ -133,8 +138,10 @@ static inline float nm_spectral(int c, int kernel, int size, float x, float a, f
    if (++s.count >= s.hop)
    {
       s.count = 0;
-      nemesis::spectral::frame(c);
+      nemesis::spectral::frame(c);   // the analysis
    }
+   else if (s.count == s.split)
+      nemesis::spectral::synthesis(c);   // the rest of that frame, in a later block
    return y;
 }
 

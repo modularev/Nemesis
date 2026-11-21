@@ -10,6 +10,7 @@
 #   FAUST=/path/to/faust ./run.sh   another FAUST compiler (default: faust on PATH)
 #   INPUTS=audio ./run.sh strike    audio even on trigger inputs (test_inputs "trig")
 #   TRACE=1 ./run.sh pollen         every random set's peaks and settings
+#   CXXFLAGS="-fsanitize=address -g" ./run.sh slush   memory errors (AddressSanitizer)
 #
 # With a built firmware (firmware/.pio/build/rev2/firmware.elf) it also lists
 # the size of every program's compute(): above ~30 kB it no longer fits the
@@ -47,7 +48,7 @@ for P in $PROGRAMS; do
     if [ -n "$SPEC" ]; then
         DEFS="$DEFS -DPROG_SPECTRAL=$SPEC $SW/lib/nemesis/src/nemesis_spectral.cpp"
     fi
-    c++ -O2 -std=c++17 -w -I"$OUT" -I"$SW/faust" -I"$SW/lib/nemesis/src" -I"$FINC" \
+    c++ -O2 -std=c++17 -w $CXXFLAGS -I"$OUT" -I"$SW/faust" -I"$SW/lib/nemesis/src" -I"$FINC" \
         -DPROG_H="\"$P.h\"" program_test.cpp $DEFS -o "$OUT/$P"
     "$OUT/$P" "$P" "$SEED" || FAILED="$FAILED $P"
 done

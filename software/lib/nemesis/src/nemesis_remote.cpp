@@ -125,6 +125,8 @@ namespace nemesis
    {
       out.printf("JSON {\"rev\":%d,\"current\":%d,\"cpu\":", NEMESIS_HW_REV, currentProgram());
       num(out, cpuLoad());
+      out.print(",\"cpuPeak\":"); // the largest block of the last 500 ms
+      num(out, cpuLoadPeak());
       out.print(",\"sd\":"); // "in use" or why not ("no SD", "SD off", "SD bad")
       str(out, sdProblem() ? sdProblem() : "in use");
       out.print(",\"programs\":[");
