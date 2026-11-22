@@ -57,6 +57,7 @@ namespace nemesis
    // free heap (RAM2): never used space above the break plus freed blocks
    size_t heapFree();
    bool arenaOwns(const void *p);
+   size_t arenaFree();   // bytes left in the arena (the spectral library takes them)
    void arenaReset();
 
    // MIDI input (MIDI jack and USB MIDI), read in the background: channel

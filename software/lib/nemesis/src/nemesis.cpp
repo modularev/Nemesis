@@ -320,8 +320,13 @@ namespace nemesis
       out.printf("SD: %s; failed starts before this one: %d\n", sdProblem() ? sdProblem() : "in use", bootFailures());
       out.printf("watchdog: CS %08lx TOVAL %lu\n", (unsigned long)watchdog_cs, (unsigned long)watchdog_toval);
       if (spectral::channels() > 0)
-         out.printf("spectral: %d points, %d channels, buffers %c%c (R RAM2, P PSRAM)\n", spectral::size(),
-                    spectral::channels(), spectral::placement(0), spectral::placement(1));
+      {
+         size_t dtcm, ram2;
+         spectral::memoryUse(dtcm, ram2);
+         out.printf("spectral: %d points, %d channels%s, %u kB in RAM1 + %u kB in RAM2 (history in PSRAM)\n",
+                    spectral::size(), spectral::channels(), spectral::running() < spectral::channels() ? " (mono)" : "",
+                    (unsigned)(dtcm / 1024), (unsigned)(ram2 / 1024));
+      }
       out.printf("audio: block %d samples, round trip %d samples; output written late %lu of %lu blocks\n",
                  tdm::blockSize(), 2 * tdm::blockSize(), (unsigned long)tdm::lateWrites(),
                  (unsigned long)tdm::writes());
@@ -420,6 +425,12 @@ namespace nemesis
          return nullptr;
       arena_used = start + size;
       return arena + start;
+   }
+
+   size_t arenaFree()
+   {
+      size_t start = (arena_used + 31) & ~(size_t)31;
+      return start < sizeof(arena) ? sizeof(arena) - start : 0;
    }
 
    bool arenaOwns(const void *p)

@@ -180,6 +180,32 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   pops.py): piano 1.25 -> 0.44 %, juno 3.6 -> 2.0, church 4.0 -> 0.6;
   noise ~6 % by nature. rev2 48k 2048: 26.4 % (peak 31.5), pitch 27.8
   (34); captures with two layers peak 44-45 %. The user: smooth now.
+- slush 0.5 (2026-11-22): resolution 512/1024/2048/4096 (4096 = one
+  analysis of L+R, bins spread over the stereo field: mid + side IFFT,
+  width works; two channels at 4096 need ~760 kB of on-chip RAM). The
+  spectral library takes the arena's rest (DTCM) when a program starts,
+  then RAM2; nothing a frame touches may be in PSRAM (rings/spectra there:
+  127-163 % of a block at 4096). 512/4096 CMSIS tables stay in flash
+  (teensy41_flash.ld) and are copied to RAM2 while used. Synthesis in 4
+  steps HOP/8 apart (smear, layer 0, layer 1, IFFT+OLA; channels half a
+  hop apart share scratch), wet latency N + N/8, slush ALIGN = 7N/16.
+  A refused size isn't retried every loop. Freeze: holds a geometric
+  per-bin average over ~150 ms (on chip; averaging PSRAM frames at the
+  capture took a block = click), level = the held levels (steering to
+  the input's energy made piano freezes too loud), speed (Z, 0-60 s)
+  glides partials to the nearest new ones starting at their phases
+  (interpolation, 1.3 dB; random phases 2-25 dB), a capture mid-glide
+  hands the fading layer's level over; scatter (Y, after the user's Max
+  patch: random frame per bin, level + frequency from it), lock (1 =
+  peak locked; lower: own frequency + bounded slow phase wander, the
+  ~3 dB overlap-add loss compensated), purity (POT C, -90..-1 dB + narrow
+  partials), drift +-50 cents/+-4 dB (drift^2), grain levels, smear
+  always on (0 = no inertia; mix blends), crossfades x^0.7. Fixed: stale
+  frames in a re-freeze within 32 frames, a phase flip whenever a peak
+  moved by an odd number of bins (dropouts in glides and drift). rev2
+  48k: 2048 ~34 % with smear (peak 48), 4096 22 % (peak 70, frozen 87).
+  Once after a long session the display hung (25 ms per frame, max
+  360 ms) and taps got lost; a restart fixed it, not reproduced.
 
 ## Switching, CPU meter, spectral fixes (2026-11-21)
 
