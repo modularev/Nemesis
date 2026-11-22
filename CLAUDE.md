@@ -81,7 +81,13 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   nemesis-poly.h (dynamic arrays, re-steal/retrigger/last-note-wins, fade
   in after a cut, slices, soundfiles shared, all note zones); rev2 juno
   under MIDI stress: 0 dropped/NaN/late, 12 voices 70 % (peak 80).
-  Open: a shared note-convention header with poly-dsp.h (sletz, optional).
+  #1405 review addressed in 2ef2ee9e6 (arena counts live zones, no reset();
+  failures(); zone table grows; checked on rev2 with a scratch sketch).
+  Waiting for sletz (2026-11-22). Later, when the user asks: shared
+  note-convention header with poly-dsp.h as its own PR after #1404 merges;
+  #1406 after #1403/#1405 merge (rebase to 89b2f290b, classDestroy() in
+  ~AudioFaust(), MidiUI back in the constructor via first-use statics,
+  teensy.cpp -mem sentence in the README).
   Hardware test of faust2teensy on rev2: scratchpad-style project with a
   stock Audio library sketch needs pin 9 HIGH (codec reset) and codec 03h =
   0xF5 (the library's 0xF4 left the outputs silent).
@@ -152,8 +158,8 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 - slush (program 13): freeze/smear; block 128 (a 2048 frame with smear
   ~40 % of a 128 block, between frames 3 %). Mac tests: scratchpad st/
   (direct.cpp, bz/pc/lv/xf), tests/programs/run.sh slush. Not yet
-  measured on rev2 with CMSIS back in ITCM; the user still heard a buzz
-  (not reproduced on the Mac: ask for a recording of out 3).
+  measured on rev2 with CMSIS back in ITCM; the buzz the user heard then
+  is gone since slush 0.4 (the user: smooth).
 - slush 0.4 (2026-11-21): morph (capture matches peaks to the nearest
   old ones within 0.5 oct, bends glide over the fade), layer (previous
   capture held, two layers normalised 1/sqrt(g0^2+g1^2); a sounding slot
