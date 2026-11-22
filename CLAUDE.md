@@ -77,6 +77,11 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   #1404 mcu-poly-dsp.h (branch teensy-mcu-poly), #1405 tiered memory
   (teensy-tiered-memory), #1406 faust2teensy -mem/-nvoices
   (teensy-poly-memory-integration, on #1403's head). Daisy PRs later.
+  #1404 review (sletz, 2026-11-22) addressed in 4fe2dfad2 and ported to
+  nemesis-poly.h (dynamic arrays, re-steal/retrigger/last-note-wins, fade
+  in after a cut, slices, soundfiles shared, all note zones); rev2 juno
+  under MIDI stress: 0 dropped/NaN/late, 12 voices 70 % (peak 80).
+  Open: a shared note-convention header with poly-dsp.h (sletz, optional).
   Hardware test of faust2teensy on rev2: scratchpad-style project with a
   stock Audio library sketch needs pin 9 HIGH (codec reset) and codec 03h =
   0xF5 (the library's 0xF4 left the outputs silent).
