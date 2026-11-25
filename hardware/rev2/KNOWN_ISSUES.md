@@ -61,12 +61,8 @@ Noise floor with nothing patched: −89…−94 dBFS RMS (IN 1–6), −75…−
 
 Circuit: TRS jack → R61 200 Ω → optocoupler U7 (Everlight 6N137S1) → R69
 200 Ω pull-up to +3V3 → Teensy pin 0 (RX1, the net is named `MIDI_TX`).
-No bytes arrived from a MIDI keyboard on the test unit; USB MIDI works.
+Works with a TRS type B cable/adapter (2026-11-24).
 
-- **Supply out of spec:** the 6N137 is specified for VCC 4.5–5.5 V and runs
-  on +3V3 here, which can leave its output stage from switching. Fix: VCC
-  (pin 8) from +5 V, keep R69 to +3V3 (open collector output, the Teensy 4.1
-  isn't 5 V tolerant), or use an opto specified for 3.3 V (e.g. TLP2361).
 - **TRS type B:** tip → R61 → opto anode, ring → cathode, i.e. TRS MIDI type
   B. Most gear and adapters follow the MMA standard type A (tip = sink, ring
   = source). Type A works with a type A/B swap adapter, or a solder jumper

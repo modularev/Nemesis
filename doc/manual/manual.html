@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nemesis Programmable DSP Manual</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Michroma&family=Oxanium:wght@500&display=swap">
+<style>
+/* Layout as the Zadar and Motus manuals: sticky table of contents on the left, one reading column.
+   Colours from the panel: black, the red knob rings, the green jacks; POT A-D in their cap colours.
+   Display screens are drawn in the firmware's own fonts (Michroma, Oxanium) on a 128 x 32 grid. */
+:root {
+  --bg: #08080a;
+  --panel: #111114;
+  --panel-2: #18181d;
+  --line: #2a2a31;
+  --fg: #e7e7ea;
+  --muted: #9a9aa4;
+  --red: #e2483f;
+  --red-dim: #9c3a34;
+  --green: #4fb26a;
+  --oled: #eef3ff;
+  --pa: #d2433d; --pb: #3f9a5a; --pc: #3f78c4; --pd: #b8bcc4;
+  --display: "Chakra Petch", "IBM Plex Sans", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { background: var(--bg); color: var(--fg); font: 400 16px/1.6 var(--body); margin: 0; padding-inline: 16px; }
+a { color: var(--red); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
+
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 56px; padding-block: 48px 96px; }
+nav.toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; }
+nav.toc p { font: 600 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; border-left: 1px solid var(--line); }
+nav.toc a { display: block; padding: 4px 0 4px 14px; margin-left: -1px; border-left: 1px solid transparent; color: var(--muted); text-decoration: none; font-size: 14px; }
+nav.toc a:hover { color: var(--fg); border-left-color: var(--red); }
+nav.toc li.sub a { padding-left: 26px; font-size: 13px; }
+
+main { min-width: 0; max-width: 820px; }
+
+.hero { display: grid; gap: 28px; padding-bottom: 40px; border-bottom: 1px solid var(--line); }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--red-dim); }
+h1 { font: 700 clamp(36px, 6vw, 56px)/1.02 var(--display); letter-spacing: -.01em; margin: 10px 0 0; text-wrap: balance; }
+h1 span { color: var(--red); }
+.lede { font-size: 18px; color: var(--muted); max-width: 62ch; margin: 0; }
+.lede strong { color: var(--fg); font-weight: 500; }
+.hero img { display: block; width: 100%; max-width: 560px; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+
+section { padding-top: 56px; display: grid; gap: 18px; }
+h2 { font: 600 28px/1.15 var(--display); margin: 0; text-wrap: balance; display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+h2 small { font: 500 12px/1 var(--mono); color: var(--red-dim); letter-spacing: .1em; text-transform: uppercase; }
+h3 { font: 600 20px/1.2 var(--display); margin: 16px 0 0; }
+h3.prog { font-size: 24px; margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+h3.prog small { font: 500 12px/1 var(--mono); color: var(--muted); letter-spacing: .06em; }
+h4 { font: 600 13px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 6px 0 -6px; }
+p { margin: 0; max-width: 68ch; }
+ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 68ch; }
+.note { border-left: 2px solid var(--red-dim); padding: 2px 0 2px 14px; color: var(--muted); font-size: 15px; max-width: 68ch; }
+.note b { color: var(--fg); font-weight: 600; }
+
+kbd { font: 600 12px/1 var(--mono); letter-spacing: .06em; color: var(--fg); background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 3px 6px; white-space: nowrap; }
+kbd.a { background: var(--pa); border-color: #0004; color: #fff; }
+kbd.b { background: var(--pb); border-color: #0004; color: #fff; }
+kbd.c { background: var(--pc); border-color: #0004; color: #fff; }
+kbd.d { background: var(--pd); border-color: #0004; color: #111; }
+.v { font-family: var(--mono); font-size: .92em; color: var(--oled); white-space: nowrap; }
+.j { font-family: var(--mono); font-size: .92em; color: var(--green); white-space: nowrap; }
+
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 14px; border-bottom: 1px solid var(--line); }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 11px/1.2 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); background: var(--panel-2); }
+td:first-child { white-space: nowrap; font-weight: 500; }
+table.wrap1 td:first-child { white-space: normal; min-width: 150px; }
+
+/* the 128 x 32 OLED */
+.screens { display: flex; flex-wrap: wrap; gap: 20px 18px; }
+figure.oled { margin: 0; display: grid; gap: 8px; align-content: start; width: 300px; max-width: 100%; }
+figure.oled .bez { background: #0c0c10; border: 1px solid #26262e; border-radius: 8px; padding: 10px; }
+figure.oled svg { display: block; width: 100%; height: auto; background: #000; border-radius: 2px; box-shadow: 0 0 24px -8px rgba(238,243,255,.25); }
+figure.oled svg text { fill: var(--oled); }
+figure.oled svg .m { font-family: "Michroma", sans-serif; }
+figure.oled svg .o { font-family: "Oxanium", sans-serif; font-weight: 500; }
+figure.oled svg .px { font-family: "IBM Plex Mono", monospace; font-weight: 500; }
+figure.oled figcaption { font-size: 13.5px; color: var(--muted); }
+figure.oled figcaption b { color: var(--fg); font-weight: 600; }
+
+figure.panel { margin: 0; display: grid; gap: 10px; max-width: 420px; }
+figure.panel img { display: block; width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+figure.panel figcaption { font-size: 14px; color: var(--muted); }
+.split { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 28px; align-items: start; }
+
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; text-decoration: none; color: inherit; }
+a.card:hover { border-color: var(--red-dim); }
+.card h3 { margin: 0; font-size: 17px; color: var(--fg); display: flex; justify-content: space-between; gap: 8px; }
+.card h3 span { font: 500 11px/1.8 var(--mono); color: var(--red-dim); letter-spacing: .08em; }
+.card p { font-size: 14px; color: var(--muted); }
+
+footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-block: 32px 72px; }
+  nav.toc { position: static; max-height: none; }
+  nav.toc ol { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); border-left: 0; }
+  nav.toc a, nav.toc li.sub a { border-left: 0; padding-left: 0; }
+  .cards, .split { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) { th, td { padding: 8px 10px; } }
+@media print {
+  body { background: #fff; color: #000; }
+  nav.toc { display: none; }
+  .wrap { grid-template-columns: 1fr; }
+  .tbl, .card { background: #fff; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#start">Getting started</a></li>
+      <li><a href="#playing">Playing</a></li>
+      <li><a href="#display">Display &amp; menus</a></li>
+      <li><a href="#settings">Program settings</a></li>
+      <li><a href="#transport">Tempo, clock &amp; MIDI</a></li>
+      <li><a href="#system">System settings</a></li>
+      <li><a href="#programs">Programs</a></li>
+      <li class="sub"><a href="#juno">juno</a></li>
+      <li class="sub"><a href="#moospace">mooSpace</a></li>
+      <li class="sub"><a href="#moospace2">mooSpace2</a></li>
+      <li class="sub"><a href="#freqshift">freqshift</a></li>
+      <li class="sub"><a href="#superosc">superosc</a></li>
+      <li class="sub"><a href="#breaker">breaker</a></li>
+      <li class="sub"><a href="#growler">growler</a></li>
+      <li class="sub"><a href="#pollen">pollen</a></li>
+      <li class="sub"><a href="#strike">strike</a></li>
+      <li class="sub"><a href="#bitrot">bitrot</a></li>
+      <li class="sub"><a href="#primetime">primetime</a></li>
+      <li class="sub"><a href="#harmonizer">harmonizer</a></li>
+      <li class="sub"><a href="#slush">slush</a></li>
+      <li><a href="#calibration">Calibration</a></li>
+      <li><a href="#sd">SD card &amp; remote</a></li>
+      <li><a href="#trouble">Troubleshooting</a></li>
+      <li><a href="#rev1">rev1</a></li>
+      <li><a href="#specs">Specifications</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div>
+        <div class="eyebrow">Programmable DSP · user manual</div>
+        <h1>Nemesis: thirteen <span>programs</span>, one module</h1>
+      </div>
+      <p class="lede">An eight in, eight out Eurorack DSP module running <strong>FAUST programs</strong>: reverbs,
+        delays, a granulator, a spectral freeze, glitch and beat effects, FM and polyphonic synthesizers and a
+        percussion voice, chosen on the display and played with <strong>seven knobs, four CV inputs and MIDI</strong>.</p>
+      <img src="nemesis-rev2.jpg" alt="The Nemesis rev2 in a case: input strip with inputs 3 to 8 and their gain knobs on the left, the main panel with inputs 1 and 2, CV X Y Z with attenuverters, MIDI in and USB, two buttons, the display and the encoder, the big knobs X Y Z, the small knobs A B C D in red, green, blue and grey, CV A to D and outputs 1 and 2, and the output strip with outputs 3 to 8 on the right" width="1072" height="1338">
+    </header>
+
+    <!-- ============================================================ overview -->
+    <section id="overview">
+      <h2>Overview</h2>
+      <p>Nemesis is a Teensy 4.1 with a CS42448 codec: eight audio inputs and eight DC coupled outputs, all of
+        them sampled at 48 or 96 kHz. What the jacks and knobs do depends on the program you pick. All programs
+        share the same panel layout, so the big knobs <kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd> always hold the main
+        gestures (size, time, pitch, decay), the small <kbd class="a">A</kbd> <kbd class="b">B</kbd>
+        <kbd class="c">C</kbd> <kbd class="d">D</kbd> the second layer, and everything else is a setting behind
+        the encoder.</p>
+
+      <div class="split">
+        <figure class="panel">
+          <img src="panel.png" alt="Front panel drawing of the rev2 main panel" width="958" height="1518">
+          <figcaption>The main panel. Inputs 3–8 and outputs 3–8 sit on the two strips beside it.</figcaption>
+        </figure>
+        <div style="display:grid; gap:18px">
+          <h3 style="margin:0">Jacks</h3>
+          <div class="tbl"><table class="wrap1">
+            <thead><tr><th>Jack</th><th>Signal</th></tr></thead>
+            <tbody>
+              <tr><td><span class="j">input 1</span> <span class="j">input 2</span></td><td>the main stereo audio input, with a gain knob each (±5 V fits at full gain). Input 1 is normalled to input 2 (the arrow): a mono source in input 1 feeds both</td></tr>
+              <tr><td><span class="j">input 3–8</span></td><td>audio, with attenuators on the input strip. Some programs take triggers here (strike: IN 1–6), and IN 8 can be the clock input</td></tr>
+              <tr><td><span class="j">X</span> <span class="j">Y</span> <span class="j">Z</span></td><td>CV added to the big knobs through an attenuverter (−/+), about ±4 V</td></tr>
+              <tr><td><span class="j">CV A–D</span></td><td>CV 0–8 V (or 0–5 V, a system setting): added to <kbd>A</kbd>–<kbd>D</kbd> or routed to any setting, per program. V/Oct and gates where a program asks for them</td></tr>
+              <tr><td><span class="j">output 1</span> <span class="j">output 2</span></td><td>the main stereo output, ±5 V, DC coupled</td></tr>
+              <tr><td><span class="j">output 3–8</span></td><td>per program: more audio (rear, wet, sidebands, single voices) or CV, gates and triggers (envelopes, clocks, pitch)</td></tr>
+              <tr><td><span class="j">midi in</span></td><td>MIDI on a 3.5 mm TRS jack, type B (see <a href="#transport">MIDI</a>)</td></tr>
+              <tr><td><span class="j">usb</span></td><td>USB MIDI (“Nemesis rev2”), serial for the remote page, firmware updates</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <h3>Controls</h3>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Use</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>the program's three main parameters. Each is summed with its CV jack</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd> <kbd class="c">C</kbd> <kbd class="d">D</kbd></td><td>four more parameters, usually with CV A–D added</td></tr>
+          <tr><td>Encoder</td><td>turn, click and hold: settings, program list and system settings (see <a href="#display">Display &amp; menus</a>)</td></tr>
+          <tr><td>Buttons 1 and 2</td><td>per program (freeze, next voice, play); their LEDs show what the program says (beat, freeze, repeat). Both held for 2 s: knob calibration</td></tr>
+          <tr><td>Display</td><td>128 × 32 OLED: the program, its CPU load, tempo, values and menus</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ============================================================ start -->
+    <section id="start">
+      <h2>Getting started</h2>
+      <p>The module starts the program that ran last. The outputs stay muted for 0.4 s while the codec settles,
+        then the program fades in. With an SD card inserted, every program's settings and the system settings are
+        loaded from it.</p>
+      <ol style="margin:0; padding-left:20px; display:grid; gap:6px; max-width:68ch">
+        <li>Patch a stereo source into <span class="j">input 1</span>/<span class="j">input 2</span> and
+          <span class="j">output 1</span>/<span class="j">output 2</span> to your mixer.</li>
+        <li><b>Hold</b> the encoder: the program list opens. Turn to a program and <b>click</b>: it loads.</li>
+        <li>Turn the knobs. The display shows each parameter's name and value while you turn it.</li>
+        <li><b>Click</b> the encoder for the program's settings: turn to a row, click to edit, turn to change,
+          click again.</li>
+      </ol>
+      <div class="screens">
+        <figure class="oled"><div class="bez"><svg viewBox="0 0 128 32" role="img" aria-label="Home screen: mooSpace2 in large letters, 62% at the top right">
+          <text class="px" x="128" y="7" font-size="8" text-anchor="end">62%</text>
+          <text class="m" x="0" y="29" font-size="14.2">mooSpace2</text>
+        </svg></div><figcaption><b>Home:</b> the program and, top right, its CPU load (the largest block of the last half second).</figcaption></figure>
+        <figure class="oled"><div class="bez"><svg viewBox="0 0 128 32" role="img" aria-label="Program list: juno, mooSpace with cursor, mooSpace2 marked as running">
+          <text class="o" x="0" y="8" font-size="10.5" xml:space="preserve">   juno</text>
+          <text class="o" x="0" y="19" font-size="10.5" xml:space="preserve">&gt;  mooSpace</text>
+          <text class="o" x="0" y="30" font-size="10.5" xml:space="preserve">  * mooSpace2</text>
+          <rect x="127" y="0" width="1" height="32" fill="#eef3ff"/><rect x="125" y="2" width="3" height="7" fill="#eef3ff"/>
+        </svg></div><figcaption><b>Program list</b> (hold): <span class="v">&gt;</span> the cursor, <span class="v">*</span> the running program.</figcaption></figure>
+      </div>
+      <p class="note">A program is remembered for the next power-up once it has run for 10 seconds. Hold the
+        encoder while powering up to start the first program (juno) instead.</p>
+    </section>
+
+    <!-- ============================================================ playing -->
+    <section id="playing">
+      <h2>Playing</h2>
+      <h3>Knobs and CV</h3>
+      <p>The big knobs <kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd> are summed with their CV jacks in hardware: the
+        attenuverter above each jack sets how much and which way the CV moves the knob's parameter. With nothing
+        patched, the knob alone sets it.</p>
+      <p>The small knobs <kbd class="a">A</kbd>–<kbd class="d">D</kbd> are read by the processor; most programs
+        add <span class="j">CV A–D</span> to them. Some programs leave a CV jack free for you to route to any
+        setting (gate, V/Oct, freeze), see <a href="#settings">Program settings</a>. CV A–D are unipolar: an
+        unpatched jack reads 0 V.</p>
+      <p>Every program remembers where each knob was. After a program switch or a preset, a knob's stored value
+        and its position differ; what happens then is the system setting <b>knobs</b>:</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>knobs</th><th>Behaviour</th></tr></thead>
+        <tbody>
+          <tr><td><span class="v">jump</span></td><td>the knob takes over as soon as it moves (1 % of its travel)</td></tr>
+          <tr><td><span class="v">catch</span></td><td>the knob takes over when it reaches the stored value; until then the popup shows a tick where the knob stands</td></tr>
+        </tbody>
+      </table></div>
+      <div class="screens">
+        <figure class="oled"><div class="bez"><svg viewBox="0 0 128 32" role="img" aria-label="Knob popup: decay, a bar, the value 0.62">
+          <text class="m" x="4" y="20" font-size="12" transform="skewX(-10)">decay</text>
+          <rect x="0.5" y="26.5" width="91" height="5" fill="none" stroke="#eef3ff"/>
+          <rect x="1" y="27" width="56" height="4" fill="#eef3ff"/>
+          <rect x="74" y="23" width="1" height="3" fill="#eef3ff"/>
+          <text class="o" x="127" y="31" font-size="10.5" text-anchor="end">0.62</text>
+        </svg></div><figcaption><b>Knob popup:</b> name, a bar and the value. The tick above the bar: where a knob that hasn't caught the value stands.</figcaption></figure>
+      </div>
+
+      <h3>Levels</h3>
+      <p>The outputs are DC coupled: full scale is ±5 V. CV, gate and pitch outputs are calibrated in volts.
+        Every program has the setting <b>output</b>, which decides what its audio outputs do above 4.4 V:</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>output</th><th>Above 4.4 V</th></tr></thead>
+        <tbody>
+          <tr><td><span class="v">clip</span></td><td>nothing: the converter clips hard</td></tr>
+          <tr><td><span class="v">soft</span></td><td>transparent up to 4.4 V, then bends into 4.9 V (the default)</td></tr>
+          <tr><td><span class="v">tape</span></td><td>gradual saturation over the whole range</td></tr>
+          <tr><td><span class="v">fold</span></td><td>folds the wave back at 4.9 V: a wavefolder</td></tr>
+        </tbody>
+      </table></div>
+      <p>Only the audio outputs are shaped; CV outputs stay exact. When an output clips, the top right of the
+        home screen shows <span class="v">CLIP</span> for half a second; a program with its own limiter shows its
+        gain reduction there (<span class="v">lim -3 dB</span>).</p>
+      <div class="screens">
+        <figure class="oled"><div class="bez"><svg viewBox="0 0 128 32" role="img" aria-label="Home screen with CLIP inverted at the top right">
+          <rect x="94" y="0" width="34" height="10" fill="#eef3ff"/>
+          <text class="o" x="126" y="8" font-size="10.5" text-anchor="end" style="fill:#000">CLIP</text>
+          <text class="m" x="0" y="29" font-size="14.2">freqshift</text>
+        </svg></div><figcaption><b>CLIP:</b> an output went past full scale.</figcaption></figure>
+      </div>
+      <p>Program switches fade out and in (15 / 30 ms), so switching while patched to a speaker is safe.</p>
+    </section>
+
+    <!-- ============================================================ display -->
+    <section id="display">
+      <h2>Display &amp; menus</h2>
+      <p>Everything is reached with the encoder from the home screen:</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Where</th><th>Turn</th><th>Click</th><th>Hold (0.6 s)</th></tr></thead>
+        <tbody>
+          <tr><td>Home</td><td>the program's home setting (juno: patch), else the settings open</td><td>program settings</td><td>program list</td></tr>
+          <tr><td>Program settings</td><td>move the cursor (editing: change the value)</td><td>edit / done</td><td>program list</td></tr>
+          <tr><td>Program list</td><td>choose a program</td><td>load it</td><td>system settings</td></tr>
+          <tr><td>System settings</td><td>move the cursor (editing: change the value)</td><td>edit / done</td><td>home</td></tr>
+        </tbody>
+      </table></div>
+      <p>The program settings and the program list close after 2 seconds without input (not while editing). The
+        system settings stay open until you hold the encoder; the last row of every program's settings,
+        <span class="v">system &gt;</span>, opens them too. Lists remember where you left them. Turning fast takes
+        bigger steps.</p>
+      <div class="screens">
+        <figure class="oled"><div class="bez"><svg viewBox="0 0 128 32" role="img" aria-label="Settings list: sync on, reverse len 1/8, freeze off">
+          <text class="o" x="0" y="8" font-size="10.5" xml:space="preserve">&gt;sync</text><text class="o" x="122" y="8" font-size="10.5" text-anchor="end">on</text>
+          <text class="o" x="0" y="19" font-size="10.5" xml:space="preserve"> reverse length</text><text class="o" x="122" y="19" font-size="10.5" text-anchor="end">1/8</text>
+          <text class="o" x="0" y="30" font-size="10.5" xml:space="preserve"> freeze</text><text class="o" x="122" y="30" font-size="10.5" text-anchor="end">off</text>
+          <rect x="127" y="0" width="1" height="32" fill="#eef3ff"/><rect x="125" y="0" width="3" height="5" fill="#eef3ff"/>
+        </svg></div><figcaption><b>Settings:</b> three rows, label left, value right, a scroll bar at the edge.</figcaption></figure>
+        <figure class="oled"><div class="bez"><svg viewBox="0 0 128 32" role="img" aria-label="Settings list while editing: the value of decay inverted">
+          <text class="o" x="0" y="8" font-size="10.5" xml:space="preserve"> shift</text><text class="o" x="122" y="8" font-size="10.5" text-anchor="end">+12</text>
+          <rect x="86" y="10" width="38" height="11" fill="#eef3ff"/>
+          <text class="o" x="0" y="19" font-size="10.5" xml:space="preserve">&gt;lag</text><text class="o" x="122" y="19" font-size="10.5" text-anchor="end" style="fill:#000">80 ms</text>
+          <text class="o" x="0" y="30" font-size="10.5" xml:space="preserve"> push</text><text class="o" x="122" y="30" font-size="10.5" text-anchor="end">0.00</text>
+          <rect x="127" y="0" width="1" height="32" fill="#eef3ff"/><rect x="125" y="19" width="3" height="5" fill="#eef3ff"/>
+        </svg></div><figcaption><b>Editing:</b> the value is inverted; turn to change it, click when done.</figcaption></figure>
+        <figure class="oled"><div class="bez"><svg viewBox="0 0 128 32" role="img" aria-label="Home screen of pollen with int 120.0 in the top line">
+          <text class="o" x="0" y="8" font-size="10.5">int 120.0</text>
+          <text class="px" x="128" y="7" font-size="8" text-anchor="end">71%</text>
+          <text class="m" x="0" y="29" font-size="14.2">pollen</text>
+        </svg></div><figcaption><b>Tempo:</b> programs on the transport show the clock (<span class="v">int</span>, <span class="v">MIDI</span>, <span class="v">IN8</span>) and the tempo, or <span class="v">stop</span>.</figcaption></figure>
+        <figure class="oled"><div class="bez"><svg viewBox="0 0 128 32" role="img" aria-label="Home screen of primetime: name in the top line, A 160 and B 247 milliseconds big">
+          <text class="o" x="0" y="8" font-size="10.5">primetime</text>
+          <text class="px" x="128" y="7" font-size="8" text-anchor="end">15%</text>
+          <text class="m" x="0" y="29" font-size="11">160</text><text class="o" x="33" y="29" font-size="8.5">A ms</text>
+          <text class="m" x="64" y="29" font-size="11">247</text><text class="o" x="97" y="29" font-size="8.5">B ms</text>
+        </svg></div><figcaption><b>Home values:</b> some programs show values big instead of the name (primetime the delays, harmonizer the ratio, breaker bar.beat and tempo, juno the patch).</figcaption></figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ settings -->
+    <section id="settings">
+      <h2>Program settings <small>click</small></h2>
+      <p>Every parameter of a program that has no knob is a setting. Settings are stored per program on the SD
+        card a moment after you change them and come back with the program. The list holds, in this order:</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Row</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td>preset</td><td>only in programs with presets (juno: the 128 Juno-106 factory patches). Choosing one sets every parameter; knobs then take over by jump or catch</td></tr>
+          <tr><td>the settings</td><td>the program's parameters, sometimes under section headers (strike: object, exciter, output, random, kit). Some only appear when another is on (mooSpace2's lag shows ms or note values depending on sync)</td></tr>
+          <tr><td>output</td><td>clip, soft, tape or fold (see <a href="#playing">Levels</a>)</td></tr>
+          <tr><td>CV A … CV D</td><td>the CV jacks a program leaves free: route each to any setting, or <span class="v">off</span>. A routed gate setting switches above 4 V (2.5 V in the 0–5 V range); a pitch target follows 1 V/oct</td></tr>
+          <tr><td>system &gt;</td><td>opens the <a href="#system">system settings</a></td></tr>
+        </tbody>
+      </table></div>
+      <h3>Rolling random sounds</h3>
+      <p>strike has a <b>roll</b> setting: click it, then every detent right rolls a new random sound, every detent
+        left goes back one (a history of 16; <span class="v">#0</span> is where you started). <b>target</b> picks
+        what a roll changes (the selected voice or all), <b>amount</b> how far (100 % fully random). A roll leaves
+        alone what you are playing: settings a knob holds and settings with a CV that carries a signal.</p>
+    </section>
+
+    <!-- ============================================================ transport -->
+    <section id="transport">
+      <h2>Tempo, clock &amp; MIDI</h2>
+      <p>One transport runs for the whole module: a position in bars and beats that the rhythmic programs follow
+        (breaker, pollen, bitrot, primetime, mooSpace2 with sync). It runs on the internal tempo, follows MIDI
+        clock, or follows a clock on <span class="j">input 8</span>.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>clock</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td><span class="v">auto</span></td><td>MIDI clock while one arrives; when it stops, the position holds and after 0.3 s the internal tempo takes over</td></tr>
+          <tr><td><span class="v">internal</span></td><td>the tempo setting; <b>run</b> starts and stops it</td></tr>
+          <tr><td><span class="v">MIDI</span></td><td>MIDI clock (jack or USB). Start goes to the downbeat, Stop and Continue stop and resume, Song Position sets the position</td></tr>
+          <tr><td><span class="v">IN 8</span></td><td>a clock or gate on <span class="j">input 8</span>: 1/4, 1/8, 1/16 notes or 24 ppqn (setting <b>IN 8 pulses</b>). Pulses after a pause start at the downbeat; it stops when they stop. IN 8 is silent in the program meanwhile</td></tr>
+        </tbody>
+      </table></div>
+      <p>The clock is followed by a phase locked loop, so the position stays smooth and within a few samples of the
+        clock. While following a clock, the tempo setting shows its tempo with a star (<span class="v">120.0*</span>).
+        <b>clock offset</b> (±50 ms) moves the module's grid against the clock to make up for latency.</p>
+
+      <h3>MIDI</h3>
+      <p>MIDI comes from the <span class="j">midi in</span> jack and from USB (the module is a USB MIDI device
+        called “Nemesis rev2”). The <b>MIDI channel</b> system setting filters notes and controllers
+        (<span class="v">omni</span> or 1–16). juno, superosc, growler, harmonizer (control: keyboard) and strike
+        (setting midi) play notes; juno's parameters also follow MIDI controllers.</p>
+      <p class="note"><b>TRS type B:</b> the jack is wired tip = source, ring = sink. Use a type B cable or adapter; for
+        type A gear, a type A/B swap adapter.</p>
+    </section>
+
+    <!-- ============================================================ system -->
+    <section id="system">
+      <h2>System settings <small>hold in the program list</small></h2>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Setting</th><th>Values</th></tr></thead>
+        <tbody>
+          <tr><td>run</td><td>on / off: starts and stops the internal transport</td></tr>
+          <tr><td>clock</td><td>auto, internal, MIDI, IN 8</td></tr>
+          <tr><td>IN 8 pulses</td><td>1/4, 1/8, 1/16, 24 ppqn</td></tr>
+          <tr><td>tempo</td><td>the internal tempo in BPM (a clock's tempo with <span class="v">*</span>)</td></tr>
+          <tr><td>clock offset</td><td>−50 … +50 ms</td></tr>
+          <tr><td>MIDI channel</td><td>omni, 1–16</td></tr>
+          <tr><td>knob popup</td><td>on / off: the knob popup on the display</td></tr>
+          <tr><td>knobs</td><td>jump / catch (see <a href="#playing">Playing</a>)</td></tr>
+          <tr><td>brightness</td><td>display, 1–10</td></tr>
+          <tr><td>LED brightness</td><td>button LEDs, 1–10 (default 5)</td></tr>
+          <tr><td>CV A-D range</td><td>0–8 V or 0–5 V: the voltage that turns a parameter fully up</td></tr>
+          <tr><td>block size</td><td>auto (the program's choice), 32, 64, 128 samples. Smaller blocks: less latency (1.8 / 3.2 / 5.8 ms through the module), higher CPU peaks. Not stored</td></tr>
+          <tr><td>sample rate</td><td>auto (the program's choice), 48k, 96k. Changing it restarts the program. Not stored</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">Run, clock, tempo, offset, MIDI channel, popup, knobs, both brightnesses and the CV range are
+        stored on the SD card; block size and sample rate start at <span class="v">auto</span> at every power-up.</p>
+    </section>
+
+    <!-- ============================================================ programs -->
+    <section id="programs">
+      <h2>Programs</h2>
+      <p>Thirteen programs, in the order of the program list. Each lists its knobs and jacks for rev2; everything
+        not on a knob is a setting.</p>
+      <div class="cards">
+        <a class="card" href="#juno"><h3>juno <span>1 · synth</span></h3><p>Juno-106 style polysynth, 12 voices, chorus, 128 factory patches. MIDI.</p></a>
+        <a class="card" href="#moospace"><h3>mooSpace <span>2 · reverb</span></h3><p>Variable space reverb: smear, decay, drag.</p></a>
+        <a class="card" href="#moospace2"><h3>mooSpace2 <span>3 · reverb</span></h3><p>Moving spaces: wider ranges, shimmer, reverse, freeze, echoes, eight outputs.</p></a>
+        <a class="card" href="#freqshift"><h3>freqshift <span>4 · effect</span></h3><p>Stereo frequency shifter with feedback delay, sidebands and a quadrature oscillator.</p></a>
+        <a class="card" href="#superosc"><h3>superosc <span>5 · drone</span></h3><p>Root, fourth and fifth as detuned saws through a ladder filter. MIDI, V/Oct.</p></a>
+        <a class="card" href="#breaker"><h3>breaker <span>6 · beats</span></h3><p>Slice repeat and reverse, crush, comb, drive, six drum triggers.</p></a>
+        <a class="card" href="#growler"><h3>growler <span>7 · synth</span></h3><p>Stereo 4-operator FM bass built around cross modulation.</p></a>
+        <a class="card" href="#pollen"><h3>pollen <span>8 · granular</span></h3><p>Live granulator and looper with blur, free or on the transport.</p></a>
+        <a class="card" href="#strike"><h3>strike <span>9 · percussion</span></h3><p>Six modal percussion voices, triggers on IN 1–6 and MIDI, random rolls.</p></a>
+        <a class="card" href="#bitrot"><h3>bitrot <span>10 · glitch</span></h3><p>A buffer that stutters, skips, reverses and stops like tape; data errors.</p></a>
+        <a class="card" href="#primetime"><h3>primetime <span>11 · delay</span></h3><p>Two tap delay after the Lexicon Prime Time II.</p></a>
+        <a class="card" href="#harmonizer"><h3>harmonizer <span>12 · pitch</span></h3><p>Pitch changer and delay after the Eventide H949.</p></a>
+        <a class="card" href="#slush"><h3>slush <span>13 · spectral</span></h3><p>Spectral freeze and smear: endless, moving held sounds.</p></a>
+      </div>
+
+      <!-- juno -->
+      <h3 class="prog" id="juno">juno <small>1 · v0.17 · 48 kHz · MIDI</small></h3>
+      <p>A Juno-106 style polysynth: DCO with saw, pulse, sub and noise, high-pass, a 4-pole filter, ADSR, LFO and
+        chorus I/II, with the 106's measured curves. Twelve voices at 48 kHz (six at 96 kHz), each at its own place
+        in the stereo field. Play it from MIDI; the encoder on the home screen chooses one of the 128 factory
+        patches, whose name the home screen shows.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>cutoff, resonance, envelope amount</td></tr>
+          <tr><td><kbd class="a">A</kbd>–<kbd class="d">D</kbd> + CV A–D</td><td>attack, decay, sustain, release</td></tr>
+          <tr><td>Encoder turn (home)</td><td>patch</td></tr>
+          <tr><td>Outputs</td><td>1/2 stereo</td></tr>
+        </tbody>
+      </table></div>
+      <p><b>Settings:</b> patch, keys (poly 1, poly 2, unison), LFO rate, delay and depths, PWM and its mode, range,
+        oscillator mix, HPF (0 boost, 1 flat, 2, 3), envelope polarity, VCA env/gate, chorus (off, I, II, I+II),
+        drift, bass comp, volume. Most of them also follow MIDI controllers. Pitch bend ±2 semitones.</p>
+
+      <!-- mooSpace -->
+      <h3 class="prog" id="moospace">mooSpace <small>2 · v0.4 · 48 kHz</small></h3>
+      <p>The original variable space reverb: input diffusion into a figure-eight tank with diffusers in its feedback
+        and multi-tap allpasses. Stereo in 1/2, out 1/2.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>smear (diffusion), decay, drag (time stretch)</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd> + CV</td><td>filter, modulate</td></tr>
+          <tr><td><kbd class="c">C</kbd> <kbd class="d">D</kbd> + CV</td><td>colour, mix</td></tr>
+        </tbody>
+      </table></div>
+      <p><b>Settings:</b> lag (predelay), push (drive).</p>
+
+      <!-- mooSpace2 -->
+      <h3 class="prog" id="moospace2">mooSpace2 <small>3 · v2.8 · 48 kHz</small></h3>
+      <p>Moving spaces: mooSpace's algorithm with wider ranges, and when the space moves its delays glide (pitch) or
+        crossfade (no pitch). The knob centres sit where mooSpace's defaults were.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> smear</td><td>how much the sound blurs: the strength of every diffuser. Left clear, separate reflections; right dense</td></tr>
+          <tr><td><kbd>Y</kbd> decay</td><td>tail time, 0.4 s to 60 s, endless at the far right</td></tr>
+          <tr><td><kbd>Z</kbd> drag</td><td>how far the space stretches in time: diffuser lengths and late taps. Left tight, right long and dragging</td></tr>
+          <tr><td><kbd class="a">A</kbd> reverse</td><td>fades the tank's input from forward to reversed pieces (⅓ s, or a note value with sync)</td></tr>
+          <tr><td><kbd class="b">B</kbd> shimmer</td><td>a pitch shifter (setting shift, +12 by default) where input and feedback enter the tank: an octave reverb at short decays, rising octaves at long ones</td></tr>
+          <tr><td><kbd class="c">C</kbd> tone</td><td>in the tank: centre neutral, left darker, right thinner</td></tr>
+          <tr><td><kbd class="d">D</kbd> mix</td><td>dry / wet; CV A–D add to A–D</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Outputs</h4>
+      <p>1/2 mix (limited to 4.5 V) · 3/4 rear (wet, decorrelated: quad with 1/2) · 5/6 wet only · 7 tail envelope ·
+        8 input envelope (CV 0–5 V).</p>
+      <p><b>Settings:</b> sync (lag, late taps and reverse pieces on the tempo), reverse length, freeze (input out,
+        tail held), echoes and echo time (ping-pong taps from the reverse buffers), duck (wet down while the input
+        plays), gate (wet chopped on the transport grid), lofi (down to 4 kHz / 6 bit in the feedback), modulate,
+        shift, lag (ms or a note value), push, motion (on: glide, off: 25 ms crossfades).</p>
+
+      <!-- freqshift -->
+      <h3 class="prog" id="freqshift">freqshift <small>4 · v0.2 · 96 kHz</small></h3>
+      <p>A Bode style frequency shifter: every partial moves by the same number of Hz. Small shifts phase and beat,
+        large ones turn metallic and inharmonic. Through the feedback delay each echo is shifted again: spiralling
+        echoes and barber-pole sweeps.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>shift, range (10 Hz–4 kHz), stereo spread</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd> + CV</td><td>mix, delay</td></tr>
+          <tr><td><kbd class="c">C</kbd> <kbd class="d">D</kbd> + CV</td><td>feedback, sideband (down … up)</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Outputs</h4>
+      <p>1/2 main mix · 3/4 shifted up · 5/6 shifted down (wet, with feedback) · 7/8 the shift oscillator, sine and
+        cosine, ±4.75 V: a quadrature LFO at small shifts. The home screen shows the shift in Hz.</p>
+      <p><b>Settings:</b> damp (low-pass in the feedback), output.</p>
+
+      <!-- superosc -->
+      <h3 class="prog" id="superosc">superosc <small>5 · v0.2 · 48 kHz · MIDI · V/Oct</small></h3>
+      <p>A stereo drone: root, fourth and fifth, each four saw partials, detuned so they beat at the same rate at any
+        pitch, through a ladder filter per channel and a limiter. Pitch = MIDI note (default C2) + octave + tune +
+        bend + V/Oct. The last note keeps sounding when released.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>tune, cutoff, resonance</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd> <kbd class="c">C</kbd></td><td>root, fourth, fifth levels (+ CV B, C)</td></tr>
+          <tr><td><kbd class="d">D</kbd> + CV D</td><td>detune</td></tr>
+          <tr><td><span class="j">CV A</span></td><td>V/Oct (calibrated), 0 V = the MIDI note</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Outputs</h4>
+      <p>1/2 audio · 3 pitch CV, 1 V/oct, 0 V = C4 (MIDI to CV) · 4 MIDI gate, 5 V.</p>
+      <p><b>Settings:</b> octave, drift (also mod wheel), gated (notes swell the drone in and out), swell, level.</p>
+
+      <!-- breaker -->
+      <h3 class="prog" id="breaker">breaker <small>6 · v0.3 · 96 kHz · transport</small></h3>
+      <p>For breakbeats: on the transport's slice grid each slice may repeat (recorded once, then looped) or play
+        backwards; then crush, a comb and drive. Six drum trigger outputs play patterns from a 4 × 4 map that blends
+        between styles. While the transport stops, the input passes through.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> slice</td><td>slice length; shortening it while repeating rolls</td></tr>
+          <tr><td><kbd>Y</kbd> rev-rep</td><td>the dice per slice: right of centre repeats, left reverses, centre neither; fully turned every slice</td></tr>
+          <tr><td><kbd>Z</kbd> comb</td><td>centre off; left negative feedback (hollow), right positive (metallic), 40 Hz–1.9 kHz</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd></td><td>crush, drive</td></tr>
+          <tr><td><kbd class="c">C</kbd> <kbd class="d">D</kbd> + CV C, D</td><td>pattern x (funk, boom bap, break, broken), pattern y (sparse … busy)</td></tr>
+          <tr><td><span class="j">CV A</span> <span class="j">CV B</span></td><td>repeat gate, reverse gate</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Outputs and LEDs</h4>
+      <p>1/2 audio · 3–8 triggers: kick, snare, closed hat, open hat, perc 1, perc 2. LED 1 the beat, LED 2 while a
+        slice repeats. The home screen shows bar.beat and the tempo.</p>
+      <p><b>Settings:</b> mix, density, swing, trig length.</p>
+
+      <!-- growler -->
+      <h3 class="prog" id="growler">growler <small>7 · v0.7 · 96 kHz · MIDI · V/Oct</small></h3>
+      <p>A stereo 4-operator FM bass around cross modulation: the carrier and operator 4 modulate each other, from
+        grit to chaos. Operators are played by keys or V/Oct, then a wavefolder, a 24 dB ladder filter with a decay
+        envelope, a clean sub and left/right detuning (width).</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>mod 2, mod 3, mod 4: how hard each operator modulates (or, as a carrier, its level)</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd></td><td>cross, feedback</td></tr>
+          <tr><td><kbd class="c">C</kbd> <kbd class="d">D</kbd> + CV C, D</td><td>ratios (16 sets: round, bright, hollow, metallic), cutoff</td></tr>
+          <tr><td><span class="j">CV A</span> <span class="j">CV B</span></td><td>by default v-oct 1 and gate; any CV A–D can be v-oct 1–4 or gate</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>mode</th><th>Modulators → carriers</th></tr></thead>
+        <tbody>
+          <tr><td>stack</td><td>4 → 3 → 2 → 1, the most aggressive</td></tr>
+          <tr><td>Y</td><td>3 → 2 → 1, 4 → 1</td></tr>
+          <tr><td>twin</td><td>2 → 1, 4 → 3: two voices</td></tr>
+          <tr><td>fan</td><td>4 → 1, 2, 3</td></tr>
+          <tr><td>branch</td><td>4 → 3 → 1, 2 → 1</td></tr>
+          <tr><td>three</td><td>2, 3, 4 → 1, thick</td></tr>
+          <tr><td>parallel</td><td>all four carriers: a chord from four keys</td></tr>
+        </tbody>
+      </table></div>
+      <p><b>keys:</b> <i>spread</i> shares the operators among the notes held together (one note all four, four notes
+        one each), <i>round robin</i> sends each added note to the next operator, <i>held</i> makes the first key the
+        carrier and the others operators 2–4. The intervals between the notes become the FM ratios.</p>
+      <h4>Outputs</h4>
+      <p>1/2 audio · 3 filter envelope · 4 amp envelope (0–5 V).</p>
+      <p><b>Settings:</b> mode, keys, vca (off: a drone), width, drive, resonance, env filter, filter decay, sub,
+        octave, glide, attack, release, velocity, level.</p>
+
+      <!-- pollen -->
+      <h3 class="prog" id="pollen">pollen <small>8 · v0.3 · 96 kHz · transport</small></h3>
+      <p>A live granulator: a looping memory per channel always holds the last seconds of IN 1/2, and eight grain
+        voices read from it. Each grain keeps its start, size, pitch, direction and pan from the moment it starts.
+        <b>freeze</b> holds the memory (and saves it to the SD card), so grains can wander through it; the same memory
+        is a looper with overdub.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> position</td><td>right: the newest audio, left: further back</td></tr>
+          <tr><td><kbd>Y</kbd> size</td><td>20 ms up to the memory length</td></tr>
+          <tr><td><kbd>Z</kbd> pitch</td><td>±24 semitones</td></tr>
+          <tr><td><kbd class="a">A</kbd> density</td><td>overlapping grains, or with sync a note value from 1 bar to 1/128</td></tr>
+          <tr><td><kbd class="b">B</kbd> spray</td><td>random scatter of the start</td></tr>
+          <tr><td><kbd class="c">C</kbd> blur</td><td>a small reverb after the grains, send and decay on one knob</td></tr>
+          <tr><td><kbd class="d">D</kbd> mix</td><td>input / wet; CV A–D add to A–D</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Outputs</h4>
+      <p>1/2 mix · 3 trigger per grain · 4 grain envelope · 5 random value per grain (0–5 V) · 6 pitch of the latest
+        grain (1 V/oct) · 7/8 wet only.</p>
+      <p><b>Looper:</b> <i>loop out</i> plays the frozen memory as it is; <i>memory</i> is 2/4/8/10 s, or 1–8 bars with
+        sync; with sync a freeze lands on the next bar line; <i>overdub</i> adds the input to the frozen loop,
+        <i>loop feedback</i> sets how much each pass keeps (0.8–0.9 stays clean).</p>
+      <p><b>Settings:</b> freeze, memory, sync, scan, reverse, pitch spray, quantize, shape (bell, tukey, decay, ramp,
+        square, triangle), pan spread, tone, blur input, loop out, overdub, loop feedback.</p>
+
+      <!-- strike -->
+      <h3 class="prog" id="strike">strike <small>9 · v0.6 · 48 kHz · triggers · MIDI</small></h3>
+      <p>Six percussion voices, each an exciter (a mallet and a noise burst) striking an object of 4–6 modes with
+        the partials of a string, beam, marimba bar, drumhead, membrane or plate. Triggers on IN 1–6, or MIDI.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>assignable macros for all voices (settings x, y, z; default decay, hardness, drive)</td></tr>
+          <tr><td><kbd class="a">A</kbd>–<kbd class="d">D</kbd></td><td>inharmonic, position, bend, tension of the selected voice; with button 1 held: all six voices together</td></tr>
+          <tr><td>Button 1</td><td>next voice (on release); held + button 2: roll a new random sound for the voice and play it</td></tr>
+          <tr><td>Button 2</td><td>plays the selected voice</td></tr>
+          <tr><td><span class="j">input 1–6</span></td><td>triggers of voices 1–6 (rising edge above ~1 V)</td></tr>
+        </tbody>
+      </table></div>
+      <p>The home screen shows the selected voice, its type and an activity strip of the six voices. LED 1 lights when
+        the selected voice plays, LED 2 for any voice. <b>MIDI</b> (setting midi): <i>channels</i> puts voice 1–6 on
+        channels base … base+5, any note, C4 = the voice's pitch; <i>notes</i> plays notes 36–41 on the base channel.</p>
+      <h4>Outputs</h4>
+      <p>1/2 stereo mix · 3–8 voices 1–6 (each soft clipped at 4.5 V).</p>
+      <p><b>Settings</b> (for the selected voice): object (type, pitch, decay, position, tone, inharmonic, low cut,
+        bend, bend time, tension, variation), exciter (noise blend, stiffness, dynamics, noise attack, decay, density,
+        low- and high-pass), output (noise out, rattle, level, pan, choke group A/B), random (target, roll, amount),
+        kit (midi, x, y, z).</p>
+
+      <!-- bitrot -->
+      <h3 class="prog" id="bitrot">bitrot <small>10 · v0.1 · 48 kHz · transport</small></h3>
+      <p>Data errors and glitches. A buffer records all the time (10.9 s) and is cut into events: note values on the
+        transport with sync, else 2 s to 20 ms. At every event the dice decide whether it is an error and which:</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Error</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td>repeat</td><td>the first 1/repeats of the event loops: a beat repeat</td></tr>
+          <tr><td>jump</td><td>plays from whole events back (depth), like a CD skip</td></tr>
+          <tr><td>reverse</td><td>the past backwards</td></tr>
+          <tr><td>speed</td><td>½×, −1×, 2×, −½×, −2×, ¼× (bend: how many of these are allowed)</td></tr>
+          <tr><td>tape stop</td><td>slows to a halt over the event</td></tr>
+          <tr><td>gap</td><td>silence for 25–100 % of the event</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table>
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>time, chaos (the chance of an error), repeats</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd> <kbd class="c">C</kbd> + CV</td><td>corrupt, depth, bend</td></tr>
+          <tr><td><kbd class="d">D</kbd> + CV D</td><td>mix</td></tr>
+        </tbody>
+      </table></div>
+      <p><b>corrupt</b> adds data errors all the time: bits (random bit flips), crush, stall (a few ms hang), drop.
+        <b>pattern</b> 2–32 repeats the same dice every n events (synced: from the bar); a new <b>seed</b> or a rising
+        edge on <b>reroll</b> makes a new pattern. <b>freeze</b> loops the event length. <b>window</b> 0 hard cuts …
+        1 swells. LED 1 during an error, LED 2 while frozen.</p>
+      <h4>Outputs</h4>
+      <p>1/2 mix · 3 trigger per error · 4 random CV per event (0–5 V) · 5/6 wet only.</p>
+      <p><b>Settings:</b> sync, freeze, pattern, seed, reroll, the error weights, corrupt type, window, stereo
+        (linked / split).</p>
+
+      <!-- primetime -->
+      <h3 class="prog" id="primetime">primetime <small>11 · v0.1 · 48 kHz</small></h3>
+      <p>A two tap digital delay after the Lexicon Prime Time II (Model 95). IN 1 (main) and IN 2 (aux) feed one delay
+        line with taps A and B, 128 steps each up to the memory size (640 ms, 1.28 s, 2.56 s, doubled by X2), on prime
+        numbers of 0.1 ms. The VCO sweeps the time base of both taps together, like a tape speed change.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd></td><td>delay A, delay B (shown big on the home screen in ms)</td></tr>
+          <tr><td><kbd>Z</kbd></td><td>manual sweep, 0.5–1.5× (shrinks as depth grows)</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd> + CV</td><td>A-FB (phase inverted), B-FB recirculation</td></tr>
+          <tr><td><kbd class="c">C</kbd> <kbd class="d">D</kbd> + CV</td><td>VCO depth (up to 3:1), rate (0.05–20 Hz)</td></tr>
+        </tbody>
+      </table></div>
+      <p>The recirculation runs through a 6 dB/oct filter and <b>DRC</b>, which lowers it while the input plays: dry
+        phrases, long tails in the gaps. <b>repeat</b> loops the whole memory; the taps then offset where A and B
+        read, and the sweep changes the loop's speed. A new delay setting crossfades over 25 ms, or glides like tape
+        with setting change.</p>
+      <h4>Outputs</h4>
+      <p>1/2 master (mono, or A left / B right) · 3 delay A · 4 delay B · 5 input mix · 6 mod CV (0–5 V) · 7/8 clock:
+        pulses per beat, beats per loop. LED 1 the beat, LED 2 while repeating.</p>
+      <p><b>Settings:</b> sync, range (1X 16 kHz / 2X 8 kHz), memory, vco (vco / xtal), lfo (sine, square), shape (LFO … envelope),
+        repeat, input mix, recirculation filter, drc, output mix, outputs, phase invert, bypass, limiter, beats,
+        pulses.</p>
+
+      <!-- harmonizer -->
+      <h3 class="prog" id="harmonizer">harmonizer <small>12 · v0.1 · 48 kHz · MIDI · V/Oct</small></h3>
+      <p>A pitch changer and delay after the Eventide H949. One mono memory (IN 1, or IN 1+2); out 1 is the main
+        function, out 2 the delay only.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>function</th><th>Main output</th></tr></thead>
+        <tbody>
+          <tr><td>delay</td><td>0–393.75 ms in 6.25 ms steps</td></tr>
+          <tr><td>random</td><td>a 0–25 ms delay wandering to random targets: double tracking</td></tr>
+          <tr><td>flange</td><td>input plus a copy swept 0–10 ms</td></tr>
+          <tr><td>reverse</td><td>400/200/100/50 ms pieces backwards, pitched</td></tr>
+          <tr><td>normal</td><td>pitch change .25–2.00, 25 ms window, plus 0–350 ms delay</td></tr>
+          <tr><td>extended</td><td>pitch change over a 400–50 ms window: smoother, more smeared</td></tr>
+          <tr><td>sharp / flat</td><td>micro pitch change to 1.07 / 0.93, fine near unity</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl"><table>
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> <kbd>Y</kbd> <kbd>Z</kbd></td><td>manual (the ratio), main delay, delay only</td></tr>
+          <tr><td><kbd class="a">A</kbd> <kbd class="b">B</kbd> + CV</td><td>main feedback, delay only feedback (1 = unity; beyond it runs away)</td></tr>
+          <tr><td><kbd class="c">C</kbd> <kbd class="d">D</kbd> + CV</td><td>low EQ, high EQ in the feedback</td></tr>
+        </tbody>
+      </table></div>
+      <p><b>algorithm</b> 2 is one read pointer with audible splices (as the H910), 1 two crossfaded pointers: no
+        glitches, some comb colouring. <b>control</b>: manual, keyboard (MIDI, C4 = 1:1, with glide) or cv+man (route
+        a CV to v-oct). <b>repeat</b> recirculates the 400 ms memory. The home screen shows the ratio; LED 1 while
+        repeating, LED 2 at every splice.</p>
+      <p><b>Settings:</b> function, algorithm, control, quantize, glide, repeat, input, dry, main level, delay only
+        level, line (bypass).</p>
+
+      <!-- slush -->
+      <h3 class="prog" id="slush">slush <small>13 · v0.5 · 48 kHz · spectral</small></h3>
+      <p>A spectral freeze and smear (a phase vocoder). A freeze takes the input's spectrum, averaged over its last
+        ~150 ms, and plays it on: every partial keeps its level and turns on at its own frequency, an endless sound
+        without a loop seam. A new freeze glides from the old one.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td>Button 1</td><td>freeze on / off (LED 1). A gate on <span class="j">CV A</span> freezes while high; every rising edge captures anew</td></tr>
+          <tr><td><kbd>X</kbd> drift</td><td>each partial's pitch (to ±50 cents) and level (±4 dB) wander: from a still copy to a chorused, living one</td></tr>
+          <tr><td><kbd>Y</kbd> scatter</td><td>each bin plays a random one of the last frames: diffuse, independent motion</td></tr>
+          <tr><td><kbd>Z</kbd> speed</td><td>glide time to a new freeze, 0–60 s: partials move to their nearest new partner</td></tr>
+          <tr><td><kbd class="a">A</kbd> mix</td><td>how much of the input stays under the frozen sound</td></tr>
+          <tr><td><kbd class="b">B</kbd> level</td><td>0–2×</td></tr>
+          <tr><td><kbd class="c">C</kbd> purity</td><td>only the strongest partials sound; from 0.7 they narrow to single tones</td></tr>
+          <tr><td><kbd class="d">D</kbd> smear</td><td>every frequency follows the input with inertia, 0–20 s: a continuously smeared copy</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Outputs</h4>
+      <p>1/2 mix (input crossfading into the frozen sound) · 3/4 frozen sound only.</p>
+      <p><b>Settings:</b> scatter time, tilt (highs follow faster or slower), resolution (512, 1024, 2048, 4096 points:
+        finer in frequency, softer in time), width, tone, layer (the previous capture under the new one), grain
+        (random level and phase per bin), pitch (±24 semitones; with smear off and not frozen a live pitch shifter),
+        lock (1: clean locked partials, lower: diffuse, lush).</p>
+    </section>
+
+    <!-- ============================================================ calibration -->
+    <section id="calibration">
+      <h2>Calibration</h2>
+      <h3>Knobs A–D</h3>
+      <ol style="margin:0; padding-left:20px; display:grid; gap:6px; max-width:68ch">
+        <li>Hold both buttons for 2 seconds while running (or hold button 1 while powering up).</li>
+        <li>Turn <kbd class="a">A</kbd>–<kbd class="d">D</kbd> through their full range.</li>
+        <li>Press button 2 to store, button 1 to cancel.</li>
+      </ol>
+      <p>CV inputs and outputs are calibrated in volts against a precision meter with <span class="v">software/tests/cvtest</span>
+        (outputs ±0.4 mV, CV A–D ±1 mV on the test unit); the calibration is kept in the module's EEPROM, and firmware
+        updates leave it alone.</p>
+    </section>
+
+    <!-- ============================================================ sd -->
+    <section id="sd">
+      <h2>SD card &amp; remote</h2>
+      <p>Settings live in <span class="v">/NEMESIS/</span> on the SD card (FAT32): one text file per program and one for
+        the system, each written to a new file and renamed when complete. juno's patches are
+        <span class="v">juno.PRE</span>; pollen saves a frozen loop as <span class="v">pollen.WAV</span>. Without a card
+        the module runs with defaults.</p>
+      <h3>Remote page</h3>
+      <p><span class="v">software/tools/remote/index.html</span> opens in Chrome or Edge (Web Serial, works from a local
+        file): it shows the programs, the current program's controls and the system settings, switches programs and
+        sets values, and loads patch files into the browser. Close it before updating the firmware: it holds the
+        serial port.</p>
+      <h3>Firmware</h3>
+      <p>Build and upload with PlatformIO from <span class="v">software/firmware</span>
+        (<span class="v">pio run -e rev2 -t upload</span>); the Teensy Loader opens. If the module doesn't appear on
+        USB, press the program button on the Teensy and upload again.</p>
+    </section>
+
+    <!-- ============================================================ trouble -->
+    <section id="trouble">
+      <h2>Troubleshooting</h2>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>You see</th><th>Meaning and what to do</th></tr></thead>
+        <tbody>
+          <tr><td><span class="v">SD off</span></td><td>two starts in a row ended within 10 s, so the module started program 1 without the SD card. Repair the card on a computer (First Aid) or reformat it (FAT32), then restart</td></tr>
+          <tr><td><span class="v">SD bad</span></td><td>a settings file was damaged; it was renamed to <span class="v">BAD_&lt;name&gt;</span> and the program uses its defaults</td></tr>
+          <tr><td>CPU near 100 %</td><td>the program can't keep up and blocks arrive late (clicks). Raise the block size, or lower the sample rate in the system settings</td></tr>
+          <tr><td>a program crashes at start</td><td>hold the encoder while powering up: program 1 starts</td></tr>
+          <tr><td>the module restarts by itself</td><td>a watchdog restarts it when the firmware stalls for 4 s; settings and the program come back from the SD card</td></tr>
+          <tr><td>a knob does nothing</td><td>with knobs = catch, turn it to the tick in the popup first</td></tr>
+          <tr><td>MIDI notes don't arrive</td><td>check the MIDI channel setting and that the TRS cable or adapter is type B</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- ============================================================ rev1 -->
+    <section id="rev1">
+      <h2>rev1</h2>
+      <p>The first hardware runs the same firmware without a display: nine knobs, each summed with its CV jack in
+        hardware, three buttons with LEDs. Knobs A–D play what rev2's <kbd class="a">A</kbd>–<kbd class="d">D</kbd>
+        play in every program, X Y Z the same, and E/F take a setting each (e.g. mooSpace push and lag, slush freeze,
+        V/Oct on E for superosc and growler). Knobs always jump. Program changes and all settings go through the remote
+        page. Calibrate the knobs by holding button 3 at power-up: minimum + button 1, maximum + button 2, then
+        button 3.</p>
+    </section>
+
+    <!-- ============================================================ specs -->
+    <section id="specs">
+      <h2>Specifications</h2>
+      <div class="tbl"><table class="wrap1">
+        <tbody>
+          <tr><td>Processor</td><td>Teensy 4.1, ARM Cortex-M7 at 816 MHz, 16 MB PSRAM</td></tr>
+          <tr><td>Codec</td><td>Cirrus CS42448 (6 in, 8 out, 24 bit) + CS5343 (IN 7/8), TDM</td></tr>
+          <tr><td>Sample rate</td><td>48 or 96 kHz, per program</td></tr>
+          <tr><td>Latency</td><td>1.8 / 3.2 / 5.8 ms through the module at 32 / 64 / 128 sample blocks</td></tr>
+          <tr><td>Audio in</td><td>IN 1–6 ±6.1 V full scale at full gain, AC (flat from 10 Hz); IN 7/8 ±2.77 V, AC</td></tr>
+          <tr><td>Outputs</td><td>8, DC coupled, ±5 V, calibrated in volts</td></tr>
+          <tr><td>CV in</td><td>X/Y/Z ±4.2 V summed with the knobs through attenuverters; A–D 0–8.4 V, calibrated</td></tr>
+          <tr><td>Display</td><td>128 × 32 OLED</td></tr>
+          <tr><td>MIDI</td><td>TRS (type B) and USB device</td></tr>
+          <tr><td>Storage</td><td>microSD (settings, patches, loops), EEPROM (calibration)</td></tr>
+          <tr><td>Programs</td><td>written in FAUST, compiled into the firmware; your own from <span class="v">software/template</span></td></tr>
+        </tbody>
+      </table></div>
+      <footer>Nemesis programmable DSP · design by Arev Imer. Describes the firmware on <i>main</i> (slush 0.5),
+        November 2026. Display screens are drawn after the firmware's layout in its fonts (Michroma, Oxanium); real
+        ones can be captured with <span class="v">software/tools/screen.py</span>. Program details:
+        <span class="v">software/programs/docs/</span>.</footer>
+    </section>
+  </main>
+</div>
+</body>
+</html>
