@@ -24,7 +24,7 @@
 // frames fall into different audio blocks. CMSIS-DSP's real FFT on the
 // Teensy, a plain FFT elsewhere (tests on the Mac).
 //
-// size: 512, 1024, 2048 or 4096 points. A program can change it while
+// size: 512, 1024, 2048 or 4096 points (DELAY: 8192 too). A program can change it while
 // running (a setting): the library reallocates in the main loop
 // (service()), the output is silent for that moment. A size that doesn't
 // fit keeps the old one (refused) until another one is asked for. At 4096
@@ -76,6 +76,21 @@
 //   A capture holds the levels averaged over its last ~100 ms. With morph
 //   1 its partials start at the phases of the old ones they glide from:
 //   the fade (b) then interpolates between the two
+//   DELAY (1): every bin of the spectrum through its own delay (frames of
+//     a history ring, up to 3 s at 48 kHz), with feedback: the output is
+//     the delayed spectrum only (the program mixes the dry signal)
+//     a: delay time in seconds (one frame at least)
+//     b: skew -1..1: 0 every bin the same time; -1 the time rises from 0
+//        at the lowest bin to a at the highest, 1 the other way
+//     c: feedback 0..1 (what a bin's echo feeds into its next one)
+//     d: scatter 0..1: every bin's time moves by a fixed random amount
+//        (up to +-a/2)
+//     e: damp -1..1: the feedback falls towards the highs (1) or the
+//        lows (-1): those die away sooner
+//     f: freeze > 0.5: no input, every bin loops its delay as it is
+//     g: curve 0..1: skew over frequency linearly (0) or by octave (1)
+//   The kernel is picked up from the calls (a program passes it), the
+//   buffers are rebuilt for it in the main loop like a size change.
 //   nm_spectral_level(channel, after): how present the wet sound is (0..1,
 //     updated every frame with the overlap-add; the sound follows a little
 //     later: slush aligns it by 7/16 of the size, measured). `after` is ignored: pass the
@@ -91,7 +106,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define NEMESIS_SPECTRAL_MAX 4096
+#define NEMESIS_SPECTRAL_MAX 8192
 #define NEMESIS_SPECTRAL_CHANNELS 2
 
 namespace nemesis
@@ -99,7 +114,7 @@ namespace nemesis
    namespace spectral
    {
       constexpr int MAX = NEMESIS_SPECTRAL_MAX;
-      enum Kernel { FREEZE = 0 };
+      enum Kernel { FREEZE = 0, DELAY = 1 };
 
       struct Channel
       {
@@ -113,6 +128,7 @@ namespace nemesis
          int pos = 0;            // ring position: in[pos] the oldest sample, out[pos] the next output
          int count = 0;          // samples since the last frame
          int kernel = 0;
+         int built = 0;          // the kernel the buffers are made for
          float p[14] = {0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1};
          float level = 0;        // FREEZE: how present the wet sound is (0..1), set every frame
          float y = 0;            // the last output sample
@@ -123,6 +139,7 @@ namespace nemesis
       extern Channel channel[NEMESIS_SPECTRAL_CHANNELS];
       extern volatile int requested;   // a size a program asked for (service() applies it)
       extern volatile int refused;     // a size that didn't fit (not asked for again)
+      extern volatile int requestedKernel;   // with requested: the kernel a program runs
 
       // allocates and clears the channels at `size` points (512..4096; the
       // arena's rest and RAM2, the level history in PSRAM), false if it
@@ -156,8 +173,11 @@ static inline float nm_spectral(int c, int kernel, int size, float x, float a, f
                                 float m, float n)
 {
    nemesis::spectral::Channel &s = nemesis::spectral::channel[c];
-   if (size != s.n && size != nemesis::spectral::refused)
+   if ((size != s.n || kernel != s.built) && size != nemesis::spectral::refused)
+   {
+      nemesis::spectral::requestedKernel = kernel;
       nemesis::spectral::requested = size;   // reallocated in the main loop
+   }
    if (s.follow >= 0)
    {
       const nemesis::spectral::Channel &o = nemesis::spectral::channel[s.follow];

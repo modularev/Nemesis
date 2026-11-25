@@ -34,6 +34,7 @@ namespace nemesis
       Channel channel[NEMESIS_SPECTRAL_CHANNELS];
       volatile int requested = 0;
       volatile int refused = 0;
+      volatile int requestedKernel = FREEZE;
       const char *const profileName[PROFILE_STEPS] = {"window+fft", "levels+energy", "peaks", "turns",
                                                        "smear", "frozen", "inverse+ola", "corrections"};
 
@@ -146,7 +147,12 @@ namespace nemesis
             static constexpr int MAX_PARTS = 56;
             void *parts[MAX_PARTS] = {};
             int nparts = 0;
-            void *slow = nullptr;    // PSRAM: the level history
+            void *slow = nullptr;    // PSRAM: the level history (FREEZE), the spectra (DELAY)
+            // DELAY: the ring of the last `rows` spectra (in slow), the
+            // next row, and each bin's fixed random offset (scatter)
+            float *ring = nullptr;
+            int rows = 0, row = 0;
+            float *rnd = nullptr;
             // the synthesis runs in steps (see synthesis()): the next one
             // (0: none), and what the first step leaves for the others
             int step = 0;
@@ -159,6 +165,8 @@ namespace nemesis
 
          State state[NEMESIS_SPECTRAL_CHANNELS];
          float *window = nullptr;   // N: periodic Hann (Hann^2 at a hop of N/4 sums to 1.5)
+         int kernelNow = FREEZE;    // the kernel the buffers are built for
+         float *octave = nullptr;   // K (DELAY): each bin's place by octave, 0 (bin 1) .. 1 (N/2)
          // shared by the channels: the windowed frame and the spectrum to
          // resynthesize are scratch within one call of frame() or
          // synthesis(), and the channels' calls never overlap
@@ -249,6 +257,7 @@ namespace nemesis
             case 1024: c = &arm_cfft_sR_f32_len512; rfft = twiddleCoef_rfft_1024; break;
             case 2048: c = &arm_cfft_sR_f32_len1024; rfft = twiddleCoef_rfft_2048; break;
             case 4096: c = &arm_cfft_sR_f32_len2048; rfft = twiddleCoef_rfft_4096; copy = true; break;
+            case 8192: c = &arm_cfft_sR_f32_len4096; rfft = nullptr; copy = true; break;   // (DELAY)
             default: return false;
             }
             fft.Sint = *c;
@@ -264,7 +273,16 @@ namespace nemesis
                   return false;
                memcpy(t, c->pTwiddle, tw);
                memcpy(b, c->pBitRevTable, br);
-               memcpy(r, rfft, n * sizeof(float));
+               if (rfft)
+                  memcpy(r, rfft, n * sizeof(float));
+               else
+                  // CMSIS has no real FFT table for 8192: sin, cos of 2 pi i / n
+                  // (its layout, checked against twiddleCoef_rfft_4096: 6e-8)
+                  for (int i = 0; i < n / 2; i++)
+                  {
+                     r[2 * i] = (float)sin(6.283185307179586 * i / n);
+                     r[2 * i + 1] = (float)cos(6.283185307179586 * i / n);
+                  }
                fft.Sint.pTwiddle = t;
                fft.Sint.pBitRevTable = b;
                fft.pTwiddleRFFT = r;
@@ -277,7 +295,7 @@ namespace nemesis
 #else
          // a plain complex FFT for the tests on the Mac, with CMSIS's packing
          float re[MAX], im[MAX];
-         bool setupFFT(int n) { return n == 512 || n == 1024 || n == 2048 || n == 4096; }
+         bool setupFFT(int n) { return n == 512 || n == 1024 || n == 2048 || n == 4096 || n == 8192; }
          void cfft(bool inv)
          {
             for (int i = 1, j = 0; i < N; i++)
@@ -1239,6 +1257,11 @@ namespace nemesis
             f.time[i] = s.in[(s.pos + i) & MASK] * window[i];
          forward(f.time, f.spec);
          lap(0);
+         if (kernelNow == DELAY)
+         {
+            f.step = 1;   // the delays a quarter hop later: synthesis()
+            return;
+         }
          if (s.kernel == FREEZE)
          {
             // this frame's levels into the history, its energy, its peaks
@@ -1297,7 +1320,80 @@ namespace nemesis
             lap(3);   // turns (the synthesis adds its start to it)
             f.step = 1;   // the synthesis follows in steps: synthesis()
          }
-         memcpy(f.prev, f.spec, N * sizeof(float));   // synthesis reads spec, turn, mag: not prev
+         if (f.prev)
+            memcpy(f.prev, f.spec, N * sizeof(float));   // synthesis reads spec, turn, mag: not prev
+      }
+
+      namespace
+      {
+         // DELAY (see nemesis_spectral.h): every bin reads its delayed
+         // spectrum from the ring, writes input + feedback back
+         FLASHMEM void delayStep(Channel &s, State &f, int part)
+         {
+            const float time = fmaxf(s.p[0], 0.0f), skew = clamp(s.p[1], -1, 1);
+            const float fb = clamp(s.p[2], 0, 1), scatter = clamp(s.p[3], 0, 1), damp = clamp(s.p[4], -1, 1);
+            const bool frozen = s.p[5] > 0.5f;
+            const float curve = clamp(s.p[6], 0, 1);
+            const float frames = time * fps;   // the delay in frames
+            const int rows = f.rows, maxD = rows - 1;
+            // a bin's magnitude held below a sine of amplitude ~2 (a Hann
+            // windowed sine of amplitude A peaks at A N / 4): feedback near
+            // 1 can't run away
+            const float lim = 0.5f * N, lim2 = lim * lim;
+            float *w = f.ring + (size_t)f.row * N;
+            const float invHalf = 1.0f / (N / 2);
+            if (part == 0)
+            {
+               f.syn[0] = f.syn[1] = 0.0f;
+               w[0] = w[1] = 0.0f;
+            }
+            // a third of the bins per step (each reads its own row of the
+            // ring in PSRAM: at 8192 points all in one block came near a
+            // whole block)
+            const int k0 = 1 + part * (N / 2 - 1) / 3, k1 = 1 + (part + 1) * (N / 2 - 1) / 3;
+            for (int k = k0; k < k1; k++)
+            {
+               // the bin's place 0..1 (linear or by octave) and its time
+               float pos = k * invHalf;
+               pos += (octave[k] - pos) * curve;
+               float factor = skew < 0.0f ? (1.0f + skew) - skew * pos : (1.0f - skew) + skew * (1.0f - pos);
+               factor += scatter * 0.5f * f.rnd[k];
+               int d = (int)lrintf(frames * (factor > 0.0f ? factor : 0.0f));
+               d = d < 1 ? 1 : (d > maxD ? maxD : d);
+               int r = f.row - d;
+               if (r < 0)
+                  r += rows;
+               const float *y = f.ring + (size_t)r * N + 2 * k;
+               float yr = y[0], yi = y[1];
+               // feedback, falling towards the highs (damp > 0) or the lows
+               float g = frozen ? 1.0f : fb * (damp >= 0.0f ? 1.0f - damp * pos : 1.0f + damp * (1.0f - pos));
+               float xr = frozen ? 0.0f : f.spec[2 * k], xi = frozen ? 0.0f : f.spec[2 * k + 1];
+               float vr = xr + g * yr, vi = xi + g * yi;
+               float m2 = vr * vr + vi * vi;
+               if (m2 > lim2)
+               {
+                  float sc = lim / sqrtf(m2);
+                  vr *= sc;
+                  vi *= sc;
+               }
+               w[2 * k] = vr;
+               w[2 * k + 1] = vi;
+               f.syn[2 * k] = yr;
+               f.syn[2 * k + 1] = yi;
+            }
+            if (part == 2)
+               f.row = f.row + 1 < rows ? f.row + 1 : 0;
+            lap(4);
+         }
+
+         FLASHMEM void delayEnd(Channel &s, State &f)
+         {
+            inverse(f.syn, f.time);
+            for (int i = 0; i < N; i++)
+               s.out[(s.pos + i) & MASK] += f.time[i] * window[i] * gain;
+            s.level = 1.0f;
+            lap(6);
+         }
       }
 
       // the synthesis of a frame in four steps, HOP / 8 samples apart (one
@@ -1314,6 +1410,21 @@ namespace nemesis
          if (!f.step || !f.nparts)
             return;
          profMark = now();
+         if (kernelNow == DELAY)
+         {
+            // the delays in the first three steps, the inverse FFT in the last
+            if (f.step <= 3)
+               delayStep(s, f, f.step - 1);
+            else
+            {
+               delayEnd(s, f);
+               profFrames++;
+               f.step = 0;
+               return;
+            }
+            f.step++;
+            return;
+         }
          switch (f.step)
          {
          case 1: freezeStart(s, f, f.mag); break;
@@ -1348,15 +1459,19 @@ namespace nemesis
             for (int i = 0; i < ncommon; i++)
                freeMem(common[i]);
             ncommon = 0;
-            window = sharedTime = sharedSyn = nullptr;
+            window = sharedTime = sharedSyn = octave = nullptr;
             regionUsed = inDTCM = inRAM2 = 0;
             used = 0;
          }
 
-         FLASHMEM bool build(int n, int size)
+         FLASHMEM bool buildDelay(int n);
+         FLASHMEM void measureGain(float *ref, float *spec);
+
+         FLASHMEM bool build(int n, int size, int kernel)
          {
             release();
-            if (n < 1 || n > NEMESIS_SPECTRAL_CHANNELS || size > MAX)
+            kernelNow = kernel == DELAY ? DELAY : FREEZE;
+            if (n < 1 || n > NEMESIS_SPECTRAL_CHANNELS || size > MAX || (kernelNow == FREEZE && size > 4096))
                return false;
             N = size;
             HOP = N / 4;
@@ -1378,6 +1493,8 @@ namespace nemesis
                unitTable[i][0] = cosf(TAU * i / 256);
                unitTable[i][1] = sinf(TAU * i / 256);
             }
+            if (kernelNow == DELAY)
+               return buildDelay(n);
             // per channel on chip (takeMem): frame buffers, phases, turns,
             // the smear, the layers; in PSRAM: three level buffers of M
             // frames (the history and the two layers' frames, which a
@@ -1496,26 +1613,103 @@ namespace nemesis
                channel[c].n = N;        // (the size the program asks for: no request)
                channel[c].follow = 0;   // plays channel 0's output
             }
+            for (int c = 0; c < n; c++)
+               channel[c].built = FREEZE;
             used = n;
-            // the gain of the FFT pair (CMSIS scales its inverse by 1/N, the
-            // plain one too: measured, not assumed) and the overlap-add of
-            // Hann^2 at N/4 (1.5)
-            State &f = state[0];
+            measureGain(state[0].prev, state[0].spec);
+            memset(state[0].prev, 0, N * sizeof(float));
+            requested = 0;
+            return true;
+         }
+
+         // the gain of the FFT pair (CMSIS scales its inverse by 1/N, the
+         // plain one too: measured, not assumed) and the overlap-add of
+         // Hann^2 at N/4 (1.5); ref and spec: N floats of scratch
+         FLASHMEM void measureGain(float *ref, float *spec)
+         {
             for (int i = 0; i < N; i++)
-               f.prev[i] = window[i] * sinf(0.37f * i);
-            memcpy(f.time, f.prev, N * sizeof(float));
-            forward(f.time, f.spec);
-            inverse(f.spec, f.syn);
+               ref[i] = window[i] * sinf(0.37f * i);
+            memcpy(sharedTime, ref, N * sizeof(float));
+            forward(sharedTime, spec);
+            inverse(spec, sharedSyn);
             double xy = 0, xx = 0;
             for (int i = 0; i < N; i++)
             {
-               xy += (double)f.syn[i] * f.prev[i];
-               xx += (double)f.prev[i] * f.prev[i];
+               xy += (double)sharedSyn[i] * ref[i];
+               xx += (double)ref[i] * ref[i];
             }
             gain = (float)(1.0 / ((xx > 0 ? xy / xx : 1.0) * 1.5));
-            float *const scratch[] = {f.time, f.spec, f.prev, f.syn};
-            for (float *a : scratch)
-               memset(a, 0, N * sizeof(float));
+            memset(sharedTime, 0, N * sizeof(float));
+            memset(sharedSyn, 0, N * sizeof(float));
+            memset(spec, 0, N * sizeof(float));
+         }
+
+         // DELAY: per channel the rings and a spectrum on chip, the ring of
+         // spectra in PSRAM (3 s at the rate of the build; at 96 kHz 1.5 s).
+         // Stereo at every size (far less on chip than FREEZE)
+         FLASHMEM bool buildDelay(int n)
+         {
+            octave = (float *)takeCommon(K * sizeof(float));
+            if (!octave)
+            {
+               release();
+               return false;
+            }
+            const float top = log2f((float)(N / 2));
+            for (int k = 1; k < K; k++)
+               octave[k] = log2f((float)k) / top;
+            const int rows = (int)(3.0f * fps) + 2;
+            for (int c = 0; c < n; c++)
+            {
+               State &f = state[c];
+               Channel &s = channel[c];
+               bool ok = true;
+               auto takeF = [&](size_t count) -> float * {
+                  void *m = ok && f.nparts < State::MAX_PARTS ? takeMem(count * sizeof(float)) : nullptr;
+                  if (!m)
+                  {
+                     ok = false;
+                     return nullptr;
+                  }
+                  f.parts[f.nparts++] = m;
+                  return (float *)m;
+               };
+               f.time = sharedTime;
+               f.syn = sharedSyn;
+               f.spec = takeF(N);
+               s.in = takeF(N);
+               s.out = takeF(N);
+               f.rnd = takeF(K);
+               size_t bytes = (size_t)rows * N * sizeof(float);
+#ifdef NM_SPECTRAL_CMSIS
+               void *sl = ok ? extmem_malloc(bytes) : nullptr;
+#else
+               void *sl = ok ? malloc(bytes) : nullptr;
+#endif
+               f.slow = sl;
+               if (!ok || !sl)
+               {
+                  release();
+                  return false;
+               }
+               memset(sl, 0, bytes);
+               f.ring = (float *)sl;
+               f.rows = rows;
+               f.row = 0;
+               uint32_t r = 0x9E3779B9u * (c + 3);
+               for (int k = 0; k < K; k++)
+                  f.rnd[k] = noise(r);
+               s.n = N;
+               s.mask = MASK;
+               s.hop = HOP;
+               s.split = HOP / 8;
+               s.pos = 0;
+               s.count = c * (HOP / 2);   // channel 1 half a hop later
+               s.built = DELAY;
+            }
+            used = n;
+            measureGain(channel[0].out, state[0].spec);
+            memset(channel[0].out, 0, N * sizeof(float));
             requested = 0;
             return true;
          }
@@ -1533,7 +1727,7 @@ namespace nemesis
             regionSize = region ? free : 0;
          }
 #endif
-         return build(n, size);
+         return build(n, size, FREEZE);
       }
 
       FLASHMEM void end()
@@ -1578,20 +1772,25 @@ namespace nemesis
 
       FLASHMEM void service()
       {
-         int want = requested;
-         if (!used || !want || want == N)
+         int want = requested, kernel = requestedKernel;
+         if (!used || !want)
             return;
-         int n = used, old = N;
+         if (want == N && kernel == kernelNow)
+         {
+            requested = 0;
+            return;
+         }
+         int n = used, old = N, oldKernel = kernelNow;
 #ifdef NM_SPECTRAL_CMSIS
          NVIC_DISABLE_IRQ(IRQ_SOFTWARE);   // the audio update (AudioNoInterrupts): no frame while the buffers change
 #endif
          refused = 0;
-         if (!build(n, want))
+         if (!build(n, want, kernel))
          {
             // keep the old size if the new one doesn't fit, and don't try
             // it again (every try reset the sound) until another size is
             // asked for or the program restarts
-            build(n, old);
+            build(n, old, oldKernel);
             refused = want;
          }
 #ifdef NM_SPECTRAL_CMSIS

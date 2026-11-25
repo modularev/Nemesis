@@ -149,6 +149,8 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
       <li class="sub"><a href="#primetime">primetime</a></li>
       <li class="sub"><a href="#harmonizer">harmonizer</a></li>
       <li class="sub"><a href="#slush">slush</a></li>
+      <li class="sub"><a href="#prism">prism</a></li>
+      <li class="sub"><a href="#glow">glow</a></li>
       <li><a href="#calibration">Calibration</a></li>
       <li><a href="#sd">SD card &amp; remote</a></li>
       <li><a href="#trouble">Troubleshooting</a></li>
@@ -161,10 +163,10 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
     <header class="hero">
       <div>
         <div class="eyebrow">Programmable DSP · user manual</div>
-        <h1>Nemesis: thirteen <span>programs</span>, one module</h1>
+        <h1>Nemesis: fifteen <span>programs</span>, one module</h1>
       </div>
       <p class="lede">An eight in, eight out Eurorack DSP module running <strong>FAUST programs</strong>: reverbs,
-        delays, a granulator, a spectral freeze, glitch and beat effects, FM and polyphonic synthesizers and a
+        delays, a granulator, a spectral freeze and delay, a vactrol filter with drive, glitch and beat effects, FM and polyphonic synthesizers and a
         percussion voice, chosen on the display and played with <strong>seven knobs, four CV inputs and MIDI</strong>.</p>
       <img src="nemesis-rev2.jpg" alt="The Nemesis rev2 in a case: input strip with inputs 3 to 8 and their gain knobs on the left, the main panel with inputs 1 and 2, CV X Y Z with attenuverters, MIDI in and USB, two buttons, the display and the encoder, the big knobs X Y Z, the small knobs A B C D in red, green, blue and grey, CV A to D and outputs 1 and 2, and the output strip with outputs 3 to 8 on the right" width="1072" height="1338">
     </header>
@@ -423,7 +425,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
     <!-- ============================================================ programs -->
     <section id="programs">
       <h2>Programs</h2>
-      <p>Thirteen programs, in the order of the program list. Each lists its knobs and jacks for rev2; everything
+      <p>Fifteen programs, in the order of the program list. Each lists its knobs and jacks for rev2; everything
         not on a knob is a setting.</p>
       <div class="cards">
         <a class="card" href="#juno"><h3>juno <span>1 · synth</span></h3><p>Juno-106 style polysynth, 12 voices, chorus, 128 factory patches. MIDI.</p></a>
@@ -439,6 +441,8 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
         <a class="card" href="#primetime"><h3>primetime <span>11 · delay</span></h3><p>Two tap delay after the Lexicon Prime Time II.</p></a>
         <a class="card" href="#harmonizer"><h3>harmonizer <span>12 · pitch</span></h3><p>Pitch changer and delay after the Eventide H949.</p></a>
         <a class="card" href="#slush"><h3>slush <span>13 · spectral</span></h3><p>Spectral freeze and smear: endless, moving held sounds.</p></a>
+        <a class="card" href="#prism"><h3>prism <span>14 · spectral</span></h3><p>Spectral delay: every band its own delay, skewed from the lows to the highs.</p></a>
+        <a class="card" href="#glow"><h3>glow <span>15 · filter</span></h3><p>Vactrol band-pass and MOSFET drive with feedback: filter, fuzz, oscillator, LFO, CV shaper.</p></a>
       </div>
 
       <!-- juno -->
@@ -752,6 +756,52 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
         finer in frequency, softer in time), width, tone, layer (the previous capture under the new one), grain
         (random level and phase per bin), pitch (±24 semitones; with smear off and not frozen a live pitch shifter),
         lock (1: clean locked partials, lower: diffuse, lush).</p>
+
+      <!-- prism -->
+      <h3 class="prog" id="prism">prism <small>14 · v0.1 · 48 kHz · spectral</small></h3>
+      <p>A spectral delay. The input is split into its frequency bands, every band goes through its own delay and
+        comes back with feedback. Skewed, the highs return before the lows or after them: a click becomes a sweep, a
+        chord unfolds note by note, feedback builds spectral trails.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td>Button 1</td><td>freeze on / off (LED 1): no more input, every band loops its delay. A gate on <span class="j">CV A</span> holds it</td></tr>
+          <tr><td><kbd>X</kbd> time</td><td>the longest delay a band gets, 0.02–3 s</td></tr>
+          <tr><td><kbd>Y</kbd> skew</td><td>−100 … 100: 0 every band the same time; −100 the time rises towards the highs, +100 towards the lows</td></tr>
+          <tr><td><kbd>Z</kbd> feedback</td><td>how much of each band's echo returns (up to 0.98; bands are held below full scale)</td></tr>
+          <tr><td><kbd class="a">A</kbd> mix</td><td>input against the delays (equal power)</td></tr>
+          <tr><td><kbd class="b">B</kbd> scatter</td><td>every band's time moves by its own random amount: a smear of echoes instead of a sweep</td></tr>
+          <tr><td><kbd class="c">C</kbd> damp</td><td>−1 … 1: the feedback dies away sooner in the lows (left) or the highs (right)</td></tr>
+          <tr><td><kbd class="d">D</kbd> level</td><td>of the delays, 0–2×</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Outputs</h4>
+      <p>1/2 mix · 3/4 delays only.</p>
+      <p><b>Settings:</b> curve (skew by octaves or linearly over frequency), resolution (512–8192 points: finer in
+        frequency, softer in time), width, tone.</p>
+
+      <!-- glow -->
+      <h3 class="prog" id="glow">glow <small>15 · v0.1 · 48 kHz · filter</small></h3>
+      <p>A filter whose two edges are vactrols, a MOSFET style drive in front of it and feedback from the output back
+        to the start. Close edges make a resonant band-pass, far apart a low-pass (placed low) or a high-pass (placed
+        high). Above its threshold the loop oscillates: a tone, or in the LFO range a slow wave. Everything is DC
+        coupled, so it shapes control voltages too: envelopes ring, gates wobble.</p>
+      <div class="tbl"><table class="wrap1">
+        <thead><tr><th>Control</th><th>Parameter</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>X</kbd> frequency</td><td>the middle of the band, 20 Hz–18 kHz (range lfo: 0.02–100 Hz); <span class="j">CV A</span> adds 1 V/oct unless it is the input</td></tr>
+          <tr><td><kbd>Y</kbd> width</td><td>the distance of the edges: narrow = resonant band, wide = low- or high-pass; the middle always at 0 dB</td></tr>
+          <tr><td><kbd>Z</kbd> feedback</td><td>resonance, self-oscillation from about 0.8 (earlier with more drive)</td></tr>
+          <tr><td><kbd class="a">A</kbd> drive</td><td>0–40 dB into the MOSFET stage: warmth, crunch, fuzz (level kept within ~3 dB)</td></tr>
+          <tr><td><kbd class="b">B</kbd> vactrol</td><td>how fast the edges follow: snappy to lazy (slow, sagging fall)</td></tr>
+          <tr><td><kbd class="c">C</kbd> bias</td><td>symmetric (odd harmonics) to lopsided (even harmonics, rougher)</td></tr>
+          <tr><td><kbd class="d">D</kbd> mix</td><td>dry and processed on out 1/2</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Outputs</h4>
+      <p>1/2 mix · 3/4 processed only, unclipped and DC coupled (CV, 1.0 = 5 V).</p>
+      <p><b>Settings:</b> input (audio, or the voltage on <span class="j">CV A</span>), range (audio / lfo), spread (the
+        right channel ±12 semitones: stereo, or a second LFO rate), feedback polarity, level.</p>
     </section>
 
     <!-- ============================================================ calibration -->
@@ -832,7 +882,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
           <tr><td>Programs</td><td>written in FAUST, compiled into the firmware; your own from <span class="v">software/template</span></td></tr>
         </tbody>
       </table></div>
-      <footer>Nemesis programmable DSP · design by Arev Imer. Describes the firmware on <i>main</i> (slush 0.5),
+      <footer>Nemesis programmable DSP · design by Arev Imer. Describes the firmware on <i>main</i> (slush 0.5, prism 0.1, glow 0.1),
         November 2026. Display screens are drawn after the firmware's layout in its fonts (Michroma, Oxanium); real
         ones can be captured with <span class="v">software/tools/screen.py</span>. Program details:
         <span class="v">software/programs/docs/</span>.</footer>

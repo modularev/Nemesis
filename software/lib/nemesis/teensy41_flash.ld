@@ -61,12 +61,14 @@ SECTIONS
 		   several times slower (2026-11-20). Room made by moving main loop
 		   code to flash (readCommands, loop::service, buildItems,
 		   randomize) */
-		/* The FFT tables of the spectral library's 512 and 4096 point
-		   sizes stay here (4096's are 40 kB: RAM1 has no room); the library
-		   copies them to RAM2 while that size runs (nemesis_spectral.cpp).
+		/* The FFT tables of the spectral library's 512, 4096 and 8192 point
+		   sizes stay here (4096's are 40 kB, 8192's 40 kB + a computed
+		   32 kB: RAM1 has no room); the library copies them to RAM2 while
+		   that size runs (nemesis_spectral.cpp).
 		   1024 and 2048 use theirs in RAM1 (.data) */
 		*libarm_cortexM7lfsp_math.a:*(.rodata.twiddleCoef_256 .rodata.armBitRevIndexTable256 .rodata.twiddleCoef_rfft_512)
 		*libarm_cortexM7lfsp_math.a:*(.rodata.twiddleCoef_2048 .rodata.armBitRevIndexTable2048 .rodata.twiddleCoef_rfft_4096)
+		*libarm_cortexM7lfsp_math.a:*(.rodata.twiddleCoef_4096 .rodata.armBitRevIndexTable4096)
 		. = ALIGN(4);
 	} > FLASH
 

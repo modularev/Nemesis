@@ -206,6 +206,22 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   48k: 2048 ~34 % with smear (peak 48), 4096 22 % (peak 70, frozen 87).
   Once after a long session the display hung (25 ms per frame, max
   360 ms) and taps got lost; a restart fixed it, not reproduced.
+- prism (program 14, 2026-11-25, Mac only, not run on the module yet):
+  spectral delay, kernel DELAY in nemesis_spectral (picked up from the
+  calls, rebuilt in service() like a size change): a ring of 3 s of spectra
+  in PSRAM, every bin read from its own row (time x skew/scatter), input +
+  feedback written back, magnitude held below N/2; stereo up to 8192 (the
+  rfft 8192 table is computed: CMSIS has none, layout [sin, cos] checked
+  against twiddleCoef_rfft_4096; the cfft 4096 tables stay in flash).
+  The delay step runs in 3 steps (a third of the bins each). FREEZE
+  refuses > 4096. Mac: skew/feedback/freeze as designed at 512-8192.
+- glow (program 15, 2026-11-25, Mac only): vactrol band-pass (two TPT
+  sections, edges with an asymmetric vactrol lag, g from a 21-octave table)
+  + MOSFET stage (rational tanh, bias) in a feedback loop; input audio or CV
+  A (volts, smoothed: it arrives per block); outs 3/4 raw DC for CV; a
+  start step makes slow oscillations start at once. Mac: threshold 0.8,
+  LFO 0.26-100 Hz, envelope ringing, drive levels within 3.2 dB.
+  ITCM code is within 1.4 kB of 4 blocks after these two.
 
 ## Switching, CPU meter, spectral fixes (2026-11-21)
 
@@ -251,8 +267,11 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
 ## Simulator
 
 - Nemesis Sim (AU/VST3 plugins that run the .dsp files in Ableton) lives in
-  its own repo, `~/GitHub/nemesis-simulator`. The user asked not to work on
-  it until they ask: don't change, build or sync it with library changes.
+  its own repo, `~/GitHub/nemesis-simulator`. Only work on it when the user
+  explicitly asks for simulator work (2026-11-25: spectral support, dark
+  restyle); don't rebuild or sync it with library changes unasked. It
+  exports nm_spectral to libfaust's JIT (registerForeignFunction + its image
+  made RTLD_GLOBAL); pollen's nm16_* aren't exported (pollen won't load).
 
 ## Build, upload, debug
 
