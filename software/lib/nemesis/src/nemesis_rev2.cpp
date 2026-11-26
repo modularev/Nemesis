@@ -2029,8 +2029,13 @@ namespace nemesis
 
    // all 8 audio input stages invert (IN 1-6 on the main board, IN 7/8 through
    // the input board and CS5343, measured on rev2); the CS5343 channels can't
-   // be inverted in the codec, so it's done in software for all of them
-   float inputScale(int input) { return -1.0f; }
+   // be inverted in the codec, so it's done in software for all of them.
+   // IN 1-6 reach the ADC's full scale at +-6.1 V (differential mode, input
+   // pots fully clockwise, hardware/rev2/KNOWN_ISSUES.md): scaled so 5 V =
+   // 1.0, as on the outputs, a program that passes its input on is unity
+   // (it was 5 / 6.1 = -1.7 dB); up to +-6.1 V still comes in (1.22).
+   // IN 7/8 (CS5343, full scale +-2.77 V) are left as they were
+   float inputScale(int input) { return input < 6 ? -6.1f / 5.0f : -1.0f; }
 
    // applied by the architecture file to every output sample: corrected = sample * scale + offset
    void outputCorrection(int output, float &scale, float &offset)

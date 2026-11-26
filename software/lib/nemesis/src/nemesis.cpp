@@ -29,6 +29,12 @@ namespace nemesis
       bool codec_ready = false; // hw::begin() set the codec up (applySampleRate())
       uint32_t unmute_at = 0;   // millis() when the codec's outputs come back after the start
       bool fade_in_at_unmute = false; // start: the program fades in once the DACs are on
+      // after a program start or a clock change the first blocks are slow
+      // (buffers cleared, caches cold, the first frames): until then the
+      // load's peak isn't counted (display, report), only its average
+      constexpr uint32_t LOAD_SETTLE_MS = 1500;
+      uint32_t load_settle_until = 0;
+      void settleLoad() { load_settle_until = millis() + LOAD_SETTLE_MS; }
       // after power up the codec's outputs stay muted this long (its reference
       // settles) and the program silent; a restart clicked loudly (2026-11-17)
       constexpr uint32_t START_MUTE_MS = 400;
@@ -47,6 +53,7 @@ namespace nemesis
       // the inputs silent while the ADCs ring after a clock change (inputHold)
       void holdInputs()
       {
+         settleLoad();   // a clock change
          inputRamp = 0.0f;
          inputHold = (int)(INPUT_HOLD_S * tdm::sampleRate());
       }
@@ -271,7 +278,14 @@ namespace nemesis
       float block = (float)F_CPU_ACTUAL * tdm::blockSize() / tdm::sampleRate();
       load_avg = count ? 100.0f * (float)sum / count / block : 0.0f;
       load_peak = 100.0f * peak / block;
-      if (load_peak > load_max)
+      if ((int32_t)(millis() - load_settle_until) < 0)
+      {
+         // still settling: its spikes say nothing about the program, and
+         // the largest since the last report was the previous program's
+         load_peak = load_avg;
+         load_max = load_avg;
+      }
+      else if (load_peak > load_max)
          load_max = load_peak;
    }
    float cpuLoad() { return load_avg; }
@@ -396,6 +410,7 @@ namespace nemesis
       NEMESIS_TRACE("switch: block size\n");
       applyBlockSize();
       NEMESIS_TRACE("switch: done\n");
+      settleLoad();
       active = next;
       current = index;
       AudioInterrupts();
@@ -832,7 +847,11 @@ namespace nemesis
             if (i.led >= 0)
                hw::setLed(i.led, *i.zone > 0.5f * (i.min + i.max));
          hw::service(*active);
-         spectral::service();   // a spectral size change a program asked for
+         if (spectral::requested)
+         {
+            spectral::service();   // a spectral size or kernel change a program asked for
+            settleLoad();          // its first frames after it are slow too
+         }
       }
    }
 

@@ -427,7 +427,7 @@ void NemesisAudio::update(void)
             memset(fInChannel[channel], 0, n * sizeof(float));
             continue;
         }
-        // input polarity of the module
+        // input polarity and gain of the module (IN 1-6: 5 V = 1.0)
         float scale = DIV_32 * nemesis::inputScale(channel);
         const int32_t* src = frames + channel;
         for (int i = 0; i < n; i++) {

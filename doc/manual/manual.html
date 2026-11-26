@@ -151,6 +151,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
       <li class="sub"><a href="#slush">slush</a></li>
       <li class="sub"><a href="#prism">prism</a></li>
       <li class="sub"><a href="#glow">glow</a></li>
+      <li class="sub"><a href="#thru">thru</a></li>
       <li><a href="#calibration">Calibration</a></li>
       <li><a href="#sd">SD card &amp; remote</a></li>
       <li><a href="#trouble">Troubleshooting</a></li>
@@ -163,7 +164,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
     <header class="hero">
       <div>
         <div class="eyebrow">Programmable DSP · user manual</div>
-        <h1>Nemesis: fifteen <span>programs</span>, one module</h1>
+        <h1>Nemesis: sixteen <span>programs</span>, one module</h1>
       </div>
       <p class="lede">An eight in, eight out Eurorack DSP module running <strong>FAUST programs</strong>: reverbs,
         delays, a granulator, a spectral freeze and delay, a vactrol filter with drive, glitch and beat effects, FM and polyphonic synthesizers and a
@@ -425,7 +426,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
     <!-- ============================================================ programs -->
     <section id="programs">
       <h2>Programs</h2>
-      <p>Fifteen programs, in the order of the program list. Each lists its knobs and jacks for rev2; everything
+      <p>Sixteen programs, in the order of the program list. Each lists its knobs and jacks for rev2; everything
         not on a knob is a setting.</p>
       <div class="cards">
         <a class="card" href="#juno"><h3>juno <span>1 · synth</span></h3><p>Juno-106 style polysynth, 12 voices, chorus, 128 factory patches. MIDI.</p></a>
@@ -443,6 +444,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
         <a class="card" href="#slush"><h3>slush <span>13 · spectral</span></h3><p>Spectral freeze and smear: endless, moving held sounds.</p></a>
         <a class="card" href="#prism"><h3>prism <span>14 · spectral</span></h3><p>Spectral delay: every band its own delay, skewed from the lows to the highs.</p></a>
         <a class="card" href="#glow"><h3>glow <span>15 · filter</span></h3><p>Vactrol band-pass and MOSFET drive with feedback: filter, fuzz, oscillator, LFO, CV shaper.</p></a>
+        <a class="card" href="#thru"><h3>thru <span>16 · utility</span></h3><p>Inputs 1–8 to outputs 1–8, unity: for checking levels.</p></a>
       </div>
 
       <!-- juno -->
@@ -802,6 +804,13 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
       <p>1/2 mix · 3/4 processed only, unclipped and DC coupled (CV, 1.0 = 5 V).</p>
       <p><b>Settings:</b> input (audio, or the voltage on <span class="j">CV A</span>), range (audio / lfo), spread (the
         right channel ±12 semitones: stereo, or a second LFO rate), feedback polarity, level.</p>
+
+      <!-- thru -->
+      <h3 class="prog" id="thru">thru <small>16 · v0.1 · utility</small></h3>
+      <p>Every input goes to the output with the same number, 1:1, without controls and without an output stage: what
+        comes out is what the input stage, the converters and the output calibration make of it. IN 1–6: 5 V in =
+        5 V out (input pot fully clockwise). IN 7/8 are 5.1 dB louder (full scale ±2.77 V). All inputs are AC coupled:
+        check with audio. With the clock source on IN 8, out 8 stays silent.</p>
     </section>
 
     <!-- ============================================================ calibration -->
@@ -873,7 +882,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--line);
           <tr><td>Codec</td><td>Cirrus CS42448 (6 in, 8 out, 24 bit) + CS5343 (IN 7/8), TDM</td></tr>
           <tr><td>Sample rate</td><td>48 or 96 kHz, per program</td></tr>
           <tr><td>Latency</td><td>1.8 / 3.2 / 5.8 ms through the module at 32 / 64 / 128 sample blocks</td></tr>
-          <tr><td>Audio in</td><td>IN 1–6 ±6.1 V full scale at full gain, AC (flat from 10 Hz); IN 7/8 ±2.77 V, AC</td></tr>
+          <tr><td>Audio in</td><td>IN 1–6 ±6.1 V full scale at full gain, 5 V = 1.0 like the outputs (unity through the module), AC (flat from 10 Hz); IN 7/8 ±2.77 V, AC</td></tr>
           <tr><td>Outputs</td><td>8, DC coupled, ±5 V, calibrated in volts</td></tr>
           <tr><td>CV in</td><td>X/Y/Z ±4.2 V summed with the knobs through attenuverters; A–D 0–8.4 V, calibrated</td></tr>
           <tr><td>Display</td><td>128 × 32 OLED</td></tr>

@@ -45,7 +45,10 @@ The input stage maps ±5 V (schematic label "−5 to +5") to 2.5 V ± 2.35 V.
 
 IN 1–6 agree within ±0.5 %. All 8 input stages invert; the library corrects
 the polarity in software (`nemesis::inputScale`), since the CS5343 channels
-can't be inverted in the codec.
+can't be inverted in the codec. Since 2026-11-26 it also scales IN 1–6 so
+5 V at the jack = 1.0 in a program (×6.1/5), as on the outputs: a program
+that passes its input on is unity (before: 5/6.1 = −1.7 dB); ±6.1 V still
+comes in (1.22). IN 7/8 keep their scale (full scale = 1.0).
 
 Noise floor with nothing patched: −89…−94 dBFS RMS (IN 1–6), −75…−84 dBFS
 (IN 7/8), unweighted.

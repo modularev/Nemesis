@@ -191,7 +191,8 @@ namespace nemesis
          if (!frames)
             return;
          // this block's input was recorded during the previous block
-         float scale = 4.656612873077392578125e-10f * inputScale(CLOCK_CHANNEL);
+         // thresholds in the converter's units: only the input's polarity
+         float scale = 4.656612873077392578125e-10f * (inputScale(CLOCK_CHANNEL) < 0.0f ? -1.0f : 1.0f);
          int n = tdm::blockSize();
          for (int i = 0; i < n; i++)
          {

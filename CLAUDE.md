@@ -222,6 +222,20 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   start step makes slow oscillations start at once. Mac: threshold 0.8,
   LFO 0.26-100 Hz, envelope ringing, drive levels within 3.2 dB.
   ITCM code is within 1.4 kB of 4 blocks after these two.
+- Input scaling (2026-11-26): rev2 inputScale() = -6.1/5 for IN 1-6 (5 V at
+  the jack = 1.0, as the outputs: unity through the module, was -1.7 dB;
+  +-6.1 V still comes in), IN 7/8 unchanged (-1); the IN 8 clock detector
+  uses the polarity only (thresholds unchanged). thru (program 16): 1-8 ->
+  1-8, `declare audio_outputs "none"` (no output stage). The user measured
+  in/out levels fine with it. Schematic review (main board PDF; in/out
+  boards only as DipTrace .dch): inputs drive AIN+ only (AIN- 2.2 uF to
+  ground, 6 dB of the ADC unused), outputs AOUT+ only (AOUT- open; the
+  codec has no analog gain, only DAC attenuation), output offsets = codec
+  VQ vs NEG_AREF (from ADC_REF) x3, TL074 U6.3 drives C26 100 nF at unity
+  (check NEG_AREF for ringing).
+- CPU meter settle (2026-11-26): for 1.5 s after a program start, a clock
+  change (holdInputs) or a spectral rebuild, the peak counts as the average
+  and the report's max restarts: no start spikes on the display/report.
 
 ## Switching, CPU meter, spectral fixes (2026-11-21)
 
@@ -271,7 +285,8 @@ Measured rev2 hardware facts and design issues: `hardware/rev2/KNOWN_ISSUES.md`.
   explicitly asks for simulator work (2026-11-25: spectral support, dark
   restyle); don't rebuild or sync it with library changes unasked. It
   exports nm_spectral to libfaust's JIT (registerForeignFunction + its image
-  made RTLD_GLOBAL); pollen's nm16_* aren't exported (pollen won't load).
+  made RTLD_GLOBAL), and pollen's nm16_put/nm16_get (plain buffers); one
+  plugin instance at a time owns each (2026-11-25).
 
 ## Build, upload, debug
 

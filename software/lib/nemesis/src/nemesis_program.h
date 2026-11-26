@@ -36,7 +36,7 @@ namespace nemesis
    // corrected = sample * scale + offset
    void outputCorrection(int output, float &scale, float &offset);
    // input polarity, applied by the architecture file to every input sample
-   float inputScale(int input);
+   float inputScale(int input);   // an audio input's converter value -> 1.0 = 5 V, with its polarity
    // the transport's clock comes from audio IN 8 (clock source CV); that
    // input then reads silence in the program
    bool clockOnInput8();
